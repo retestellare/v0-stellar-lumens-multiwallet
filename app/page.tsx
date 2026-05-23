@@ -1,18 +1,24 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Header } from '@/components/header';
 import { WalletCard } from '@/components/wallet-card';
 import { CreateWalletModal } from '@/components/create-wallet-modal';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/lib/wallet-context';
-import { Plus, Send, LogIn } from 'lucide-react';
+import { Plus, Send, LogIn, ArrowRightLeft, Briefcase } from 'lucide-react';
 import Link from 'next/link';
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { wallets, activeWalletId, setActiveWallet, removeWallet, updateBalances } = useWallet();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+
+  const handleExchangeClick = () => {
+    router.push('/exchange');
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -82,12 +88,17 @@ export default function DashboardPage() {
                     <LogIn className="w-5 h-5 text-primary mx-auto mb-2 rotate-180 group-hover:glow-pulse" />
                     <p className="text-xs font-medium text-foreground">Receive</p>
                   </Link>
-                  <Link href="/portfolio" className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center">
+                  <Link href="/portfolio" className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group">
+                    <Briefcase className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
                     <p className="text-xs font-medium text-foreground">Portfolio</p>
                   </Link>
-                  <Link href="/exchange" className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center">
+                  <button 
+                    onClick={handleExchangeClick}
+                    className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group"
+                  >
+                    <ArrowRightLeft className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
                     <p className="text-xs font-medium text-foreground">Exchange</p>
-                  </Link>
+                  </button>
                 </div>
 
                 {/* Assets List */}

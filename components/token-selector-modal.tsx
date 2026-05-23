@@ -1,21 +1,16 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import { Button } from '@/components/ui/button';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Input } from '@/components/ui/input';
-import { Search, X, Star } from 'lucide-react';
+import { Search, X, Star, Loader2 } from 'lucide-react';
 import { TokenMetadata } from '@/types/token';
-import {
-  searchTokens,
-  getMostTradedTokens,
-  getTokenPicks,
-  fetchTokenMetadata,
-} from '@/lib/token-service';
+import { getTokenPicks } from '@/lib/token-service';
 import {
   getFavoriteTokens,
   toggleFavoriteToken,
-  isFavoriteToken,
 } from '@/lib/token-storage';
+
+const HORIZON_URL = 'https://horizon.stellar.org';
 
 interface Token {
   code: string;
@@ -23,7 +18,8 @@ interface Token {
   name?: string;
   image?: string;
   verified?: boolean;
-  source?: 'wallet' | 'picks' | 'all' | 'manual' | 'favorites';
+  domain?: string;
+  source?: 'wallet' | 'picks' | 'search' | 'favorites';
 }
 
 interface TokenSelectorModalProps {
@@ -34,6 +30,40 @@ interface TokenSelectorModalProps {
   type: 'selling' | 'buying';
 }
 
+// Search tokens directly from Horizon API
+async function searchHorizonTokens(query: string): Promise<Token[]> {
+  try {
+    // Check if query looks like an issuer address (starts with G and is 56 chars)
+    const isIssuerSearch = query.startsWith('G') && query.length >= 10;
+    
+    let url: string;
+    if (isIssuerSearch) {
+      // Search by issuer
+      url = `${HORIZON_URL}/assets?asset_issuer=${encodeURIComponent(query)}&limit=20`;
+    } else {
+      // Search by code
+      url = `${HORIZON_URL}/assets?asset_code=${encodeURIComponent(query.toUpperCase())}&limit=20`;
+    }
+
+    const response = await fetch(url);
+    if (!response.ok) return [];
+
+    const data = await response.json();
+    const records = data._embedded?.records || [];
+
+    return records.map((r: any) => ({
+      code: r.asset_code,
+      issuer: r.asset_issuer,
+      name: r.asset_code,
+      verified: r.accounts?.authorized > 100,
+      source: 'search' as const,
+    }));
+  } catch (error) {
+    console.error('[v0] Horizon search error:', error);
+    return [];
+  }
+}
+
 export function TokenSelectorModal({
   isOpen,
   onClose,
@@ -41,13 +71,15 @@ export function TokenSelectorModal({
   walletBalances,
   type,
 }: TokenSelectorModalProps) {
-  const [activeTab, setActiveTab] = useState<'wallet' | 'picks' | 'all' | 'favorites'>('picks');
+  const [activeTab, setActiveTab] = useState<'wallet' | 'picks' | 'favorites'>('picks');
   const [searchQuery, setSearchQuery] = useState('');
   const [displayTokens, setDisplayTokens] = useState<Token[]>([]);
   const [loading, setLoading] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [searchResults, setSearchResults] = useState<Token[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
-  // Memoize wallet tokens to prevent recreating on every render
+  // Memoize wallet tokens
   const walletTokens = useMemo(
     () =>
       walletBalances.map((b) => ({
@@ -58,89 +90,76 @@ export function TokenSelectorModal({
     [walletBalances]
   );
 
-  // Update favorites set when modal opens
+  // Get curated picks with more tokens
+  const tokenPicks = useMemo(() => {
+    const picks = getTokenPicks();
+    return picks.map((t) => ({
+      code: t.code,
+      issuer: t.issuer,
+      name: t.name,
+      domain: t.domain,
+      image: t.image,
+      verified: t.verified,
+      source: 'picks' as const,
+    }));
+  }, []);
+
+  // Update favorites when modal opens
   useEffect(() => {
     if (isOpen) {
       const favs = getFavoriteTokens();
       const favSet = new Set(favs.map((t) => `${t.code}_${t.issuer}`));
       setFavorites(favSet);
+      setSearchQuery('');
+      setSearchResults([]);
     }
   }, [isOpen]);
 
-  // Handle token searches and loads
+  // Handle search with debounce
   useEffect(() => {
-    const loadTokens = async () => {
-      setLoading(true);
-      try {
-        let tokens: Token[] = [];
+    if (!searchQuery || searchQuery.length < 2) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
 
-        if (activeTab === 'wallet') {
-          tokens = walletTokens.filter(
-            (t) => !searchQuery || t.code.includes(searchQuery.toUpperCase())
-          );
-        } else if (activeTab === 'picks') {
-          const picks = getTokenPicks();
-          tokens = picks.map((t) => ({
-            code: t.code,
-            issuer: t.issuer,
-            name: t.name,
-            verified: t.verified,
-            source: 'picks' as const,
-          }));
-          if (searchQuery) {
-            tokens = tokens.filter((t) => t.code.includes(searchQuery.toUpperCase()));
-          }
-        } else if (activeTab === 'favorites') {
-          const favs = getFavoriteTokens();
-          tokens = favs.map((t) => ({
-            code: t.code,
-            issuer: t.issuer,
-            name: t.name,
-            image: t.image,
-            verified: t.verified,
-            source: 'favorites' as const,
-          }));
-          if (searchQuery) {
-            tokens = tokens.filter((t) => t.code.includes(searchQuery.toUpperCase()));
-          }
-        } else if (activeTab === 'all') {
-          if (searchQuery.length > 0) {
-            const results = await searchTokens(searchQuery, 50);
-            tokens = results.map((t) => ({
-              code: t.code,
-              issuer: t.issuer,
-              name: t.name,
-              image: t.image,
-              verified: t.verified,
-              source: 'all' as const,
-            }));
-          } else {
-            console.log('[v0] Fetching most traded tokens');
-            const traded = await getMostTradedTokens(50);
-            console.log('[v0] Got traded tokens:', traded.length);
-            tokens = traded.map((t) => ({
-              code: t.code,
-              issuer: t.issuer,
-              name: t.name,
-              image: t.image,
-              verified: t.verified,
-              source: 'all' as const,
-            }));
-          }
-        }
+    setIsSearching(true);
+    const timer = setTimeout(async () => {
+      const results = await searchHorizonTokens(searchQuery);
+      setSearchResults(results);
+      setIsSearching(false);
+    }, 500);
 
-        console.log('[v0] Setting display tokens:', tokens.length);
-        setDisplayTokens(tokens);
-      } catch (error) {
-        console.error('[v0] Error loading tokens:', error);
-        setDisplayTokens([]);
-      } finally {
-        setLoading(false);
-      }
-    };
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
-    loadTokens();
-  }, [activeTab, searchQuery, walletTokens]);
+  // Update display tokens based on tab and search
+  useEffect(() => {
+    // If searching, show search results
+    if (searchQuery.length >= 2) {
+      setDisplayTokens(searchResults);
+      return;
+    }
+
+    // Otherwise show tab content
+    if (activeTab === 'wallet') {
+      setDisplayTokens(walletTokens);
+    } else if (activeTab === 'picks') {
+      setDisplayTokens(tokenPicks);
+    } else if (activeTab === 'favorites') {
+      const favs = getFavoriteTokens();
+      setDisplayTokens(
+        favs.map((t) => ({
+          code: t.code,
+          issuer: t.issuer,
+          name: t.name,
+          image: t.image,
+          verified: t.verified,
+          source: 'favorites' as const,
+        }))
+      );
+    }
+  }, [activeTab, searchQuery, searchResults, walletTokens, tokenPicks]);
 
   const handleTokenSelect = (token: Token) => {
     onSelect(token);
@@ -156,7 +175,7 @@ export function TokenSelectorModal({
       name: token.name,
       image: token.image,
       verified: token.verified,
-      source: 'all',
+      source: 'stellar-expert',
     };
 
     const isFav = toggleFavoriteToken(metadata);
@@ -175,6 +194,8 @@ export function TokenSelectorModal({
 
   if (!isOpen) return null;
 
+  const showingSearch = searchQuery.length >= 2;
+
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end md:items-center justify-center">
       <div className="bg-card border border-primary/20 rounded-t-lg md:rounded-lg w-full md:w-full md:max-w-2xl max-h-[90vh] md:max-h-[80vh] overflow-hidden flex flex-col glow-border">
@@ -192,55 +213,66 @@ export function TokenSelectorModal({
         </div>
 
         {/* Search */}
-        <div className="p-4 bg-background/30 border-b border-border sticky top-16">
+        <div className="p-4 bg-background/30 border-b border-border">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Search tokens..."
+              placeholder="Search by token code or issuer address (G...)"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-input border-border text-foreground pl-10"
+              className="bg-input border-border text-foreground pl-10 pr-10"
             />
+            {isSearching && (
+              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary animate-spin" />
+            )}
           </div>
+          {searchQuery.length >= 2 && (
+            <p className="text-xs text-muted-foreground mt-2">
+              Searching Stellar network for &quot;{searchQuery}&quot;...
+            </p>
+          )}
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-2 p-4 bg-background/50 border-b border-border overflow-x-auto sticky top-28">
-          {[
-            { id: 'wallet', label: 'My Assets' },
-            { id: 'picks', label: 'Our Picks' },
-            { id: 'favorites', label: 'Favorites' },
-            { id: 'all', label: 'All Tokens' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => {
-                setActiveTab(tab.id as any);
-                setSearchQuery('');
-              }}
-              className={`px-4 py-2 rounded-lg font-medium transition-all whitespace-nowrap ${
-                activeTab === tab.id
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-background/50 text-muted-foreground hover:text-foreground border border-border/50'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        {/* Tabs - only show when not searching */}
+        {!showingSearch && (
+          <div className="flex gap-2 p-4 bg-background/50 border-b border-border overflow-x-auto">
+            {[
+              { id: 'wallet', label: 'My Assets' },
+              { id: 'picks', label: 'Our Picks' },
+              { id: 'favorites', label: 'Favorites' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`px-4 py-2 rounded-lg font-medium transition-all whitespace-nowrap ${
+                  activeTab === tab.id
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-background/50 text-muted-foreground hover:text-foreground border border-border/50'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Token Grid */}
         <div className="flex-1 overflow-y-auto p-6">
-          {loading ? (
-            <div className="flex items-center justify-center h-48">
-              <p className="text-muted-foreground">Searching tokens...</p>
+          {isSearching ? (
+            <div className="flex flex-col items-center justify-center h-48 gap-3">
+              <Loader2 className="w-8 h-8 text-primary animate-spin" />
+              <p className="text-muted-foreground">Searching Stellar network...</p>
             </div>
           ) : displayTokens.length === 0 ? (
             <div className="flex items-center justify-center h-48">
               <p className="text-muted-foreground text-center">
-                {activeTab === 'all' && searchQuery.length === 0
-                  ? 'Loading tokens...'
-                  : 'No tokens found'}
+                {showingSearch
+                  ? 'No tokens found. Try a different code or issuer.'
+                  : activeTab === 'favorites'
+                  ? 'No favorites yet. Star tokens to add them here.'
+                  : activeTab === 'wallet'
+                  ? 'No assets in your wallet.'
+                  : 'No tokens available.'}
               </p>
             </div>
           ) : (
@@ -254,19 +286,17 @@ export function TokenSelectorModal({
                     className="group relative flex flex-col items-center gap-2 p-4 rounded-lg border border-border/50 hover:border-primary/50 bg-background/30 hover:bg-primary/10 transition-all"
                   >
                     {/* Favorite Star */}
-                    {activeTab === 'all' && (
-                      <button
-                        onClick={(e) => handleToggleFavorite(e, token)}
-                        className="absolute top-2 right-2 text-muted-foreground hover:text-primary transition-colors"
-                      >
-                        <Star
-                          className="w-4 h-4"
-                          fill={isFav ? 'currentColor' : 'none'}
-                        />
-                      </button>
-                    )}
+                    <button
+                      onClick={(e) => handleToggleFavorite(e, token)}
+                      className="absolute top-2 right-2 text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      <Star
+                        className="w-4 h-4"
+                        fill={isFav ? 'currentColor' : 'none'}
+                      />
+                    </button>
 
-                    {/* Token Avatar / Image */}
+                    {/* Token Avatar */}
                     <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-lg font-bold overflow-hidden">
                       {token.image ? (
                         <img
@@ -292,10 +322,10 @@ export function TokenSelectorModal({
                       )}
                     </div>
 
-                    {/* Token Name if available */}
-                    {token.name && (
+                    {/* Token Name or Domain */}
+                    {(token.name || token.domain) && (
                       <p className="text-xs text-muted-foreground text-center truncate w-full">
-                        {token.name}
+                        {token.name || token.domain}
                       </p>
                     )}
 
