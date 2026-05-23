@@ -19,13 +19,13 @@ interface OrderBookData {
   asks: Array<{ price: string; amount: string }>;
 }
 
-type TabType = 'form' | 'history' | 'my-orders' | 'charts';
+type TabType = 'history' | 'my-orders' | 'charts';
 type TokenModalType = 'selling' | 'buying' | null;
 
 export default function ExchangePage() {
   const { wallets, activeWalletId } = useWallet();
   const [mounted, setMounted] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabType>('form');
+  const [activeTab, setActiveTab] = useState<TabType>('history');
   
   // Trading pair state
   const [sellingAsset, setSellingAsset] = useState('XLM');
@@ -118,7 +118,6 @@ export default function ExchangePage() {
   };
 
   const tabs = [
-    { id: 'form', label: 'Order Form', icon: '🛒' },
     { id: 'history', label: 'History', icon: '📊' },
     { id: 'my-orders', label: 'My Orders', icon: '📋' },
     { id: 'charts', label: 'Charts', icon: '📈' },
@@ -195,6 +194,18 @@ export default function ExchangePage() {
             </div>
           </div>
 
+          {/* Compact Order Form - Side by Side */}
+          <CompactOrderForm
+            sellingAsset={sellingAsset}
+            buyingAsset={buyingAsset}
+            sellingBalance={sellingBalance}
+            buyingBalance={buyingBalance}
+            bestBid={bestBid}
+            bestAsk={bestAsk}
+            onBuyClick={handleBuyClick}
+            onSellClick={handleSellClick}
+          />
+
           {/* Main Content Grid */}
           <div className="grid lg:grid-cols-3 gap-6">
             {/* Left: Order Book */}
@@ -234,9 +245,9 @@ export default function ExchangePage() {
             </div>
           </div>
 
-          {/* Tabs Navigation */}
+          {/* Tabs Navigation - History, My Orders, Charts only */}
           <div className="flex flex-wrap gap-2 border-b border-border pb-4">
-            {tabs.map((tab) => (
+            {tabs.filter(t => t.id !== 'form').map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
@@ -253,19 +264,6 @@ export default function ExchangePage() {
 
           {/* Tab Content */}
           <div className="min-h-96">
-            {activeTab === 'form' && (
-              <CompactOrderForm
-                sellingAsset={sellingAsset}
-                buyingAsset={buyingAsset}
-                sellingBalance={sellingBalance}
-                buyingBalance={buyingBalance}
-                bestBid={bestBid}
-                bestAsk={bestAsk}
-                onBuyClick={handleBuyClick}
-                onSellClick={handleSellClick}
-              />
-            )}
-
             {activeTab === 'history' && (
               <TradeHistory
                 trades={trades}
