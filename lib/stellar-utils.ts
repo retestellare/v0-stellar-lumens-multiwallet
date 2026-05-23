@@ -228,6 +228,73 @@ export const searchAssets = async (code?: string, issuer?: string, limit = 10) =
 };
 
 /**
+ * Fetch token metadata from stellar.toml file
+ * Returns domain, image, and name if available
+ */
+export const fetchTokenMetadataFromToml = async (
+  code: string,
+  issuer: string
+): Promise<{ domain?: string; image?: string; name?: string; desc?: string }> => {
+  if (!issuer || code === 'XLM') {
+    return { domain: 'stellar.org', name: 'Stellar Lumens', image: 'https://stellar.org/favicon.ico' };
+  }
+  
+  try {
+    // First, get asset info from Horizon to find the home_domain
+    const assetResponse = await fetch(
+      `${HORIZON_URL}/assets?asset_code=${code}&asset_issuer=${issuer}&limit=1`
+    );
+    
+    if (!assetResponse.ok) return {};
+    
+    const assetData = await assetResponse.json();
+    const records = assetData._embedded?.records || [];
+    
+    if (records.length === 0) return {};
+    
+    const tomlUrl = records[0]._links?.toml?.href;
+    if (!tomlUrl) return {};
+    
+    // Extract domain from toml URL
+    const domainMatch = tomlUrl.match(/https?:\/\/([^/]+)/);
+    const domain = domainMatch ? domainMatch[1] : undefined;
+    
+    // Fetch stellar.toml
+    const tomlResponse = await fetch(tomlUrl);
+    if (!tomlResponse.ok) return { domain };
+    
+    const tomlText = await tomlResponse.text();
+    
+    // Parse CURRENCIES section to find this asset
+    const currencyMatch = tomlText.match(
+      new RegExp(`\\[\\[CURRENCIES\\]\\][^\\[]*code\\s*=\\s*"${code}"[^\\[]*issuer\\s*=\\s*"${issuer}"[^\\[]*`, 'i')
+    ) || tomlText.match(
+      new RegExp(`\\[\\[CURRENCIES\\]\\][^\\[]*issuer\\s*=\\s*"${issuer}"[^\\[]*code\\s*=\\s*"${code}"[^\\[]*`, 'i')
+    );
+    
+    if (!currencyMatch) return { domain };
+    
+    const currencyBlock = currencyMatch[0];
+    
+    // Extract image
+    const imageMatch = currencyBlock.match(/image\s*=\s*"([^"]+)"/);
+    const image = imageMatch ? imageMatch[1] : undefined;
+    
+    // Extract name
+    const nameMatch = currencyBlock.match(/name\s*=\s*"([^"]+)"/);
+    const name = nameMatch ? nameMatch[1] : undefined;
+    
+    // Extract description
+    const descMatch = currencyBlock.match(/desc\s*=\s*"([^"]+)"/);
+    const desc = descMatch ? descMatch[1] : undefined;
+    
+    return { domain, image, name, desc };
+  } catch (error) {
+    return {};
+  }
+};
+
+/**
  * Create an Asset object from code and issuer
  */
 export const createAsset = (code: string, issuer?: string): Asset => {

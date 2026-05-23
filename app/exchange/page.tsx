@@ -3,7 +3,7 @@
 import { Header } from '@/components/header';
 import { useWallet } from '@/lib/wallet-context';
 import { Button } from '@/components/ui/button';
-import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret } from '@/lib/stellar-utils';
+import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret, fetchTokenMetadataFromToml } from '@/lib/stellar-utils';
 import { TradingPairHeader } from '@/components/trading-pair-header';
 import { OrderBook } from '@/components/order-book';
 import { TradeHistory } from '@/components/trade-history';
@@ -53,6 +53,12 @@ export default function ExchangePage() {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<{ type: 'buy' | 'sell'; price: string; amount: string } | null>(null);
   const [password, setPassword] = useState('');
+  const [isPasswordUnlocked, setIsPasswordUnlocked] = useState(false); // Track if password entered this session
+  const [decryptedSecret, setDecryptedSecret] = useState<string | null>(null); // Store decrypted secret
+  
+  // Token metadata (domain, image, name)
+  const [sellingMeta, setSellingMeta] = useState<{ domain?: string; image?: string; name?: string }>({});
+  const [buyingMeta, setBuyingMeta] = useState<{ domain?: string; image?: string; name?: string }>({});
   
   // Mock data for trades and orders
   const [trades] = useState<any[]>([
@@ -104,7 +110,6 @@ export default function ExchangePage() {
         const data = await getOrderBook(sellingAsset, sellingIssuer, buyingAsset, buyingIssuer);
         setOrderBook(data);
       } catch (error) {
-        console.error('[v0] Error fetching order book:', error);
         setOrderBook({ bids: [], asks: [] });
       } finally {
         setLoading(false);
@@ -113,6 +118,22 @@ export default function ExchangePage() {
 
     if (mounted) {
       fetchOrderBook();
+    }
+  }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
+  
+  // Fetch token metadata when assets change
+  useEffect(() => {
+    const fetchMeta = async () => {
+      const [sellMeta, buyMeta] = await Promise.all([
+        fetchTokenMetadataFromToml(sellingAsset, sellingIssuer),
+        fetchTokenMetadataFromToml(buyingAsset, buyingIssuer),
+      ]);
+      setSellingMeta(sellMeta);
+      setBuyingMeta(buyMeta);
+    };
+    
+    if (mounted) {
+      fetchMeta();
     }
   }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
 
@@ -175,7 +196,12 @@ export default function ExchangePage() {
       return;
     }
     setPendingOrder({ type: 'buy', price, amount });
-    setShowPasswordModal(true);
+    // If already unlocked, submit directly; otherwise show password modal
+    if (isPasswordUnlocked && decryptedSecret) {
+      submitOrder({ type: 'buy', price, amount }, decryptedSecret);
+    } else {
+      setShowPasswordModal(true);
+    }
   };
 
   const handleSellClick = (price: string, amount: string) => {
@@ -184,57 +210,51 @@ export default function ExchangePage() {
       return;
     }
     setPendingOrder({ type: 'sell', price, amount });
-    setShowPasswordModal(true);
+    // If already unlocked, submit directly; otherwise show password modal
+    if (isPasswordUnlocked && decryptedSecret) {
+      submitOrder({ type: 'sell', price, amount }, decryptedSecret);
+    } else {
+      setShowPasswordModal(true);
+    }
   };
   
-  const handleConfirmOrder = async () => {
-    if (!pendingOrder || !activeWallet || !password) return;
-    
+  const submitOrder = async (order: { type: 'buy' | 'sell'; price: string; amount: string }, secret: string) => {
     setIsSubmitting(true);
     setTxResult(null);
-    setShowPasswordModal(false);
     
     try {
-      // Decrypt the secret key
-      const secret = decryptSecret(activeWallet.encryptedSecret, password);
-      
       let result;
-      if (pendingOrder.type === 'buy') {
-        // Buy order: we're buying sellingAsset with buyingAsset
-        // For a BUY order on DEX: we sell buyingAsset to get sellingAsset
+      if (order.type === 'buy') {
         result = await submitManageBuyOffer(
           secret,
-          buyingAsset,    // selling (paying with)
+          buyingAsset,
           buyingIssuer,
-          sellingAsset,   // buying (receiving)
+          sellingAsset,
           sellingIssuer,
-          pendingOrder.amount,
-          pendingOrder.price,
+          order.amount,
+          order.price,
         );
       } else {
-        // Sell order: we're selling sellingAsset for buyingAsset
         result = await submitManageSellOffer(
           secret,
-          sellingAsset,   // selling
+          sellingAsset,
           sellingIssuer,
-          buyingAsset,    // buying
+          buyingAsset,
           buyingIssuer,
-          pendingOrder.amount,
-          pendingOrder.price,
+          order.amount,
+          order.price,
         );
       }
       
       if (result.success) {
         setTxResult({ success: true, message: `Order submitted! TX: ${result.hash?.substring(0, 8)}...` });
-        // Clear form
-        if (pendingOrder.type === 'buy') {
+        if (order.type === 'buy') {
           setBuyPrice('');
           setBuyAmount('');
         } else {
           setSellPrice('');
           setSellAmount('');
         }
-        // Refresh order book
         const data = await getOrderBook(sellingAsset, sellingIssuer, buyingAsset, buyingIssuer);
         setOrderBook(data);
       } else {
@@ -244,6 +264,26 @@ export default function ExchangePage() {
       setTxResult({ success: false, message: error.message || 'Failed to submit order' });
     } finally {
       setIsSubmitting(false);
+      setPendingOrder(null);
+    }
+  };
+  
+  const handleConfirmOrder = async () => {
+    if (!pendingOrder || !activeWallet || !password) return;
+    
+    setShowPasswordModal(false);
+    
+    try {
+      // Decrypt and store the secret key for this session
+      const secret = decryptSecret(activeWallet.encryptedSecret, password);
+      setDecryptedSecret(secret);
+      setIsPasswordUnlocked(true);
+      setPassword(''); // Clear password from state
+      
+      // Submit the order
+      await submitOrder(pendingOrder, secret);
+    } catch (error: any) {
+      setTxResult({ success: false, message: 'Invalid password' });
       setPassword('');
       setPendingOrder(null);
     }
@@ -313,10 +353,17 @@ export default function ExchangePage() {
                 onClick={() => setTokenModal('selling')}
                 className="flex flex-col items-center gap-2 hover:opacity-80 transition-opacity"
               >
-                <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-primary/40 to-primary/20 flex items-center justify-center border border-primary/50 hover:border-primary/80 transition-colors">
-                  <p className="text-lg sm:text-xl font-bold text-primary">{sellingAsset.charAt(0).toUpperCase()}</p>
+                <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-primary/40 to-primary/20 flex items-center justify-center border border-primary/50 hover:border-primary/80 transition-colors overflow-hidden">
+                  {sellingMeta.image ? (
+                    <img src={sellingMeta.image} alt={sellingAsset} className="w-full h-full object-cover" onError={(e) => e.currentTarget.style.display = 'none'} />
+                  ) : (
+                    <p className="text-lg sm:text-xl font-bold text-primary">{sellingAsset.charAt(0).toUpperCase()}</p>
+                  )}
                 </div>
                 <p className="text-sm sm:text-base font-semibold text-foreground">{sellingAsset}</p>
+                {sellingMeta.domain && (
+                  <p className="text-xs text-muted-foreground">{sellingMeta.domain}</p>
+                )}
               </button>
 
               {/* Swap Button */}
@@ -332,10 +379,17 @@ export default function ExchangePage() {
                 onClick={() => setTokenModal('buying')}
                 className="flex flex-col items-center gap-2 hover:opacity-80 transition-opacity"
               >
-                <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-accent/40 to-accent/20 flex items-center justify-center border border-accent/50 hover:border-accent/80 transition-colors">
-                  <p className="text-lg sm:text-xl font-bold text-accent">{buyingAsset.charAt(0).toUpperCase()}</p>
+                <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-accent/40 to-accent/20 flex items-center justify-center border border-accent/50 hover:border-accent/80 transition-colors overflow-hidden">
+                  {buyingMeta.image ? (
+                    <img src={buyingMeta.image} alt={buyingAsset} className="w-full h-full object-cover" onError={(e) => e.currentTarget.style.display = 'none'} />
+                  ) : (
+                    <p className="text-lg sm:text-xl font-bold text-accent">{buyingAsset.charAt(0).toUpperCase()}</p>
+                  )}
                 </div>
                 <p className="text-sm sm:text-base font-semibold text-foreground">{buyingAsset}</p>
+                {buyingMeta.domain && (
+                  <p className="text-xs text-muted-foreground">{buyingMeta.domain}</p>
+                )}
               </button>
             </div>
 
