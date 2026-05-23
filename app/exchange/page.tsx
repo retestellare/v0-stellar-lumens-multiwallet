@@ -175,38 +175,44 @@ export default function ExchangePage() {
             }}
           />
 
-          {/* Token Pair Selector - Compact Row */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 md:gap-6">
-            {/* Selling Token Button */}
-            <button
-              onClick={() => setTokenModal('selling')}
-              className="px-6 py-3 bg-gradient-to-br from-primary/20 to-secondary/20 border border-primary/40 rounded-lg hover:border-primary/60 hover:from-primary/30 hover:to-secondary/30 transition-all group min-w-32"
-            >
-              <p className="text-xs text-muted-foreground mb-1">Selling</p>
-              <p className="text-2xl font-bold text-primary group-hover:text-accent transition-colors">{sellingAsset}</p>
-            </button>
+          {/* Token Pair Selector - Integrated Oval Design */}
+          <div className="flex flex-col items-center gap-4">
+            <div className="glow-border rounded-full px-8 py-6 sm:px-12 sm:py-8 flex items-center justify-center gap-4 sm:gap-8 border-2">
+              {/* Selling Token */}
+              <button
+                onClick={() => setTokenModal('selling')}
+                className="flex flex-col items-center gap-2 hover:opacity-80 transition-opacity"
+              >
+                <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-primary/40 to-primary/20 flex items-center justify-center border border-primary/50 hover:border-primary/80 transition-colors">
+                  <p className="text-lg sm:text-xl font-bold text-primary">{sellingAsset.charAt(0).toUpperCase()}</p>
+                </div>
+                <p className="text-sm sm:text-base font-semibold text-foreground">{sellingAsset}</p>
+              </button>
 
-            {/* Swap Button */}
-            <button
-              onClick={handleSwapPair}
-              className="p-3 rounded-full border-2 border-primary/40 hover:border-primary/60 hover:bg-primary/20 transition-all"
-            >
-              <ArrowRightLeft className="w-6 h-6 text-primary" />
-            </button>
+              {/* Swap Button */}
+              <button
+                onClick={handleSwapPair}
+                className="p-2 sm:p-3 rounded-full border border-primary/40 hover:border-primary/60 hover:bg-primary/20 transition-all"
+              >
+                <ArrowRightLeft className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
+              </button>
 
-            {/* Buying Token Button */}
-            <button
-              onClick={() => setTokenModal('buying')}
-              className="px-6 py-3 bg-gradient-to-br from-accent/20 to-primary/20 border border-accent/40 rounded-lg hover:border-accent/60 hover:from-accent/30 hover:to-primary/30 transition-all group min-w-32"
-            >
-              <p className="text-xs text-muted-foreground mb-1">Buying</p>
-              <p className="text-2xl font-bold text-accent group-hover:text-primary transition-colors">{buyingAsset}</p>
-            </button>
+              {/* Buying Token */}
+              <button
+                onClick={() => setTokenModal('buying')}
+                className="flex flex-col items-center gap-2 hover:opacity-80 transition-opacity"
+              >
+                <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-accent/40 to-accent/20 flex items-center justify-center border border-accent/50 hover:border-accent/80 transition-colors">
+                  <p className="text-lg sm:text-xl font-bold text-accent">{buyingAsset.charAt(0).toUpperCase()}</p>
+                </div>
+                <p className="text-sm sm:text-base font-semibold text-foreground">{buyingAsset}</p>
+              </button>
+            </div>
 
-            {/* Spread Display */}
-            <div className="px-6 py-3 glow-border rounded-lg text-center">
+            {/* Spread Display - Below Selector */}
+            <div className="glow-border p-3 sm:p-4 rounded-lg text-center">
               <p className="text-xs text-muted-foreground mb-1">Spread</p>
-              <p className="text-xl font-bold text-primary">{spread.toFixed(3)}%</p>
+              <p className="text-lg sm:text-xl font-bold text-primary">{spread.toFixed(3)}%</p>
             </div>
           </div>
 
