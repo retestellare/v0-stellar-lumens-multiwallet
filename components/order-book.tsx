@@ -11,6 +11,8 @@ interface OrderBookProps {
   spread: number;
   bestBid: string | null;
   bestAsk: string | null;
+  onBidClick?: (price: string, amount: string) => void;
+  onAskClick?: (price: string, amount: string) => void;
 }
 
 export function OrderBook({
@@ -21,7 +23,9 @@ export function OrderBook({
   buyingAsset,
   spread,
   bestBid,
-  bestAsk
+  bestAsk,
+  onBidClick,
+  onAskClick
 }: OrderBookProps) {
   // Merge and sort orders for interleaved display
   const maxRows = Math.max(bids.length, asks.length);
@@ -69,7 +73,12 @@ export function OrderBook({
               {mergedOrders.map((row, idx) => (
                 <div
                   key={idx}
-                  className="grid grid-cols-4 gap-0 px-3 py-2 text-xs border-b border-border/30 hover:bg-background/50 transition-colors"
+                  className="grid grid-cols-4 gap-0 px-3 py-2 text-xs border-b border-border/30 hover:bg-background/50 transition-colors cursor-pointer"
+                  onClick={() => {
+                    if (row.bid && onBidClick) {
+                      onBidClick(row.bid.price, row.bid.amount);
+                    }
+                  }}
                 >
                   {/* Bid Amount (Left) */}
                   <div className="text-right pr-2 font-mono">
@@ -90,7 +99,15 @@ export function OrderBook({
                   </div>
 
                   {/* Ask Price (Center Right) */}
-                  <div className="text-left pl-2 font-mono font-semibold">
+                  <div
+                    className="text-left pl-2 font-mono font-semibold"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (row.ask && onAskClick) {
+                        onAskClick(row.ask.price, row.ask.amount);
+                      }
+                    }}
+                  >
                     {row.ask ? (
                       <span className="text-destructive">{parseFloat(row.ask.price).toFixed(4)}</span>
                     ) : (

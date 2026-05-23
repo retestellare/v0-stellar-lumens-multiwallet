@@ -33,6 +33,12 @@ export default function ExchangePage() {
   const [sellingIssuer, setSellingIssuer] = useState('');
   const [buyingIssuer, setBuyingIssuer] = useState('GA5ZSEJYB37JRC5AVCIA5MOP4MY5KU4ERRJLKZLCC5HR52IRXLWDGQDA');
   
+  // Order form state
+  const [buyPrice, setBuyPrice] = useState('');
+  const [buyAmount, setBuyAmount] = useState('');
+  const [sellPrice, setSellPrice] = useState('');
+  const [sellAmount, setSellAmount] = useState('');
+  
   // Order book state
   const [orderBook, setOrderBook] = useState<OrderBookData>({ bids: [], asks: [] });
   const [loading, setLoading] = useState(false);
@@ -115,6 +121,16 @@ export default function ExchangePage() {
 
   const handleCancelOrder = (id: string) => {
     setMyOrders(myOrders.filter(o => o.id !== id));
+  };
+
+  const handleSelectBidOrder = (price: string, amount: string) => {
+    setBuyPrice(price);
+    setBuyAmount(amount);
+  };
+
+  const handleSelectAskOrder = (price: string, amount: string) => {
+    setSellPrice(price);
+    setSellAmount(amount);
   };
 
   const tabs = [
@@ -202,6 +218,14 @@ export default function ExchangePage() {
             buyingBalance={buyingBalance}
             bestBid={bestBid}
             bestAsk={bestAsk}
+            buyPrice={buyPrice}
+            buyAmount={buyAmount}
+            sellPrice={sellPrice}
+            sellAmount={sellAmount}
+            onBuyPriceChange={setBuyPrice}
+            onBuyAmountChange={setBuyAmount}
+            onSellPriceChange={setSellPrice}
+            onSellAmountChange={setSellAmount}
             onBuyClick={handleBuyClick}
             onSellClick={handleSellClick}
           />
@@ -219,6 +243,8 @@ export default function ExchangePage() {
                 spread={spread}
                 bestBid={bestBid}
                 bestAsk={bestAsk}
+                onBidClick={handleSelectBidOrder}
+                onAskClick={handleSelectAskOrder}
               />
             </div>
 

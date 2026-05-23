@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -11,6 +10,14 @@ interface CompactOrderFormProps {
   buyingBalance: string;
   bestBid?: string;
   bestAsk?: string;
+  buyPrice: string;
+  buyAmount: string;
+  sellPrice: string;
+  sellAmount: string;
+  onBuyPriceChange: (value: string) => void;
+  onBuyAmountChange: (value: string) => void;
+  onSellPriceChange: (value: string) => void;
+  onSellAmountChange: (value: string) => void;
   onBuyClick: (price: string, amount: string) => void;
   onSellClick: (price: string, amount: string) => void;
 }
@@ -22,21 +29,22 @@ export function CompactOrderForm({
   buyingBalance,
   bestBid,
   bestAsk,
+  buyPrice,
+  buyAmount,
+  sellPrice,
+  sellAmount,
+  onBuyPriceChange,
+  onBuyAmountChange,
+  onSellPriceChange,
+  onSellAmountChange,
   onBuyClick,
   onSellClick,
 }: CompactOrderFormProps) {
-  const [buyPrice, setBuyPrice] = useState('');
-  const [buyAmount, setBuyAmount] = useState('');
-  const [sellPrice, setSellPrice] = useState('');
-  const [sellAmount, setSellAmount] = useState('');
 
   const allocatePercentage = (percentage: number, balance: string, setValue: (v: string) => void) => {
     const amount = (parseFloat(balance) * (percentage / 100)).toFixed(4);
     setValue(amount);
   };
-
-  const buyTotal = buyPrice && buyAmount ? (parseFloat(buyPrice) * parseFloat(buyAmount)).toFixed(4) : '0.0000';
-  const sellTotal = sellPrice && sellAmount ? (parseFloat(sellPrice) * parseFloat(sellAmount)).toFixed(4) : '0.0000';
 
   return (
     <div className="grid grid-cols-2 gap-2 sm:gap-3">
@@ -54,7 +62,7 @@ export function CompactOrderForm({
             placeholder="Price"
             type="number"
             value={buyPrice}
-            onChange={(e) => setBuyPrice(e.target.value)}
+            onChange={(e) => onBuyPriceChange(e.target.value)}
             className="bg-input border-border text-foreground h-7 text-xs"
           />
         </div>
@@ -68,7 +76,7 @@ export function CompactOrderForm({
             placeholder="Amt"
             type="number"
             value={buyAmount}
-            onChange={(e) => setBuyAmount(e.target.value)}
+            onChange={(e) => onBuyAmountChange(e.target.value)}
             className="bg-input border-border text-foreground h-7 text-xs"
           />
         </div>
@@ -77,7 +85,7 @@ export function CompactOrderForm({
           {[10, 50, 100].map((pct) => (
             <button
               key={pct}
-              onClick={() => allocatePercentage(pct, buyingBalance, setBuyAmount)}
+              onClick={() => allocatePercentage(pct, buyingBalance, onBuyAmountChange)}
               className="flex-1 px-1 py-0.5 text-xs rounded border border-primary/50 text-primary hover:bg-primary/10 transition-colors"
             >
               {pct}%
@@ -108,7 +116,7 @@ export function CompactOrderForm({
             placeholder="Price"
             type="number"
             value={sellPrice}
-            onChange={(e) => setSellPrice(e.target.value)}
+            onChange={(e) => onSellPriceChange(e.target.value)}
             className="bg-input border-border text-foreground h-7 text-xs"
           />
         </div>
@@ -122,7 +130,7 @@ export function CompactOrderForm({
             placeholder="Amt"
             type="number"
             value={sellAmount}
-            onChange={(e) => setSellAmount(e.target.value)}
+            onChange={(e) => onSellAmountChange(e.target.value)}
             className="bg-input border-border text-foreground h-7 text-xs"
           />
         </div>
@@ -131,7 +139,7 @@ export function CompactOrderForm({
           {[10, 50, 100].map((pct) => (
             <button
               key={pct}
-              onClick={() => allocatePercentage(pct, sellingBalance, setSellAmount)}
+              onClick={() => allocatePercentage(pct, sellingBalance, onSellAmountChange)}
               className="flex-1 px-1 py-0.5 text-xs rounded border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors"
             >
               {pct}%
