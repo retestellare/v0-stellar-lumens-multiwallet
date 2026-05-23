@@ -31,7 +31,7 @@ export default function ExchangePage() {
   const [sellingAsset, setSellingAsset] = useState('XLM');
   const [buyingAsset, setBuyingAsset] = useState('USDC');
   const [sellingIssuer, setSellingIssuer] = useState('');
-  const [buyingIssuer, setBuyingIssuer] = useState('GA5ZSEJYB37JRC5AVCIA5MOP4MY5KU4ERRJLKZLCC5HR52IRXLWDGQDA');
+  const [buyingIssuer, setBuyingIssuer] = useState('GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN');
   
   // Order form state
   const [buyPrice, setBuyPrice] = useState('');
@@ -64,7 +64,7 @@ export default function ExchangePage() {
         setSellingAsset(selling || 'XLM');
         setSellingIssuer(sIssuer || '');
         setBuyingAsset(buying || 'USDC');
-        setBuyingIssuer(bIssuer || 'GA5ZSEJYB37JRC5AVCIA5MOP4MY5KU4ERRJLKZLCC5HR52IRXLWDGQDA');
+        setBuyingIssuer(bIssuer || 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN');
       }
     } catch (error) {
       console.error('[v0] Error loading last pair:', error);

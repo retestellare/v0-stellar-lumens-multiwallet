@@ -5,7 +5,18 @@
  * Avoids SDK overhead and provides reliable, fast access to mainnet data
  */
 
-const HORIZON_URL = 'https://public-horizon.stellar.org';
+const HORIZON_URL = 'https://horizon.stellar.org';
+
+/**
+ * Determine asset type based on code length
+ * native = XLM
+ * credit_alphanum4 = 1-4 character codes (USDC, EURC, ETH, BTC, etc.)
+ * credit_alphanum12 = 5-12 character codes
+ */
+function getAssetType(code: string): string {
+  if (code === 'XLM' || code === 'native' || !code) return 'native';
+  return code.length <= 4 ? 'credit_alphanum4' : 'credit_alphanum12';
+}
 
 /**
  * Fetch with retry logic and timeout
@@ -135,10 +146,11 @@ export async function getOrderBook(
     const params = new URLSearchParams({ limit: String(limit) });
 
     // Selling asset parameters
-    if (sellingAssetCode === 'XLM') {
+    const sellingType = getAssetType(sellingAssetCode);
+    if (sellingType === 'native') {
       params.append('selling_asset_type', 'native');
     } else {
-      params.append('selling_asset_type', 'credit_alphanum12');
+      params.append('selling_asset_type', sellingType);
       params.append('selling_asset_code', sellingAssetCode);
       if (sellingAssetIssuer) {
         params.append('selling_asset_issuer', sellingAssetIssuer);
@@ -146,10 +158,11 @@ export async function getOrderBook(
     }
 
     // Buying asset parameters
-    if (buyingAssetCode === 'XLM') {
+    const buyingType = getAssetType(buyingAssetCode);
+    if (buyingType === 'native') {
       params.append('buying_asset_type', 'native');
     } else {
-      params.append('buying_asset_type', 'credit_alphanum12');
+      params.append('buying_asset_type', buyingType);
       params.append('buying_asset_code', buyingAssetCode);
       if (buyingAssetIssuer) {
         params.append('buying_asset_issuer', buyingAssetIssuer);

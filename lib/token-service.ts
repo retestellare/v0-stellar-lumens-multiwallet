@@ -1,12 +1,12 @@
 /**
  * Token Data Service
- * Fetches and caches comprehensive token metadata from Stellar Expert and CoinGecko
+ * Fetches and caches comprehensive token metadata from Stellar Expert and Horizon
  */
 
 import { TokenMetadata, StellarExpertToken, CoinGeckoToken } from '@/types/token';
 
-const STELLAR_EXPERT_API = 'https://api.stellar.expert/v2/mainnet/assets';
-const COINGECKO_API = 'https://api.coingecko.com/api/v3';
+const STELLAR_EXPERT_API = 'https://api.stellar.expert/explorer/public/asset';
+const HORIZON_URL = 'https://horizon.stellar.org';
 const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 const IMAGE_CACHE_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -55,14 +55,39 @@ function cacheToken(token: TokenMetadata): void {
  */
 async function fetchStellarExpertTokens(limit = 100): Promise<StellarExpertToken[]> {
   try {
-    const response = await fetch(`${STELLAR_EXPERT_API}?sort=trades_7d&order=desc&limit=${limit}`);
-    if (!response.ok) {
-      throw new Error(`Stellar Expert API error: ${response.status}`);
+    // Try Stellar Expert first
+    const response = await fetch(`${STELLAR_EXPERT_API}?sort=rating&order=desc&limit=${limit}`, {
+      headers: { 'Accept': 'application/json' },
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      const records = data._embedded?.records || data.records || [];
+      console.log('[v0] Stellar Expert returned', records.length, 'tokens');
+      return records;
     }
-    const data = await response.json();
-    return data._embedded?.records || [];
+    
+    // Fallback to Horizon assets endpoint
+    console.log('[v0] Stellar Expert failed, falling back to Horizon');
+    const horizonResponse = await fetch(`${HORIZON_URL}/assets?limit=${limit}&order=desc`);
+    if (!horizonResponse.ok) {
+      throw new Error(`Horizon API error: ${horizonResponse.status}`);
+    }
+    
+    const horizonData = await horizonResponse.json();
+    const records = horizonData._embedded?.records || [];
+    
+    // Map Horizon response to StellarExpertToken format
+    return records.map((r: any) => ({
+      code: r.asset_code,
+      issuer: r.asset_issuer,
+      name: r.asset_code,
+      domain: r._links?.toml?.href?.replace('/.well-known/stellar.toml', '').replace('https://', ''),
+      verified: r.flags?.auth_required === false,
+      num_accounts: r.num_accounts,
+    }));
   } catch (error) {
-    console.error('[v0] Error fetching Stellar Expert tokens:', error);
+    console.error('[v0] Error fetching tokens:', error);
     return [];
   }
 }
@@ -219,28 +244,41 @@ export async function getMostTradedTokens(limit = 50): Promise<TokenMetadata[]> 
 }
 
 /**
- * Get curated token picks
+ * Get curated token picks - verified mainnet tokens
  */
 export const getTokenPicks = (): TokenMetadata[] => [
   {
     code: 'USDC',
-    issuer: 'GA5ZSEJYB37JRC5AVCIA5MOP4MY5KU4ERRJLKZLCC5HR52IRXLWDGQDA',
-    name: 'USD Coin',
+    issuer: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
+    name: 'USD Coin (Circle)',
+    domain: 'circle.com',
+    image: 'https://www.centre.io/images/usdc/usdc-icon-86074d9d49.png',
     verified: true,
     source: 'stellar-expert',
   },
   {
     code: 'EURC',
-    issuer: 'CHANGETRUSTLINEKEY',
-    name: 'Euro Coin',
+    issuer: 'GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2',
+    name: 'Euro Coin (Circle)',
+    domain: 'circle.com',
+    image: 'https://www.circle.com/hubfs/Brand/EURC/EURC-icon.png',
     verified: true,
     source: 'stellar-expert',
   },
   {
-    code: 'SRT',
-    issuer: 'GBUQWP3BOUZX34ULNQG23RQ6F4YUSXHTQSXUSMIQSTBE2EURIDVXL6B',
-    name: 'Stellar Rewards Token',
-    verified: false,
+    code: 'yXLM',
+    issuer: 'GARDNV3Q7YGT4AKSDF25LT32YSCCW4EV22Y2TV3I2PU2MMXJTEDL5T55',
+    name: 'Ultra Stellar Yield XLM',
+    domain: 'ultrastellar.com',
+    verified: true,
+    source: 'stellar-expert',
+  },
+  {
+    code: 'AQUA',
+    issuer: 'GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA',
+    name: 'Aquarius',
+    domain: 'aqua.network',
+    verified: true,
     source: 'stellar-expert',
   },
 ];

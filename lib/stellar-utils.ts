@@ -2,7 +2,18 @@ import { Keypair, Networks, TransactionBuilder, BASE_FEE, Asset, Operation } fro
 import nacl from 'tweetnacl';
 
 export const HORIZON_URL = 'https://horizon.stellar.org';
-export const NETWORK_PASSPHRASE = Networks.PUBLIC_NETWORK_PASSPHRASE;
+export const NETWORK_PASSPHRASE = Networks.PUBLIC;
+
+/**
+ * Determine asset type based on code length
+ * native = XLM
+ * credit_alphanum4 = 1-4 character codes
+ * credit_alphanum12 = 5-12 character codes
+ */
+function getAssetType(code: string): string {
+  if (code === 'XLM' || code === 'native') return 'native';
+  return code.length <= 4 ? 'credit_alphanum4' : 'credit_alphanum12';
+}
 
 // Simple uint8 to string conversion
 const uint8ToString = (arr: Uint8Array): string => {
@@ -156,22 +167,24 @@ export const getOrderBook = async (
   try {
     const params = new URLSearchParams();
     
-    // Determine selling asset type
-    if (sellingAssetCode === 'XLM' || !sellingAssetCode) {
+    // Determine selling asset type based on code length
+    const sellingType = getAssetType(sellingAssetCode);
+    if (sellingType === 'native') {
       params.append('selling_asset_type', 'native');
     } else {
-      params.append('selling_asset_type', 'credit_alphanum12');
+      params.append('selling_asset_type', sellingType);
       params.append('selling_asset_code', sellingAssetCode);
       if (sellingAssetIssuer) {
         params.append('selling_asset_issuer', sellingAssetIssuer);
       }
     }
     
-    // Determine buying asset type
-    if (buyingAssetCode === 'XLM' || !buyingAssetCode) {
+    // Determine buying asset type based on code length
+    const buyingType = getAssetType(buyingAssetCode);
+    if (buyingType === 'native') {
       params.append('buying_asset_type', 'native');
     } else {
-      params.append('buying_asset_type', 'credit_alphanum12');
+      params.append('buying_asset_type', buyingType);
       params.append('buying_asset_code', buyingAssetCode);
       if (buyingAssetIssuer) {
         params.append('buying_asset_issuer', buyingAssetIssuer);
@@ -184,8 +197,8 @@ export const getOrderBook = async (
     const response = await fetch(url);
     
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error('[v0] Order book API error:', errorData);
+      const errorData = await response.json().catch(() => ({}));
+      console.error('[v0] Order book API error:', response.status, errorData);
       return { bids: [], asks: [] };
     }
     
