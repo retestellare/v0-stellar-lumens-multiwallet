@@ -227,6 +227,17 @@ export const searchAssets = async (code?: string, issuer?: string, limit = 10) =
   }
 };
 
+// Common token metadata cache for fast lookups
+const KNOWN_TOKENS: Record<string, { domain: string; image: string; name: string }> = {
+  'XLM_': { domain: 'stellar.org', image: 'https://assets.coingecko.com/coins/images/100/small/Stellar_symbol_black_RGB.png', name: 'Stellar Lumens' },
+  'USDC_GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN': { domain: 'circle.com', image: 'https://assets.coingecko.com/coins/images/6319/small/usdc.png', name: 'USD Coin' },
+  'EURC_GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2': { domain: 'circle.com', image: 'https://assets.coingecko.com/coins/images/26045/small/euro-coin.png', name: 'Euro Coin' },
+  'yXLM_GARDNV3Q7YGT4AKSDF25LT32YSCCW4EV22Y2TV3I2PU2MMXJTEDL5T55': { domain: 'ultrastellar.com', image: 'https://ultrastellar.com/static/images/icons/yXLM.png', name: 'Yield XLM' },
+  'AQUA_GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA': { domain: 'aqua.network', image: 'https://aqua.network/assets/img/aqua-logo.png', name: 'Aquarius' },
+  'BTC_GDPJALI4AZKUU2W426U5WKMAT6CN3AJRPIIRYR2YM54TL2GDWO5O2MZM': { domain: 'ultrastellar.com', image: 'https://assets.coingecko.com/coins/images/1/small/bitcoin.png', name: 'Bitcoin' },
+  'ETH_GDPJALI4AZKUU2W426U5WKMAT6CN3AJRPIIRYR2YM54TL2GDWO5O2MZM': { domain: 'ultrastellar.com', image: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png', name: 'Ethereum' },
+};
+
 /**
  * Fetch token metadata from stellar.toml file
  * Returns domain, image, and name if available
@@ -235,8 +246,14 @@ export const fetchTokenMetadataFromToml = async (
   code: string,
   issuer: string
 ): Promise<{ domain?: string; image?: string; name?: string; desc?: string }> => {
+  // Check known tokens cache first
+  const cacheKey = `${code}_${issuer}`;
+  if (KNOWN_TOKENS[cacheKey]) {
+    return KNOWN_TOKENS[cacheKey];
+  }
+  
   if (!issuer || code === 'XLM') {
-    return { domain: 'stellar.org', name: 'Stellar Lumens', image: 'https://stellar.org/favicon.ico' };
+    return KNOWN_TOKENS['XLM_'];
   }
   
   try {

@@ -235,7 +235,7 @@ export function TokenSelectorModal({
 
         {/* Tabs - only show when not searching */}
         {!showingSearch && (
-          <div className="flex gap-2 p-4 bg-background/50 border-b border-border overflow-x-auto">
+          <div className="flex gap-2 p-4 bg-background/50 border-b border-border">
             {[
               { id: 'wallet', label: 'My Assets' },
               { id: 'picks', label: 'Our Picks' },
@@ -244,10 +244,10 @@ export function TokenSelectorModal({
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`px-4 py-2 rounded-lg font-medium transition-all whitespace-nowrap ${
+                className={`relative px-4 py-2 rounded-lg font-medium transition-all whitespace-nowrap z-10 ${
                   activeTab === tab.id
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-background/50 text-muted-foreground hover:text-foreground border border-border/50'
+                    ? 'bg-primary text-primary-foreground shadow-lg'
+                    : 'bg-background/80 text-muted-foreground hover:text-foreground hover:bg-background border border-border/50'
                 }`}
               >
                 {tab.label}
