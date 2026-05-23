@@ -55,7 +55,38 @@ export default function ExchangePage() {
 
   useEffect(() => {
     setMounted(true);
+    
+    // Load last selected pair from localStorage
+    try {
+      const lastPair = localStorage.getItem('lastSelectedPair');
+      if (lastPair) {
+        const { selling, sellingIssuer: sIssuer, buying, buyingIssuer: bIssuer } = JSON.parse(lastPair);
+        setSellingAsset(selling || 'XLM');
+        setSellingIssuer(sIssuer || '');
+        setBuyingAsset(buying || 'USDC');
+        setBuyingIssuer(bIssuer || 'GA5ZSEJYB37JRC5AVCIA5MOP4MY5KU4ERRJLKZLCC5HR52IRXLWDGQDA');
+      }
+    } catch (error) {
+      console.error('[v0] Error loading last pair:', error);
+    }
   }, []);
+
+  // Save pair to localStorage when it changes
+  useEffect(() => {
+    if (mounted) {
+      try {
+        const pairData = {
+          selling: sellingAsset,
+          sellingIssuer,
+          buying: buyingAsset,
+          buyingIssuer,
+        };
+        localStorage.setItem('lastSelectedPair', JSON.stringify(pairData));
+      } catch (error) {
+        console.error('[v0] Error saving pair:', error);
+      }
+    }
+  }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
 
   // Fetch order book
   useEffect(() => {
