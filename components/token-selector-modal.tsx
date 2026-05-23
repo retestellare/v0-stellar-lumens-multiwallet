@@ -12,6 +12,36 @@ import {
 
 const HORIZON_URL = 'https://horizon.stellar.org';
 
+// Known tokens cache for fast metadata lookup
+const KNOWN_TOKEN_METADATA: Record<string, { name: string; domain: string; image: string }> = {
+  'XLM_': { name: 'Stellar Lumens', domain: 'stellar.org', image: 'https://assets.coingecko.com/coins/images/100/small/Stellar_symbol_black_RGB.png' },
+  'USDC_GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN': { name: 'USD Coin', domain: 'circle.com', image: 'https://assets.coingecko.com/coins/images/6319/small/usdc.png' },
+  'EURC_GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2': { name: 'Euro Coin', domain: 'circle.com', image: 'https://assets.coingecko.com/coins/images/26045/small/euro-coin.png' },
+  'yXLM_GARDNV3Q7YGT4AKSDF25LT32YSCCW4EV22Y2TV3I2PU2MMXJTEDL5T55': { name: 'Yield XLM', domain: 'ultrastellar.com', image: 'https://ultrastellar.com/static/images/icons/yXLM.png' },
+  'AQUA_GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA': { name: 'Aquarius', domain: 'aqua.network', image: 'https://aqua.network/assets/img/aqua-logo.png' },
+  'BTC_GDPJALI4AZKUU2W426U5WKMAT6CN3AJRPIIRYR2YM54TL2GDWO5O2MZM': { name: 'Bitcoin', domain: 'ultrastellar.com', image: 'https://assets.coingecko.com/coins/images/1/small/bitcoin.png' },
+  'ETH_GDPJALI4AZKUU2W426U5WKMAT6CN3AJRPIIRYR2YM54TL2GDWO5O2MZM': { name: 'Ethereum', domain: 'ultrastellar.com', image: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png' },
+  'SHX_GDSTRSHXHGJ7ZIVRBXEYE5Q74XUVCUSEZ6GKPNAC4ZISIJEJNLBPA4FT': { name: 'Stronghold SHX', domain: 'stronghold.co', image: 'https://assets.coingecko.com/coins/images/31254/small/SHX.png' },
+  'USD_GDUKMGUGDZQK6YHYA5Z6AY2G4XDSZPSZ3SW5UN3ARVMO6QSRDWP5YLEX': { name: 'AnchorUSD', domain: 'anchorusd.com', image: 'https://assets.coingecko.com/coins/images/325/small/Tether.png' },
+  'VELO_GDM4RQUQQUVSKQA7S6EM7XBZP3FCGH4Q7CL6TABQ7B2BEJ5ERARM2M5M': { name: 'Velo', domain: 'velo.org', image: 'https://assets.coingecko.com/coins/images/12722/small/velo.png' },
+  'RIO_GBNLJIYH34UWO5YZFA3A3HD3N76R6DOI33N4JONUOHEEYZYCAYTEJ5AK': { name: 'Realio', domain: 'realio.fund', image: 'https://assets.coingecko.com/coins/images/12206/small/realio.png' },
+};
+
+// Enrich token with metadata from cache or picks
+function enrichTokenWithMetadata(code: string, issuer: string | undefined): { name?: string; domain?: string; image?: string; verified?: boolean } {
+  const key = `${code}_${issuer || ''}`;
+  if (KNOWN_TOKEN_METADATA[key]) {
+    return { ...KNOWN_TOKEN_METADATA[key], verified: true };
+  }
+  // Check token picks for metadata
+  const picks = getTokenPicks();
+  const match = picks.find(p => p.code === code && p.issuer === (issuer || ''));
+  if (match) {
+    return { name: match.name, domain: match.domain, image: match.image, verified: match.verified };
+  }
+  return {};
+}
+
 interface Token {
   code: string;
   issuer?: string;
@@ -79,14 +109,23 @@ export function TokenSelectorModal({
   const [searchResults, setSearchResults] = useState<Token[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Memoize wallet tokens
+  // Memoize wallet tokens with enriched metadata
   const walletTokens = useMemo(
     () =>
-      walletBalances.map((b) => ({
-        code: b.asset_code || 'XLM',
-        issuer: b.asset_issuer,
-        source: 'wallet' as const,
-      })),
+      walletBalances.map((b) => {
+        const code = b.asset_code || 'XLM';
+        const issuer = b.asset_issuer;
+        const meta = enrichTokenWithMetadata(code, issuer);
+        return {
+          code,
+          issuer,
+          name: meta.name,
+          domain: meta.domain,
+          image: meta.image,
+          verified: meta.verified,
+          source: 'wallet' as const,
+        };
+      }),
     [walletBalances]
   );
 
@@ -329,9 +368,9 @@ export function TokenSelectorModal({
                       </p>
                     )}
 
-                    {/* Issuer */}
-                    <p className="text-xs text-muted-foreground text-center truncate w-full">
-                      {token.issuer ? token.issuer.substring(0, 12) + '...' : 'Native'}
+                    {/* Domain or Issuer - prefer domain over issuer address */}
+                    <p className="text-xs text-muted-foreground/70 text-center truncate w-full">
+                      {token.domain || (token.issuer ? token.issuer.substring(0, 12) + '...' : 'Native')}
                     </p>
                   </button>
                 );
