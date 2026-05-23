@@ -154,17 +154,46 @@ export const getOrderBook = async (
   buyingAssetIssuer: string
 ) => {
   try {
-    const params = new URLSearchParams({
-      selling_asset_code: sellingAssetCode,
-      selling_asset_issuer: sellingAssetIssuer,
-      buying_asset_code: buyingAssetCode,
-      buying_asset_issuer: buyingAssetIssuer,
-    });
+    const params = new URLSearchParams();
     
-    const response = await fetch(`${HORIZON_URL}/order_book?${params}`);
-    if (!response.ok) return { bids: [], asks: [] };
-    return response.json();
-  } catch {
+    // Determine selling asset type
+    if (sellingAssetCode === 'XLM' || !sellingAssetCode) {
+      params.append('selling_asset_type', 'native');
+    } else {
+      params.append('selling_asset_type', 'credit_alphanum12');
+      params.append('selling_asset_code', sellingAssetCode);
+      if (sellingAssetIssuer) {
+        params.append('selling_asset_issuer', sellingAssetIssuer);
+      }
+    }
+    
+    // Determine buying asset type
+    if (buyingAssetCode === 'XLM' || !buyingAssetCode) {
+      params.append('buying_asset_type', 'native');
+    } else {
+      params.append('buying_asset_type', 'credit_alphanum12');
+      params.append('buying_asset_code', buyingAssetCode);
+      if (buyingAssetIssuer) {
+        params.append('buying_asset_issuer', buyingAssetIssuer);
+      }
+    }
+    
+    const url = `${HORIZON_URL}/order_book?${params}`;
+    console.log('[v0] Fetching order book from:', url);
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('[v0] Order book API error:', errorData);
+      return { bids: [], asks: [] };
+    }
+    
+    const data = await response.json();
+    console.log('[v0] Order book fetched:', { bids: data.bids?.length || 0, asks: data.asks?.length || 0 });
+    return data;
+  } catch (error) {
+    console.error('[v0] Error fetching order book:', error);
     return { bids: [], asks: [] };
   }
 };
