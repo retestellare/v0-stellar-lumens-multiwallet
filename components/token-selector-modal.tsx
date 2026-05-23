@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Search, X, Star } from 'lucide-react';
@@ -47,11 +47,16 @@ export function TokenSelectorModal({
   const [loading, setLoading] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
-  const walletTokens: Token[] = walletBalances.map((b) => ({
-    code: b.asset_code || 'XLM',
-    issuer: b.asset_issuer,
-    source: 'wallet',
-  }));
+  // Memoize wallet tokens to prevent recreating on every render
+  const walletTokens = useMemo(
+    () =>
+      walletBalances.map((b) => ({
+        code: b.asset_code || 'XLM',
+        issuer: b.asset_issuer,
+        source: 'wallet' as const,
+      })),
+    [walletBalances]
+  );
 
   // Update favorites set when modal opens
   useEffect(() => {
@@ -80,7 +85,7 @@ export function TokenSelectorModal({
             issuer: t.issuer,
             name: t.name,
             verified: t.verified,
-            source: 'picks',
+            source: 'picks' as const,
           }));
           if (searchQuery) {
             tokens = tokens.filter((t) => t.code.includes(searchQuery.toUpperCase()));
@@ -93,7 +98,7 @@ export function TokenSelectorModal({
             name: t.name,
             image: t.image,
             verified: t.verified,
-            source: 'favorites',
+            source: 'favorites' as const,
           }));
           if (searchQuery) {
             tokens = tokens.filter((t) => t.code.includes(searchQuery.toUpperCase()));
@@ -107,22 +112,24 @@ export function TokenSelectorModal({
               name: t.name,
               image: t.image,
               verified: t.verified,
-              source: 'all',
+              source: 'all' as const,
             }));
           } else {
-            // Load most traded tokens
+            console.log('[v0] Fetching most traded tokens');
             const traded = await getMostTradedTokens(50);
+            console.log('[v0] Got traded tokens:', traded.length);
             tokens = traded.map((t) => ({
               code: t.code,
               issuer: t.issuer,
               name: t.name,
               image: t.image,
               verified: t.verified,
-              source: 'all',
+              source: 'all' as const,
             }));
           }
         }
 
+        console.log('[v0] Setting display tokens:', tokens.length);
         setDisplayTokens(tokens);
       } catch (error) {
         console.error('[v0] Error loading tokens:', error);
@@ -142,7 +149,7 @@ export function TokenSelectorModal({
 
   const handleToggleFavorite = (e: React.MouseEvent, token: Token) => {
     e.stopPropagation();
-    
+
     const metadata: TokenMetadata = {
       code: token.code,
       issuer: token.issuer || '',
@@ -154,7 +161,7 @@ export function TokenSelectorModal({
 
     const isFav = toggleFavoriteToken(metadata);
     const key = `${token.code}_${token.issuer}`;
-    
+
     setFavorites((prev) => {
       const updated = new Set(prev);
       if (isFav) {
@@ -306,4 +313,3 @@ export function TokenSelectorModal({
     </div>
   );
 }
-
