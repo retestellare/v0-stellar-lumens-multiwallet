@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { useWallet } from '@/lib/wallet-context';
 import { Plus, Send, LogIn, ArrowRightLeft, Briefcase } from 'lucide-react';
 import Link from 'next/link';
+import { AssetItem } from '@/components/asset-item';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -109,21 +110,12 @@ export default function DashboardPage() {
                       <p className="text-xs text-muted-foreground text-center py-4">No assets yet. Fund your wallet to get started.</p>
                     ) : (
                       activeWallet.balances.map((balance: any, idx: number) => (
-                        <div key={idx} className="flex items-center justify-between p-2 bg-background/30 rounded border border-border/50">
-                          <div className="flex-1">
-                            <p className="text-xs font-medium text-foreground">
-                              {balance.asset_code || 'XLM'}
-                            </p>
-                            {balance.asset_issuer && (
-                              <p className="text-xs text-muted-foreground truncate">
-                                {balance.asset_issuer.substring(0, 12)}...
-                              </p>
-                            )}
-                          </div>
-                          <p className="text-sm font-semibold text-primary">
-                            {parseFloat(balance.balance).toFixed(4)}
-                          </p>
-                        </div>
+                        <AssetItem
+                          key={idx}
+                          code={balance.asset_code || 'XLM'}
+                          issuer={balance.asset_issuer || ''}
+                          balance={balance.balance}
+                        />
                       ))
                     )}
                   </div>
