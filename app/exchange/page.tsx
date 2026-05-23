@@ -2,16 +2,16 @@
 
 import { Header } from '@/components/header';
 import { useWallet } from '@/lib/wallet-context';
+import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { getOrderBook } from '@/lib/stellar-utils';
+import { getOrderBook, searchAssets } from '@/lib/stellar-utils';
 import { TradingPairHeader } from '@/components/trading-pair-header';
+import { OrderForm } from '@/components/order-form';
 import { OrderBook } from '@/components/order-book';
 import { TradeHistory } from '@/components/trade-history';
 import { MyOrders } from '@/components/my-orders';
-import { TokenSelectorModal } from '@/components/token-selector-modal';
-import { CompactOrderForm } from '@/components/compact-order-form';
 import { useState, useEffect } from 'react';
-import { ArrowLeft, TrendingUp, ArrowRightLeft } from 'lucide-react';
+import { ArrowLeft, Search, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
 
 interface OrderBookData {
@@ -19,8 +19,7 @@ interface OrderBookData {
   asks: Array<{ price: string; amount: string }>;
 }
 
-type TabType = 'form' | 'history' | 'my-orders' | 'charts';
-type TokenModalType = 'selling' | 'buying' | null;
+type TabType = 'markets' | 'form' | 'history' | 'my-orders' | 'charts';
 
 export default function ExchangePage() {
   const { wallets, activeWalletId } = useWallet();
@@ -36,12 +35,11 @@ export default function ExchangePage() {
   // Order book state
   const [orderBook, setOrderBook] = useState<OrderBookData>({ bids: [], asks: [] });
   const [loading, setLoading] = useState(false);
-  
-  // Token selector modal
-  const [tokenModal, setTokenModal] = useState<TokenModalType>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
   
   // Mock data for trades and orders
-  const [trades] = useState<any[]>([
+  const [trades, setTrades] = useState<any[]>([
     { id: '1', price: '0.1452265', amount: '1.5000000', timestamp: new Date().toISOString(), direction: 'buy' },
     { id: '2', price: '0.1452265', amount: '0.1223806', timestamp: new Date().toISOString(), direction: 'sell' },
   ]);
@@ -71,6 +69,24 @@ export default function ExchangePage() {
     }
   }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
 
+  // Search assets
+  useEffect(() => {
+    const search = async () => {
+      if (searchQuery.length < 2) {
+        setSearchResults([]);
+        return;
+      }
+      try {
+        const results = await searchAssets(searchQuery.toUpperCase(), undefined, 10);
+        setSearchResults(results);
+      } catch (error) {
+        console.error('[v0] Error searching assets:', error);
+      }
+    };
+
+    search();
+  }, [searchQuery]);
+
   if (!mounted) return null;
 
   const activeWallet = wallets.find(w => w.id === activeWalletId);
@@ -94,23 +110,14 @@ export default function ExchangePage() {
     setBuyingIssuer(tempIssuer);
   };
 
-  const handleTokenSelect = (token: any) => {
-    if (tokenModal === 'selling') {
-      setSellingAsset(token.code);
-      setSellingIssuer(token.issuer || '');
-    } else if (tokenModal === 'buying') {
-      setBuyingAsset(token.code);
-      setBuyingIssuer(token.issuer || '');
-    }
-    setTokenModal(null);
-  };
-
   const handleBuyClick = (price: string, amount: string) => {
     console.log('[v0] Buy order:', { price, amount, asset: sellingAsset });
+    // TODO: Implement actual order submission
   };
 
   const handleSellClick = (price: string, amount: string) => {
     console.log('[v0] Sell order:', { price, amount, asset: sellingAsset });
+    // TODO: Implement actual order submission
   };
 
   const handleCancelOrder = (id: string) => {
@@ -133,13 +140,15 @@ export default function ExchangePage() {
           Back to Dashboard
         </Link>
 
-        <div className="space-y-6">
+        <div className="space-y-8">
           {/* Header */}
-          <div className="flex items-center gap-3">
-            <TrendingUp className="w-8 h-8 text-primary" />
-            <div>
-              <h1 className="text-4xl font-bold text-foreground">Stellar DEX</h1>
-              <p className="text-muted-foreground">Trade on the Stellar Decentralized Exchange</p>
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <TrendingUp className="w-8 h-8 text-primary" />
+              <div>
+                <h1 className="text-4xl font-bold text-foreground">Stellar DEX</h1>
+                <p className="text-muted-foreground">Trade on the Stellar Decentralized Exchange</p>
+              </div>
             </div>
           </div>
 
@@ -160,46 +169,9 @@ export default function ExchangePage() {
             }}
           />
 
-          {/* Pair Selector Row - Compact */}
-          <div className="glow-border p-4 rounded-lg">
-            <div className="flex flex-col md:flex-row items-center justify-center gap-4">
-              {/* Selling Token Selector */}
-              <button
-                onClick={() => setTokenModal('selling')}
-                className="flex-1 md:flex-none px-6 py-3 bg-background/50 border border-primary/30 rounded-lg hover:border-primary/50 hover:bg-primary/10 transition-colors text-center group"
-              >
-                <p className="text-xs text-muted-foreground mb-1">Selling</p>
-                <p className="text-xl font-bold text-foreground group-hover:text-primary transition-colors">{sellingAsset}</p>
-              </button>
-
-              {/* Swap Button */}
-              <button
-                onClick={handleSwapPair}
-                className="p-2 rounded-full border border-primary/30 hover:border-primary/50 hover:bg-primary/10 transition-colors"
-              >
-                <ArrowRightLeft className="w-5 h-5 text-primary" />
-              </button>
-
-              {/* Buying Token Selector */}
-              <button
-                onClick={() => setTokenModal('buying')}
-                className="flex-1 md:flex-none px-6 py-3 bg-background/50 border border-primary/30 rounded-lg hover:border-primary/50 hover:bg-primary/10 transition-colors text-center group"
-              >
-                <p className="text-xs text-muted-foreground mb-1">Buying</p>
-                <p className="text-xl font-bold text-foreground group-hover:text-primary transition-colors">{buyingAsset}</p>
-              </button>
-
-              {/* Spread Info */}
-              <div className="px-6 py-3 bg-background/50 border border-border/50 rounded-lg text-center">
-                <p className="text-xs text-muted-foreground mb-1">Spread</p>
-                <p className="text-lg font-semibold text-primary">{spread.toFixed(2)}%</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Main Content Grid */}
+          {/* Order Book Section */}
           <div className="grid lg:grid-cols-3 gap-6">
-            {/* Left: Order Book */}
+            {/* Left: Order Book (spans 2 columns) */}
             <div className="lg:col-span-2">
               <OrderBook
                 bids={orderBook.bids}
@@ -236,6 +208,89 @@ export default function ExchangePage() {
             </div>
           </div>
 
+          {/* Trading Pair Selector & Asset Search */}
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Pair Selector */}
+            <div className="glow-border p-6 rounded-lg space-y-4">
+              <h3 className="text-lg font-semibold text-foreground">Select Trading Pair</h3>
+              
+              <div className="space-y-3">
+                <div>
+                  <label className="text-sm text-muted-foreground mb-2 block">Selling Asset</label>
+                  <Input
+                    placeholder="Asset code (e.g., XLM)"
+                    value={sellingAsset}
+                    onChange={(e) => setSellingAsset(e.target.value.toUpperCase())}
+                    className="bg-input border-border text-foreground"
+                  />
+                  {sellingAsset !== 'XLM' && (
+                    <Input
+                      placeholder="Issuer address"
+                      value={sellingIssuer}
+                      onChange={(e) => setSellingIssuer(e.target.value)}
+                      className="bg-input border-border text-foreground text-xs mt-2"
+                    />
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-sm text-muted-foreground mb-2 block">Buying Asset</label>
+                  <Input
+                    placeholder="Asset code (e.g., USDC)"
+                    value={buyingAsset}
+                    onChange={(e) => setBuyingAsset(e.target.value.toUpperCase())}
+                    className="bg-input border-border text-foreground"
+                  />
+                  <Input
+                    placeholder="Issuer address"
+                    value={buyingIssuer}
+                    onChange={(e) => setBuyingIssuer(e.target.value)}
+                    className="bg-input border-border text-foreground text-xs mt-2"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Asset Search */}
+            <div className="glow-border p-6 rounded-lg space-y-4">
+              <h3 className="text-lg font-semibold text-foreground">Search Assets</h3>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by asset code or issuer..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="bg-input border-border text-foreground pl-10"
+                />
+              </div>
+              {searchResults.length > 0 && (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {searchResults.map((asset: any, idx: number) => (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        setBuyingAsset(asset.asset_code);
+                        setBuyingIssuer(asset.asset_issuer || '');
+                        setSearchQuery('');
+                      }}
+                      className="w-full text-left p-3 bg-background/30 border border-border/50 rounded hover:border-primary/50 transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium text-foreground text-sm">{asset.asset_code}</p>
+                          <p className="text-xs text-muted-foreground truncate">{asset.asset_issuer}</p>
+                        </div>
+                        {asset.num_accounts && (
+                          <p className="text-xs text-muted-foreground">{asset.num_accounts} holders</p>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Tabs Navigation */}
           <div className="flex flex-wrap gap-2 border-b border-border pb-4">
             {tabs.map((tab) => (
@@ -256,13 +311,11 @@ export default function ExchangePage() {
           {/* Tab Content */}
           <div className="min-h-96">
             {activeTab === 'form' && (
-              <CompactOrderForm
+              <OrderForm
                 sellingAsset={sellingAsset}
                 buyingAsset={buyingAsset}
                 sellingBalance={sellingBalance}
                 buyingBalance={buyingBalance}
-                bestBid={bestBid}
-                bestAsk={bestAsk}
                 onBuyClick={handleBuyClick}
                 onSellClick={handleSellClick}
               />
@@ -299,24 +352,7 @@ export default function ExchangePage() {
           </div>
         </div>
       </div>
-
-      {/* Token Selector Modals */}
-      <TokenSelectorModal
-        isOpen={tokenModal === 'selling'}
-        onClose={() => setTokenModal(null)}
-        onSelect={handleTokenSelect}
-        walletBalances={activeWallet?.balances || []}
-        type="selling"
-      />
-      <TokenSelectorModal
-        isOpen={tokenModal === 'buying'}
-        onClose={() => setTokenModal(null)}
-        onSelect={handleTokenSelect}
-        walletBalances={activeWallet?.balances || []}
-        type="buying"
-      />
     </main>
   );
 }
-
 
