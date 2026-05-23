@@ -1,4 +1,4 @@
-import { Keypair, Networks, TransactionBuilder, BASE_FEE, Asset, Operation } from '@stellar/stellar-sdk';
+import { Keypair, Networks, TransactionBuilder, BASE_FEE, Asset, Operation, Server, Account } from '@stellar/stellar-sdk';
 import nacl from 'tweetnacl';
 
 export const HORIZON_URL = 'https://horizon.stellar.org';
@@ -224,5 +224,169 @@ export const searchAssets = async (code?: string, issuer?: string, limit = 10) =
     return data.records || [];
   } catch {
     return [];
+  }
+};
+
+/**
+ * Create an Asset object from code and issuer
+ */
+export const createAsset = (code: string, issuer?: string): Asset => {
+  if (code === 'XLM' || code === 'native' || !issuer) {
+    return Asset.native();
+  }
+  return new Asset(code, issuer);
+};
+
+/**
+ * Build and submit a manage sell offer transaction (limit order on DEX)
+ * @param sourceSecret - Secret key of the account placing the order
+ * @param sellingAsset - Asset being sold
+ * @param buyingAsset - Asset being bought
+ * @param amount - Amount of selling asset
+ * @param price - Price in terms of buying asset per selling asset
+ * @returns Transaction result
+ */
+export const submitManageSellOffer = async (
+  sourceSecret: string,
+  sellingCode: string,
+  sellingIssuer: string,
+  buyingCode: string,
+  buyingIssuer: string,
+  amount: string,
+  price: string,
+  offerId: string = '0' // 0 = new offer
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    const sourceKeypair = Keypair.fromSecret(sourceSecret);
+    const publicKey = sourceKeypair.publicKey();
+    
+    // Fetch current account info for sequence number
+    const accountResponse = await fetch(`${HORIZON_URL}/accounts/${publicKey}`);
+    if (!accountResponse.ok) {
+      throw new Error('Failed to fetch account details');
+    }
+    const accountData = await accountResponse.json();
+    
+    // Create account object with sequence number
+    const account = new Account(publicKey, accountData.sequence);
+    
+    // Create asset objects
+    const selling = createAsset(sellingCode, sellingIssuer);
+    const buying = createAsset(buyingCode, buyingIssuer);
+    
+    // Build transaction with manageSellOffer operation
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.manageSellOffer({
+          selling,
+          buying,
+          amount,
+          price,
+          offerId: offerId,
+        })
+      )
+      .setTimeout(30)
+      .build();
+    
+    // Sign the transaction
+    transaction.sign(sourceKeypair);
+    
+    // Submit to Horizon
+    const response = await fetch(`${HORIZON_URL}/transactions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: `tx=${encodeURIComponent(transaction.toEnvelope().toXDR('base64'))}`,
+    });
+    
+    const result = await response.json();
+    
+    if (response.ok && result.successful) {
+      return { success: true, hash: result.hash };
+    } else {
+      const errorMessage = result.extras?.result_codes?.operations?.[0] || 
+                          result.extras?.result_codes?.transaction ||
+                          result.detail ||
+                          'Transaction failed';
+      return { success: false, error: errorMessage };
+    }
+  } catch (error: any) {
+    console.error('[v0] Error submitting offer:', error);
+    return { success: false, error: error.message || 'Unknown error' };
+  }
+};
+
+/**
+ * Build and submit a manage buy offer transaction
+ */
+export const submitManageBuyOffer = async (
+  sourceSecret: string,
+  sellingCode: string,
+  sellingIssuer: string,
+  buyingCode: string,
+  buyingIssuer: string,
+  buyAmount: string,
+  price: string,
+  offerId: string = '0'
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    const sourceKeypair = Keypair.fromSecret(sourceSecret);
+    const publicKey = sourceKeypair.publicKey();
+    
+    const accountResponse = await fetch(`${HORIZON_URL}/accounts/${publicKey}`);
+    if (!accountResponse.ok) {
+      throw new Error('Failed to fetch account details');
+    }
+    const accountData = await accountResponse.json();
+    
+    const account = new Account(publicKey, accountData.sequence);
+    
+    const selling = createAsset(sellingCode, sellingIssuer);
+    const buying = createAsset(buyingCode, buyingIssuer);
+    
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.manageBuyOffer({
+          selling,
+          buying,
+          buyAmount,
+          price,
+          offerId: offerId,
+        })
+      )
+      .setTimeout(30)
+      .build();
+    
+    transaction.sign(sourceKeypair);
+    
+    const response = await fetch(`${HORIZON_URL}/transactions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: `tx=${encodeURIComponent(transaction.toEnvelope().toXDR('base64'))}`,
+    });
+    
+    const result = await response.json();
+    
+    if (response.ok && result.successful) {
+      return { success: true, hash: result.hash };
+    } else {
+      const errorMessage = result.extras?.result_codes?.operations?.[0] || 
+                          result.extras?.result_codes?.transaction ||
+                          result.detail ||
+                          'Transaction failed';
+      return { success: false, error: errorMessage };
+    }
+  } catch (error: any) {
+    console.error('[v0] Error submitting buy offer:', error);
+    return { success: false, error: error.message || 'Unknown error' };
   }
 };

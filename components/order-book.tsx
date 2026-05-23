@@ -27,11 +27,13 @@ export function OrderBook({
   onBidClick,
   onAskClick
 }: OrderBookProps) {
-  // Merge and sort orders for interleaved display
+  // Merge orders for interleaved display
+  // Bids: highest price at top (already sorted desc from API)
+  // Asks: lowest price at top (already sorted asc from API) - DON'T reverse
   const maxRows = Math.max(bids.length, asks.length);
   const mergedOrders = Array.from({ length: maxRows }, (_, idx) => ({
     bid: bids[idx] || null,
-    ask: asks[asks.length - 1 - idx] || null, // Reverse asks for best at top
+    ask: asks[idx] || null, // Keep asks in natural order (lowest/best ask at top)
   }));
 
   return (

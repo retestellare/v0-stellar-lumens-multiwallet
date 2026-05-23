@@ -3,7 +3,7 @@
 import { Header } from '@/components/header';
 import { useWallet } from '@/lib/wallet-context';
 import { Button } from '@/components/ui/button';
-import { getOrderBook } from '@/lib/stellar-utils';
+import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret } from '@/lib/stellar-utils';
 import { TradingPairHeader } from '@/components/trading-pair-header';
 import { OrderBook } from '@/components/order-book';
 import { TradeHistory } from '@/components/trade-history';
@@ -11,7 +11,8 @@ import { MyOrders } from '@/components/my-orders';
 import { TokenSelectorModal } from '@/components/token-selector-modal';
 import { CompactOrderForm } from '@/components/compact-order-form';
 import { useState, useEffect } from 'react';
-import { ArrowLeft, TrendingUp, ArrowRightLeft } from 'lucide-react';
+import { ArrowLeft, TrendingUp, ArrowRightLeft, X, Loader2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import Link from 'next/link';
 
 interface OrderBookData {
@@ -45,6 +46,13 @@ export default function ExchangePage() {
   
   // Token selector modal
   const [tokenModal, setTokenModal] = useState<TokenModalType>(null);
+  
+  // Transaction state
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [txResult, setTxResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [pendingOrder, setPendingOrder] = useState<{ type: 'buy' | 'sell'; price: string; amount: string } | null>(null);
+  const [password, setPassword] = useState('');
   
   // Mock data for trades and orders
   const [trades] = useState<any[]>([
@@ -111,8 +119,27 @@ export default function ExchangePage() {
   if (!mounted) return null;
 
   const activeWallet = wallets.find(w => w.id === activeWalletId);
-  const sellingBalance = activeWallet?.balances.find((b: any) => b.asset_code === sellingAsset || (sellingAsset === 'XLM' && b.asset_type === 'native'))?.balance || '0';
-  const buyingBalance = activeWallet?.balances.find((b: any) => b.asset_code === buyingAsset)?.balance || '0';
+  
+  // Get balance for selling asset - handle XLM (native) separately
+  const getAssetBalance = (assetCode: string, assetIssuer: string) => {
+    if (!activeWallet?.balances) return '0';
+    
+    if (assetCode === 'XLM' || assetCode === 'native') {
+      // Native XLM has asset_type === 'native' and no asset_code
+      const nativeBalance = activeWallet.balances.find((b: any) => b.asset_type === 'native');
+      return nativeBalance?.balance || '0';
+    }
+    
+    // For non-native assets, match by code and optionally issuer
+    const assetBalance = activeWallet.balances.find((b: any) => 
+      b.asset_code === assetCode && 
+      (!assetIssuer || b.asset_issuer === assetIssuer)
+    );
+    return assetBalance?.balance || '0';
+  };
+  
+  const sellingBalance = getAssetBalance(sellingAsset, sellingIssuer);
+  const buyingBalance = getAssetBalance(buyingAsset, buyingIssuer);
 
   // Calculate spread
   const spread = orderBook.bids.length > 0 && orderBook.asks.length > 0
@@ -143,11 +170,83 @@ export default function ExchangePage() {
   };
 
   const handleBuyClick = (price: string, amount: string) => {
-    console.log('[v0] Buy order:', { price, amount, asset: sellingAsset });
+    if (!price || !amount || parseFloat(amount) <= 0) {
+      setTxResult({ success: false, message: 'Please enter valid price and amount' });
+      return;
+    }
+    setPendingOrder({ type: 'buy', price, amount });
+    setShowPasswordModal(true);
   };
 
   const handleSellClick = (price: string, amount: string) => {
-    console.log('[v0] Sell order:', { price, amount, asset: sellingAsset });
+    if (!price || !amount || parseFloat(amount) <= 0) {
+      setTxResult({ success: false, message: 'Please enter valid price and amount' });
+      return;
+    }
+    setPendingOrder({ type: 'sell', price, amount });
+    setShowPasswordModal(true);
+  };
+  
+  const handleConfirmOrder = async () => {
+    if (!pendingOrder || !activeWallet || !password) return;
+    
+    setIsSubmitting(true);
+    setTxResult(null);
+    setShowPasswordModal(false);
+    
+    try {
+      // Decrypt the secret key
+      const secret = decryptSecret(activeWallet.encryptedSecret, password);
+      
+      let result;
+      if (pendingOrder.type === 'buy') {
+        // Buy order: we're buying sellingAsset with buyingAsset
+        // For a BUY order on DEX: we sell buyingAsset to get sellingAsset
+        result = await submitManageBuyOffer(
+          secret,
+          buyingAsset,    // selling (paying with)
+          buyingIssuer,
+          sellingAsset,   // buying (receiving)
+          sellingIssuer,
+          pendingOrder.amount,
+          pendingOrder.price,
+        );
+      } else {
+        // Sell order: we're selling sellingAsset for buyingAsset
+        result = await submitManageSellOffer(
+          secret,
+          sellingAsset,   // selling
+          sellingIssuer,
+          buyingAsset,    // buying
+          buyingIssuer,
+          pendingOrder.amount,
+          pendingOrder.price,
+        );
+      }
+      
+      if (result.success) {
+        setTxResult({ success: true, message: `Order submitted! TX: ${result.hash?.substring(0, 8)}...` });
+        // Clear form
+        if (pendingOrder.type === 'buy') {
+          setBuyPrice('');
+          setBuyAmount('');
+        } else {
+          setSellPrice('');
+          setSellAmount('');
+        }
+        // Refresh order book
+        const data = await getOrderBook(sellingAsset, sellingIssuer, buyingAsset, buyingIssuer);
+        setOrderBook(data);
+      } else {
+        setTxResult({ success: false, message: result.error || 'Order failed' });
+      }
+    } catch (error: any) {
+      setTxResult({ success: false, message: error.message || 'Failed to submit order' });
+    } finally {
+      setIsSubmitting(false);
+      setPassword('');
+      setPendingOrder(null);
+    }
   };
 
   const handleCancelOrder = (id: string) => {
@@ -374,6 +473,84 @@ export default function ExchangePage() {
         walletBalances={activeWallet?.balances || []}
         type="buying"
       />
+      
+      {/* Password Confirmation Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-card border border-primary/20 rounded-lg w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-foreground">Confirm Order</h3>
+              <button onClick={() => { setShowPasswordModal(false); setPendingOrder(null); setPassword(''); }}>
+                <X className="w-5 h-5 text-muted-foreground hover:text-foreground" />
+              </button>
+            </div>
+            
+            <div className="space-y-2 text-sm">
+              <p className="text-muted-foreground">
+                {pendingOrder?.type === 'buy' ? 'BUY' : 'SELL'} {pendingOrder?.amount} {sellingAsset}
+              </p>
+              <p className="text-muted-foreground">
+                at {pendingOrder?.price} {buyingAsset} per {sellingAsset}
+              </p>
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-sm text-muted-foreground">Enter wallet password</label>
+              <Input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="bg-input border-border"
+                autoFocus
+              />
+            </div>
+            
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={() => { setShowPasswordModal(false); setPendingOrder(null); setPassword(''); }}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConfirmOrder}
+                disabled={!password || isSubmitting}
+                className={`flex-1 ${pendingOrder?.type === 'buy' ? 'bg-primary' : 'bg-destructive'}`}
+              >
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Transaction Result Toast */}
+      {txResult && (
+        <div className={`fixed bottom-4 right-4 z-50 p-4 rounded-lg border ${
+          txResult.success 
+            ? 'bg-green-900/80 border-green-500 text-green-100' 
+            : 'bg-red-900/80 border-red-500 text-red-100'
+        }`}>
+          <div className="flex items-center gap-2">
+            <span>{txResult.message}</span>
+            <button onClick={() => setTxResult(null)}>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+      
+      {/* Submitting Overlay */}
+      {isSubmitting && (
+        <div className="fixed inset-0 bg-black/30 z-40 flex items-center justify-center">
+          <div className="bg-card p-6 rounded-lg flex items-center gap-3">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <span className="text-foreground">Submitting order...</span>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
