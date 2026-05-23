@@ -59,7 +59,7 @@ export function OrderBook({
             {/* Column Headers */}
             <div className="sticky top-0 bg-background/80 backdrop-blur border-b border-border grid grid-cols-4 gap-0 px-3 py-2 text-xs font-medium text-muted-foreground">
               <div className="text-right pr-2">Amount ({sellingAsset})</div>
-              <div className="text-right pr-2 text-primary">Buy ({buyingAsset})</div>
+              <div className="text-right pr-2 text-primary border-r border-border/50">Buy ({buyingAsset})</div>
               <div className="text-left pl-2 text-destructive">Sell ({buyingAsset})</div>
               <div className="text-left pl-2">Amount ({sellingAsset})</div>
             </div>
@@ -74,16 +74,16 @@ export function OrderBook({
                   {/* Bid Amount (Left) */}
                   <div className="text-right pr-2 font-mono">
                     {row.bid ? (
-                      <span className="text-blue-400">{parseFloat(row.bid.amount).toFixed(4)}</span>
+                      <span className="text-blue-400">{parseFloat(row.bid.amount).toFixed(2)}</span>
                     ) : (
                       <span className="text-muted-foreground/30">-</span>
                     )}
                   </div>
 
-                  {/* Bid Price (Center Left) */}
-                  <div className="text-right pr-2 font-mono font-semibold">
+                  {/* Bid Price (Center Left) - with right border divider */}
+                  <div className="text-right pr-2 font-mono font-semibold border-r border-border/50">
                     {row.bid ? (
-                      <span className="text-primary">{parseFloat(row.bid.price).toFixed(8)}</span>
+                      <span className="text-primary">{parseFloat(row.bid.price).toFixed(4)}</span>
                     ) : (
                       <span className="text-muted-foreground/30">-</span>
                     )}
@@ -92,7 +92,7 @@ export function OrderBook({
                   {/* Ask Price (Center Right) */}
                   <div className="text-left pl-2 font-mono font-semibold">
                     {row.ask ? (
-                      <span className="text-destructive">{parseFloat(row.ask.price).toFixed(8)}</span>
+                      <span className="text-destructive">{parseFloat(row.ask.price).toFixed(4)}</span>
                     ) : (
                       <span className="text-muted-foreground/30">-</span>
                     )}
@@ -101,7 +101,7 @@ export function OrderBook({
                   {/* Ask Amount (Right) */}
                   <div className="text-left pl-2 font-mono">
                     {row.ask ? (
-                      <span className="text-pink-400">{parseFloat(row.ask.amount).toFixed(4)}</span>
+                      <span className="text-pink-400">{parseFloat(row.ask.amount).toFixed(2)}</span>
                     ) : (
                       <span className="text-muted-foreground/30">-</span>
                     )}
