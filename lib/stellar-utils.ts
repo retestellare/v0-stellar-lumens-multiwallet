@@ -1,4 +1,4 @@
-import { Keypair, Networks, TransactionBuilder, BASE_FEE, Asset, Operation, Server, Account, Memo } from '@stellar/stellar-sdk';
+import { Keypair, Networks, TransactionBuilder, BASE_FEE, Asset, Operation, Account, Memo, Horizon } from '@stellar/stellar-sdk';
 import nacl from 'tweetnacl';
 
 export const HORIZON_URL = 'https://horizon.stellar.org';
@@ -503,7 +503,7 @@ export const submitPayment = async (
   memo?: string
 ): Promise<{ success: boolean; hash?: string; error?: string }> => {
   try {
-    const server = new Server(HORIZON_URL);
+    const server = new Horizon.Server(HORIZON_URL);
     const keypair = Keypair.fromSecret(secretKey);
     const sourcePublicKey = keypair.publicKey();
     
