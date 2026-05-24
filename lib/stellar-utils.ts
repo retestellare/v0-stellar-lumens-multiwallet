@@ -259,69 +259,89 @@ const KNOWN_TOKENS: Record<string, { domain: string; image: string; name: string
  * Returns domain, image, and name if available
  */
 export const fetchTokenMetadataFromToml = async (
-  code: string,
   issuer: string
-): Promise<{ domain?: string; image?: string; name?: string; desc?: string }> => {
-  // Check known tokens cache first
-  const cacheKey = `${code}_${issuer}`;
-  if (KNOWN_TOKENS[cacheKey]) {
-    return KNOWN_TOKENS[cacheKey];
-  }
-  
-  if (!issuer || code === 'XLM') {
-    return KNOWN_TOKENS['XLM_'];
+): Promise<{ 
+  domain?: string; 
+  image?: string; 
+  name?: string; 
+  desc?: string;
+  orgName?: string;
+  orgUrl?: string;
+  orgEmail?: string;
+  orgTwitter?: string;
+  orgAddress?: string;
+  orgDesc?: string;
+  conditions?: string;
+}> => {
+  if (!issuer) {
+    return {
+      name: 'Stellar Lumens',
+      desc: 'XLM is the native asset of the Stellar network.',
+      orgName: 'Stellar Development Foundation',
+      orgUrl: 'https://stellar.org',
+    };
   }
   
   try {
-    // First, get asset info from Horizon to find the home_domain
-    const assetResponse = await fetch(
-      `${HORIZON_URL}/assets?asset_code=${code}&asset_issuer=${issuer}&limit=1`
-    );
+    // Get issuer account to find home_domain
+    const accountResponse = await fetch(`${HORIZON_URL}/accounts/${issuer}`);
+    if (!accountResponse.ok) return {};
     
-    if (!assetResponse.ok) return {};
-    
-    const assetData = await assetResponse.json();
-    const records = assetData._embedded?.records || [];
-    
-    if (records.length === 0) return {};
-    
-    const tomlUrl = records[0]._links?.toml?.href;
-    if (!tomlUrl) return {};
-    
-    // Extract domain from toml URL
-    const domainMatch = tomlUrl.match(/https?:\/\/([^/]+)/);
-    const domain = domainMatch ? domainMatch[1] : undefined;
+    const accountData = await accountResponse.json();
+    const homeDomain = accountData.home_domain;
+    if (!homeDomain) return {};
     
     // Fetch stellar.toml
+    const tomlUrl = `https://${homeDomain}/.well-known/stellar.toml`;
     const tomlResponse = await fetch(tomlUrl);
-    if (!tomlResponse.ok) return { domain };
+    if (!tomlResponse.ok) return { domain: homeDomain };
     
     const tomlText = await tomlResponse.text();
     
-    // Parse CURRENCIES section to find this asset
-    const currencyMatch = tomlText.match(
-      new RegExp(`\\[\\[CURRENCIES\\]\\][^\\[]*code\\s*=\\s*"${code}"[^\\[]*issuer\\s*=\\s*"${issuer}"[^\\[]*`, 'i')
-    ) || tomlText.match(
-      new RegExp(`\\[\\[CURRENCIES\\]\\][^\\[]*issuer\\s*=\\s*"${issuer}"[^\\[]*code\\s*=\\s*"${code}"[^\\[]*`, 'i')
-    );
+    // Parse DOCUMENTATION section for organization info
+    const docSection = tomlText.match(/\[DOCUMENTATION\]([\s\S]*?)(?=\[|$)/i);
+    let orgName, orgUrl, orgEmail, orgTwitter, orgAddress, orgDesc;
     
-    if (!currencyMatch) return { domain };
+    if (docSection) {
+      const docBlock = docSection[1];
+      orgName = docBlock.match(/ORG_NAME\s*=\s*"([^"]+)"/i)?.[1];
+      orgUrl = docBlock.match(/ORG_URL\s*=\s*"([^"]+)"/i)?.[1];
+      orgEmail = docBlock.match(/ORG_OFFICIAL_EMAIL\s*=\s*"([^"]+)"/i)?.[1];
+      orgTwitter = docBlock.match(/ORG_TWITTER\s*=\s*"([^"]+)"/i)?.[1];
+      orgAddress = docBlock.match(/ORG_PHYSICAL_ADDRESS\s*=\s*"([^"]+)"/i)?.[1];
+      orgDesc = docBlock.match(/ORG_DESCRIPTION\s*=\s*"([^"]+)"/i)?.[1];
+    }
     
-    const currencyBlock = currencyMatch[0];
+    // Parse CURRENCIES section - find any currency from this issuer
+    const currenciesMatch = tomlText.match(/\[\[CURRENCIES\]\]([\s\S]*?)(?=\[\[|$)/gi);
+    let image, name, desc, conditions;
     
-    // Extract image
-    const imageMatch = currencyBlock.match(/image\s*=\s*"([^"]+)"/);
-    const image = imageMatch ? imageMatch[1] : undefined;
+    if (currenciesMatch) {
+      for (const currencyBlock of currenciesMatch) {
+        // Check if this currency block contains the issuer
+        if (currencyBlock.includes(issuer)) {
+          image = currencyBlock.match(/image\s*=\s*"([^"]+)"/i)?.[1];
+          name = currencyBlock.match(/name\s*=\s*"([^"]+)"/i)?.[1];
+          desc = currencyBlock.match(/desc\s*=\s*"([^"]+)"/i)?.[1];
+          conditions = currencyBlock.match(/conditions\s*=\s*"([^"]+)"/i)?.[1];
+          break;
+        }
+      }
+    }
     
-    // Extract name
-    const nameMatch = currencyBlock.match(/name\s*=\s*"([^"]+)"/);
-    const name = nameMatch ? nameMatch[1] : undefined;
-    
-    // Extract description
-    const descMatch = currencyBlock.match(/desc\s*=\s*"([^"]+)"/);
-    const desc = descMatch ? descMatch[1] : undefined;
-    
-    return { domain, image, name, desc };
+    return { 
+      domain: homeDomain, 
+      image, 
+      name, 
+      desc, 
+      orgName, 
+      orgUrl, 
+      orgEmail, 
+      orgTwitter, 
+      orgAddress, 
+      orgDesc,
+      conditions 
+    };
   } catch (error) {
     return {};
   }
