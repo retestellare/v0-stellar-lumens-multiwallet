@@ -1,4 +1,4 @@
-import { Keypair, Networks, TransactionBuilder, BASE_FEE, Asset, Operation, Server, Account } from '@stellar/stellar-sdk';
+import { Keypair, Networks, TransactionBuilder, BASE_FEE, Asset, Operation, Server, Account, Memo } from '@stellar/stellar-sdk';
 import nacl from 'tweetnacl';
 
 export const HORIZON_URL = 'https://horizon.stellar.org';
@@ -151,7 +151,23 @@ export const getAccountTransactions = async (publicKey: string, limit = 10) => {
     );
     if (!response.ok) return [];
     const data = await response.json();
-    return data.records || [];
+    return data._embedded?.records || data.records || [];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Get account payment operations (sent/received)
+ */
+export const getAccountPayments = async (publicKey: string, limit = 50) => {
+  try {
+    const response = await fetch(
+      `${HORIZON_URL}/accounts/${publicKey}/payments?limit=${limit}&order=desc`
+    );
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data._embedded?.records || data.records || [];
   } catch {
     return [];
   }
@@ -514,7 +530,6 @@ export const submitPayment = async (
     
     // Add memo if provided
     if (memo) {
-      const { Memo } = await import('@stellar/stellar-sdk');
       txBuilder = txBuilder.addMemo(Memo.text(memo.substring(0, 28)));
     }
     
