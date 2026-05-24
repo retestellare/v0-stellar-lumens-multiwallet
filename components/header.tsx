@@ -6,13 +6,11 @@ import { usePathname } from 'next/navigation';
 import { Zap, Menu } from 'lucide-react';
 import { AppMenu } from '@/components/app-menu';
 import { SettingsModal } from '@/components/settings-modal';
-import { SecretKeyModal } from '@/components/secret-key-modal';
 
 export function Header() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [secretKeyOpen, setSecretKeyOpen] = useState(false);
 
   const navLinks = [
     { href: '/', label: 'Dashboard' },
@@ -86,22 +84,12 @@ export function Header() {
           setMenuOpen(false);
           setSettingsOpen(true);
         }}
-        onOpenSecretKey={() => {
-          setMenuOpen(false);
-          setSecretKeyOpen(true);
-        }}
       />
 
       {/* Settings Modal */}
       <SettingsModal
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-      />
-
-      {/* Secret Key Modal */}
-      <SecretKeyModal
-        isOpen={secretKeyOpen}
-        onClose={() => setSecretKeyOpen(false)}
       />
     </>
   );

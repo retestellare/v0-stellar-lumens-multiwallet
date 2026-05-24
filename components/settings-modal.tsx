@@ -26,18 +26,38 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
-  const { activeWallet, wallets, removeWallet, updateWalletName } = useWallet();
+  const { activeWallet, wallets, removeWallet, updateWalletDetails } = useWallet();
   const [activeSection, setActiveSection] = useState<'main' | 'wallet' | 'security'>('main');
   const [editingName, setEditingName] = useState(false);
+  const [editingFederation, setEditingFederation] = useState(false);
+  const [editingDomain, setEditingDomain] = useState(false);
   const [newName, setNewName] = useState('');
+  const [newFederation, setNewFederation] = useState('');
+  const [newDomain, setNewDomain] = useState('');
 
   if (!isOpen) return null;
 
   const handleSaveName = () => {
     if (activeWallet && newName.trim()) {
-      updateWalletName(activeWallet.publicKey, newName.trim());
+      updateWalletDetails(activeWallet.publicKey, { name: newName.trim() });
       setEditingName(false);
       setNewName('');
+    }
+  };
+
+  const handleSaveFederation = () => {
+    if (activeWallet) {
+      updateWalletDetails(activeWallet.publicKey, { federationName: newFederation.trim() || undefined });
+      setEditingFederation(false);
+      setNewFederation('');
+    }
+  };
+
+  const handleSaveDomain = () => {
+    if (activeWallet) {
+      updateWalletDetails(activeWallet.publicKey, { homeDomain: newDomain.trim() || undefined });
+      setEditingDomain(false);
+      setNewDomain('');
     }
   };
 
@@ -157,6 +177,70 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   </div>
                 ) : (
                   <p className="font-medium text-foreground">{activeWallet.name}</p>
+                )}
+              </div>
+
+              {/* Federation Name */}
+              <div className="p-4 rounded-xl bg-background/30">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm text-muted-foreground">Federation Name</p>
+                  <button
+                    onClick={() => {
+                      setEditingFederation(true);
+                      setNewFederation(activeWallet.federationName || '');
+                    }}
+                    className="p-1 rounded hover:bg-background/50"
+                  >
+                    <Edit3 className="w-4 h-4 text-muted-foreground" />
+                  </button>
+                </div>
+                {editingFederation ? (
+                  <div className="flex gap-2">
+                    <Input
+                      value={newFederation}
+                      onChange={(e) => setNewFederation(e.target.value)}
+                      placeholder="username*domain.com"
+                      className="flex-1"
+                      autoFocus
+                    />
+                    <Button size="sm" onClick={handleSaveFederation}>Save</Button>
+                  </div>
+                ) : (
+                  <p className="font-medium text-foreground">
+                    {activeWallet.federationName || <span className="text-muted-foreground">Not Set</span>}
+                  </p>
+                )}
+              </div>
+
+              {/* Home Domain */}
+              <div className="p-4 rounded-xl bg-background/30">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm text-muted-foreground">Home Domain</p>
+                  <button
+                    onClick={() => {
+                      setEditingDomain(true);
+                      setNewDomain(activeWallet.homeDomain || '');
+                    }}
+                    className="p-1 rounded hover:bg-background/50"
+                  >
+                    <Edit3 className="w-4 h-4 text-muted-foreground" />
+                  </button>
+                </div>
+                {editingDomain ? (
+                  <div className="flex gap-2">
+                    <Input
+                      value={newDomain}
+                      onChange={(e) => setNewDomain(e.target.value)}
+                      placeholder="example.com"
+                      className="flex-1"
+                      autoFocus
+                    />
+                    <Button size="sm" onClick={handleSaveDomain}>Save</Button>
+                  </div>
+                ) : (
+                  <p className="font-medium text-foreground">
+                    {activeWallet.homeDomain || <span className="text-muted-foreground">Not Set</span>}
+                  </p>
                 )}
               </div>
 

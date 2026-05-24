@@ -10,6 +10,8 @@ export interface Wallet {
   encryptedSecret: string;
   balances: any[];
   createdAt: Date;
+  federationName?: string;
+  homeDomain?: string;
 }
 
 export interface WalletContextType {
@@ -21,6 +23,7 @@ export interface WalletContextType {
   removeWallet: (id: string) => void;
   setActiveWallet: (id: string) => void;
   updateWalletName: (id: string, name: string) => void;
+  updateWalletDetails: (id: string, details: { name?: string; federationName?: string; homeDomain?: string }) => void;
   updateBalances: (walletId: string) => Promise<void>;
   unlockWallet: (walletId: string, password: string) => string;
 }
@@ -114,6 +117,14 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     );
   }, []);
 
+  const updateWalletDetails = useCallback((id: string, details: { name?: string; federationName?: string; homeDomain?: string }) => {
+    setWallets(prev =>
+      prev.map(w =>
+        (w.id === id || w.publicKey === id) ? { ...w, ...details } : w
+      )
+    );
+  }, []);
+
   const unlockWallet = useCallback((walletId: string, password: string): string => {
     const wallet = wallets.find(w => w.id === walletId || w.publicKey === walletId);
     if (!wallet) throw new Error('Wallet not found');
@@ -152,6 +163,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         removeWallet,
         setActiveWallet: setActiveWalletId,
         updateWalletName,
+        updateWalletDetails,
         updateBalances,
         unlockWallet,
       }}
