@@ -13,7 +13,6 @@ import {
   Wallet,
   HelpCircle,
   Info,
-  Key,
   ChevronRight,
 } from 'lucide-react';
 import { useWallet } from '@/lib/wallet-context';
@@ -22,10 +21,9 @@ interface AppMenuProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenSettings: () => void;
-  onOpenSecretKey: () => void;
 }
 
-export function AppMenu({ isOpen, onClose, onOpenSettings, onOpenSecretKey }: AppMenuProps) {
+export function AppMenu({ isOpen, onClose, onOpenSettings }: AppMenuProps) {
   const pathname = usePathname();
   const { activeWallet, wallets, setActiveWallet, removeWallet } = useWallet();
 
@@ -38,7 +36,6 @@ export function AppMenu({ isOpen, onClose, onOpenSettings, onOpenSecretKey }: Ap
 
   const utilityItems = [
     { icon: Settings, label: 'Settings', action: onOpenSettings },
-    { icon: Key, label: 'View Secret Key', action: onOpenSecretKey },
     { icon: HelpCircle, label: 'Help', href: 'https://stellar.org/learn' },
     { icon: Info, label: 'About', href: '/about' },
   ];
@@ -126,7 +123,7 @@ export function AppMenu({ isOpen, onClose, onOpenSettings, onOpenSecretKey }: Ap
                   key={idx}
                   onClick={() => {
                     item.action?.();
-                    if (item.label !== 'Settings' && item.label !== 'View Secret Key') {
+                    if (item.label !== 'Settings') {
                       onClose();
                     }
                   }}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { fetchTokenMetadataFromToml } from '@/lib/stellar-utils';
+import { fetchTokenMetadataFromToml, getIssuerTokenIcon } from '@/lib/stellar-utils';
 import { getTokenPicks } from '@/lib/token-service';
 
 // Known tokens cache for instant metadata lookup
@@ -38,9 +38,10 @@ interface AssetItemProps {
   code: string;
   issuer: string;
   balance: string;
+  onClick?: () => void;
 }
 
-export function AssetItem({ code, issuer, balance }: AssetItemProps) {
+export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
   // Try instant lookup first
   const cachedMeta = getTokenMetadata(code, issuer);
   
@@ -48,21 +49,38 @@ export function AssetItem({ code, issuer, balance }: AssetItemProps) {
   const [domain, setDomain] = useState<string | null>(cachedMeta?.domain || null);
   const [imageError, setImageError] = useState(false);
   
-  // Only fetch from TOML if not in cache
+  // Fetch image and domain
   useEffect(() => {
-    if (cachedMeta) return; // Already have metadata
+    let cancelled = false;
     
     const fetchMeta = async () => {
-      const meta = await fetchTokenMetadataFromToml(code, issuer);
-      if (meta.image) setImage(meta.image);
-      if (meta.domain) setDomain(meta.domain);
+      // Fetch icon with caching
+      if (!image) {
+        const iconUrl = await getIssuerTokenIcon(code, issuer);
+        if (!cancelled && iconUrl) {
+          setImage(iconUrl);
+        }
+      }
+      
+      // Fetch domain from TOML if not cached
+      if (!domain && issuer) {
+        const meta = await fetchTokenMetadataFromToml(issuer);
+        if (!cancelled && meta.domain) {
+          setDomain(meta.domain);
+        }
+      }
     };
     
     fetchMeta();
-  }, [code, issuer, cachedMeta]);
+    
+    return () => { cancelled = true; };
+  }, [code, issuer, image, domain]);
   
   return (
-    <div className="flex items-center justify-between p-2 bg-background/30 rounded border border-border/50 hover:border-primary/30 transition-colors">
+    <button 
+      onClick={onClick}
+      className="w-full flex items-center justify-between p-2 bg-background/30 rounded border border-border/50 hover:border-primary/30 hover:bg-primary/5 transition-colors cursor-pointer"
+    >
       <div className="flex items-center gap-2">
         {/* Token Image */}
         <div className="w-7 h-7 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center overflow-hidden border border-primary/30 flex-shrink-0">
@@ -79,7 +97,7 @@ export function AssetItem({ code, issuer, balance }: AssetItemProps) {
         </div>
         
         {/* Token Info */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 text-left">
           <p className="text-xs font-medium text-foreground">{code}</p>
           <p className="text-xs text-muted-foreground truncate">
             {domain || (issuer ? `${issuer.substring(0, 8)}...` : 'Native')}
@@ -91,6 +109,6 @@ export function AssetItem({ code, issuer, balance }: AssetItemProps) {
       <p className="text-sm font-semibold text-primary ml-2">
         {parseFloat(balance).toFixed(4)}
       </p>
-    </div>
+    </button>
   );
 }

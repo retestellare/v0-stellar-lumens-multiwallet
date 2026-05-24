@@ -3,11 +3,12 @@
 import { Header } from '@/components/header';
 import { useWallet } from '@/lib/wallet-context';
 import { Button } from '@/components/ui/button';
-import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret, fetchTokenMetadataFromToml } from '@/lib/stellar-utils';
+import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations } from '@/lib/stellar-utils';
 import { TradingPairHeader } from '@/components/trading-pair-header';
 import { OrderBook } from '@/components/order-book';
 import { TradeHistory } from '@/components/trade-history';
 import { MyOrders } from '@/components/my-orders';
+import { PriceChart } from '@/components/price-chart';
 import { TokenSelectorModal } from '@/components/token-selector-modal';
 import { CompactOrderForm } from '@/components/compact-order-form';
 import { useState, useEffect } from 'react';
@@ -60,12 +61,13 @@ export default function ExchangePage() {
   const [sellingMeta, setSellingMeta] = useState<{ domain?: string; image?: string; name?: string }>({});
   const [buyingMeta, setBuyingMeta] = useState<{ domain?: string; image?: string; name?: string }>({});
   
-  // Mock data for trades and orders
-  const [trades] = useState<any[]>([
-    { id: '1', price: '0.1452265', amount: '1.5000000', timestamp: new Date().toISOString(), direction: 'buy' },
-    { id: '2', price: '0.1452265', amount: '0.1223806', timestamp: new Date().toISOString(), direction: 'sell' },
-  ]);
+  // Trade history and orders from blockchain
+  const [trades, setTrades] = useState<any[]>([]);
+  const [tradesLoading, setTradesLoading] = useState(false);
   const [myOrders, setMyOrders] = useState<any[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [chartLoading, setChartLoading] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -121,19 +123,117 @@ export default function ExchangePage() {
     }
   }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
   
-  // Fetch token metadata when assets change
+  // Fetch token metadata and icons when assets change
   useEffect(() => {
     const fetchMeta = async () => {
-      const [sellMeta, buyMeta] = await Promise.all([
-        fetchTokenMetadataFromToml(sellingAsset, sellingIssuer),
-        fetchTokenMetadataFromToml(buyingAsset, buyingIssuer),
+      // Fetch metadata and icons in parallel
+      const [sellMeta, buyMeta, sellIcon, buyIcon] = await Promise.all([
+        fetchTokenMetadataFromToml(sellingIssuer),
+        fetchTokenMetadataFromToml(buyingIssuer),
+        getIssuerTokenIcon(sellingAsset, sellingIssuer),
+        getIssuerTokenIcon(buyingAsset, buyingIssuer),
       ]);
-      setSellingMeta(sellMeta);
-      setBuyingMeta(buyMeta);
+      
+      // Merge icon into metadata
+      setSellingMeta({ ...sellMeta, image: sellMeta.image || sellIcon });
+      setBuyingMeta({ ...buyMeta, image: buyMeta.image || buyIcon });
     };
     
     if (mounted) {
       fetchMeta();
+    }
+  }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
+
+  // Fetch trade history when pair changes
+  useEffect(() => {
+    const fetchTrades = async () => {
+      setTradesLoading(true);
+      try {
+        const tradesData = await getRecentTrades(
+          sellingAsset, sellingIssuer,
+          buyingAsset, buyingIssuer,
+          30
+        );
+        // Transform Horizon trades to component format
+        const formattedTrades = tradesData.map((trade: any) => ({
+          id: trade.id,
+          price: trade.price?.n && trade.price?.d 
+            ? (parseFloat(trade.price.n) / parseFloat(trade.price.d)).toFixed(7)
+            : '0',
+          amount: trade.base_amount || '0',
+          timestamp: trade.ledger_close_time,
+          direction: trade.base_is_seller ? 'sell' : 'buy',
+        }));
+        setTrades(formattedTrades);
+      } catch {
+        setTrades([]);
+      } finally {
+        setTradesLoading(false);
+      }
+    };
+
+    if (mounted) {
+      fetchTrades();
+    }
+  }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
+
+  // Fetch user's open offers
+  useEffect(() => {
+    const fetchOffers = async () => {
+      if (!activeWalletId) return;
+      const wallet = wallets.find(w => w.id === activeWalletId);
+      if (!wallet) return;
+
+      setOrdersLoading(true);
+      try {
+        const offersData = await getAccountOffers(wallet.publicKey);
+        // Transform Horizon offers to component format
+        const formattedOrders = offersData.map((offer: any) => ({
+          id: offer.id,
+          type: offer.selling?.asset_type === 'native' || offer.selling?.asset_code === sellingAsset ? 'sell' : 'buy',
+          price: offer.price,
+          amount: offer.amount,
+          filled: '0', // Horizon doesn't track partial fills on open offers
+          timestamp: offer.last_modified_time,
+          sellingCode: offer.selling?.asset_type === 'native' ? 'XLM' : offer.selling?.asset_code,
+          sellingIssuer: offer.selling?.asset_issuer || '',
+          buyingCode: offer.buying?.asset_type === 'native' ? 'XLM' : offer.buying?.asset_code,
+          buyingIssuer: offer.buying?.asset_issuer || '',
+        }));
+        setMyOrders(formattedOrders);
+      } catch {
+        setMyOrders([]);
+      } finally {
+        setOrdersLoading(false);
+      }
+    };
+
+    if (mounted) {
+      fetchOffers();
+    }
+  }, [activeWalletId, wallets, mounted, sellingAsset]);
+
+  // Fetch chart data (trade aggregations)
+  useEffect(() => {
+    const fetchChartData = async () => {
+      setChartLoading(true);
+      try {
+        const aggregations = await getTradeAggregations(
+          sellingAsset, sellingIssuer,
+          buyingAsset, buyingIssuer,
+          3600000, // 1 hour resolution
+          48 // 48 hours of data
+        );
+        setChartData(aggregations);
+      } catch {
+        setChartData([]);
+      } finally {
+        setChartLoading(false);
+      }
+    };
+
+    if (mounted) {
+      fetchChartData();
     }
   }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
 
@@ -289,8 +389,37 @@ export default function ExchangePage() {
     }
   };
 
-  const handleCancelOrder = (id: string) => {
-    setMyOrders(myOrders.filter(o => o.id !== id));
+  const handleCancelOrder = async (id: string) => {
+    if (!decryptedSecret) {
+      setTxResult({ success: false, message: 'Please unlock wallet with password first' });
+      return;
+    }
+    
+    const order = myOrders.find(o => o.id === id);
+    if (!order) return;
+    
+    setIsSubmitting(true);
+    try {
+      const result = await cancelOffer(
+        decryptedSecret,
+        id,
+        order.sellingCode,
+        order.sellingIssuer,
+        order.buyingCode,
+        order.buyingIssuer
+      );
+      
+      if (result.success) {
+        setMyOrders(myOrders.filter(o => o.id !== id));
+        setTxResult({ success: true, message: 'Order cancelled successfully' });
+      } else {
+        setTxResult({ success: false, message: result.error || 'Failed to cancel order' });
+      }
+    } catch (error: any) {
+      setTxResult({ success: false, message: error.message || 'Failed to cancel order' });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleSelectBidOrder = (price: string, amount: string) => {
@@ -406,8 +535,8 @@ export default function ExchangePage() {
             buyingAsset={buyingAsset}
             sellingBalance={sellingBalance}
             buyingBalance={buyingBalance}
-            bestBid={bestBid}
-            bestAsk={bestAsk}
+            bestBid={bestBid ?? undefined}
+            bestAsk={bestAsk ?? undefined}
             buyPrice={buyPrice}
             buyAmount={buyAmount}
             sellPrice={sellPrice}
@@ -483,7 +612,7 @@ export default function ExchangePage() {
             {activeTab === 'history' && (
               <TradeHistory
                 trades={trades}
-                loading={false}
+                loading={tradesLoading}
                 buyingAsset={buyingAsset}
                 sellingAsset={sellingAsset}
               />
@@ -492,7 +621,7 @@ export default function ExchangePage() {
             {activeTab === 'my-orders' && (
               <MyOrders
                 orders={myOrders}
-                loading={false}
+                loading={ordersLoading}
                 onCancelOrder={handleCancelOrder}
                 buyingAsset={buyingAsset}
                 sellingAsset={sellingAsset}
@@ -500,13 +629,12 @@ export default function ExchangePage() {
             )}
 
             {activeTab === 'charts' && (
-              <div className="glow-border p-6 rounded-lg space-y-4 text-center">
-                <p className="text-muted-foreground text-lg">Advanced Charts</p>
-                <p className="text-sm text-muted-foreground">Coming soon - Candlestick charts with RSI and MACD indicators</p>
-                <div className="w-full h-64 bg-background/30 rounded flex items-center justify-center border border-border/50">
-                  <p className="text-muted-foreground">Chart placeholder</p>
-                </div>
-              </div>
+              <PriceChart
+                data={chartData}
+                loading={chartLoading}
+                sellingAsset={sellingAsset}
+                buyingAsset={buyingAsset}
+              />
             )}
           </div>
         </div>

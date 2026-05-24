@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   X,
   Settings,
@@ -14,9 +14,12 @@ import {
   Check,
   ChevronRight,
   Edit3,
+  Loader2,
+  Globe,
+  AlertCircle,
 } from 'lucide-react';
 import { useWallet } from '@/lib/wallet-context';
-import { decryptSecret } from '@/lib/stellar-utils';
+import { decryptSecret, getAccountHomeDomain, setHomeDomain, clearHomeDomain } from '@/lib/stellar-utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -26,18 +29,97 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
-  const { activeWallet, wallets, removeWallet, updateWalletName } = useWallet();
+  const { activeWallet, wallets, removeWallet, updateWalletDetails } = useWallet();
   const [activeSection, setActiveSection] = useState<'main' | 'wallet' | 'security'>('main');
   const [editingName, setEditingName] = useState(false);
   const [newName, setNewName] = useState('');
+  
+  // Home domain state
+  const [blockchainDomain, setBlockchainDomain] = useState<string | null>(null);
+  const [loadingDomain, setLoadingDomain] = useState(false);
+  const [editingDomain, setEditingDomain] = useState(false);
+  const [newDomain, setNewDomain] = useState('');
+  const [domainPassword, setDomainPassword] = useState('');
+  const [domainError, setDomainError] = useState('');
+  const [submittingDomain, setSubmittingDomain] = useState(false);
+  const [domainSuccess, setDomainSuccess] = useState(false);
+
+  // Reset states when closing modal or switching sections
+  useEffect(() => {
+    if (!isOpen) {
+      setActiveSection('main');
+      setBlockchainDomain(null);
+      setLoadingDomain(false);
+      setEditingDomain(false);
+      setDomainPassword('');
+      setDomainError('');
+      setDomainSuccess(false);
+    }
+  }, [isOpen]);
+
+  // Fetch home_domain from blockchain when wallet section opens
+  useEffect(() => {
+    if (activeSection === 'wallet' && activeWallet?.publicKey) {
+      const publicKey = activeWallet.publicKey;
+      setLoadingDomain(true);
+      getAccountHomeDomain(publicKey)
+        .then(domain => {
+          setBlockchainDomain(domain);
+        })
+        .catch(() => {
+          setBlockchainDomain(null);
+        })
+        .finally(() => {
+          setLoadingDomain(false);
+        });
+    }
+  }, [activeSection, activeWallet?.publicKey]);
 
   if (!isOpen) return null;
 
   const handleSaveName = () => {
     if (activeWallet && newName.trim()) {
-      updateWalletName(activeWallet.publicKey, newName.trim());
+      updateWalletDetails(activeWallet.publicKey, { name: newName.trim() });
       setEditingName(false);
       setNewName('');
+    }
+  };
+
+  const handleSetDomain = async () => {
+    if (!activeWallet || !domainPassword) return;
+    
+    setDomainError('');
+    setSubmittingDomain(true);
+    
+    try {
+      // Decrypt secret key
+      const secretKey = decryptSecret(activeWallet.encryptedSecret, domainPassword);
+      
+      let result;
+      if (newDomain.trim()) {
+        // Set new domain
+        result = await setHomeDomain(secretKey, newDomain.trim());
+      } else {
+        // Clear domain
+        result = await clearHomeDomain(secretKey);
+      }
+      
+      if (result.success) {
+        setBlockchainDomain(newDomain.trim() || null);
+        setDomainSuccess(true);
+        setTimeout(() => {
+          setEditingDomain(false);
+          setNewDomain('');
+          setDomainPassword('');
+          setDomainSuccess(false);
+        }, 2000);
+      } else {
+        setDomainError(result.error || 'Transaction failed');
+      }
+    } catch (e: any) {
+      setDomainError(e.message || 'Invalid password');
+    } finally {
+      setSubmittingDomain(false);
     }
   };
 
@@ -95,7 +177,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   <Wallet className="w-5 h-5 text-primary" />
                   <div className="text-left">
                     <p className="font-medium text-foreground">Wallet Settings</p>
-                    <p className="text-xs text-muted-foreground">Name, details</p>
+                    <p className="text-xs text-muted-foreground">Name, home domain</p>
                   </div>
                 </div>
                 <ChevronRight className="w-5 h-5 text-muted-foreground" />
@@ -131,7 +213,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
           {activeSection === 'wallet' && activeWallet && (
             <div className="space-y-4">
-              {/* Wallet Name */}
+              {/* Wallet Name - Local only */}
               <div className="p-4 rounded-xl bg-background/30">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm text-muted-foreground">Wallet Name</p>
@@ -158,6 +240,113 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 ) : (
                   <p className="font-medium text-foreground">{activeWallet.name}</p>
                 )}
+              </div>
+
+              {/* Home Domain - On-chain */}
+              <div className="p-4 rounded-xl bg-background/30">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-primary" />
+                    <p className="text-sm text-muted-foreground">Home Domain</p>
+                  </div>
+                  {!editingDomain && (
+                    <button
+                      onClick={() => {
+                        setEditingDomain(true);
+                        setNewDomain(blockchainDomain || '');
+                        setDomainPassword('');
+                        setDomainError('');
+                      }}
+                      className="p-1 rounded hover:bg-background/50"
+                    >
+                      <Edit3 className="w-4 h-4 text-muted-foreground" />
+                    </button>
+                  )}
+                </div>
+                
+                {editingDomain ? (
+                  <div className="space-y-3">
+                    <Input
+                      value={newDomain}
+                      onChange={(e) => setNewDomain(e.target.value)}
+                      placeholder="example.com"
+                      className="w-full"
+                      autoFocus
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      This will submit a transaction to set your home_domain on the Stellar network.
+                    </p>
+                    <Input
+                      type="password"
+                      value={domainPassword}
+                      onChange={(e) => setDomainPassword(e.target.value)}
+                      placeholder="Enter wallet password to sign"
+                      className="w-full"
+                    />
+                    {domainError && (
+                      <div className="flex items-center gap-2 text-red-500 text-xs">
+                        <AlertCircle className="w-3 h-3" />
+                        {domainError}
+                      </div>
+                    )}
+                    {domainSuccess && (
+                      <div className="flex items-center gap-2 text-green-500 text-xs">
+                        <Check className="w-3 h-3" />
+                        Home domain updated on blockchain!
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setEditingDomain(false);
+                          setNewDomain('');
+                          setDomainPassword('');
+                          setDomainError('');
+                        }}
+                        disabled={submittingDomain}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleSetDomain}
+                        disabled={!domainPassword || submittingDomain}
+                        className="flex-1"
+                      >
+                        {submittingDomain ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Submitting...
+                          </>
+                        ) : (
+                          newDomain.trim() ? 'Set Domain' : 'Clear Domain'
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    {loadingDomain ? (
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                        <span className="text-muted-foreground">Loading...</span>
+                      </div>
+                    ) : (
+                      <p className="font-medium text-foreground">
+                        {blockchainDomain || <span className="text-muted-foreground">Not Set</span>}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Info about federation */}
+              <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
+                <p className="text-xs text-primary/80">
+                  <strong>Federation:</strong> To use a federation address (like user*domain.com), your home domain must host a federation server at /.well-known/stellar.toml
+                </p>
               </div>
 
               {/* Public Key */}

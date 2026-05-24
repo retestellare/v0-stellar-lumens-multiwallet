@@ -7,6 +7,7 @@ import { WalletCard } from '@/components/wallet-card';
 import { CreateWalletModal } from '@/components/create-wallet-modal';
 import { SendModal } from '@/components/send-modal';
 import { ReceiveModal } from '@/components/receive-modal';
+import { AssetDetailModal } from '@/components/asset-detail-modal';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/lib/wallet-context';
 import { Plus, Send, ArrowRightLeft, Briefcase, Download } from 'lucide-react';
@@ -19,6 +20,7 @@ export default function DashboardPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSendOpen, setIsSendOpen] = useState(false);
   const [isReceiveOpen, setIsReceiveOpen] = useState(false);
+  const [selectedAsset, setSelectedAsset] = useState<{ code: string; issuer?: string; balance: string; domain?: string; image?: string; name?: string } | null>(null);
   const [mounted, setMounted] = useState(false);
 
   const handleExchangeClick = () => {
@@ -125,6 +127,11 @@ export default function DashboardPage() {
                           code={balance.asset_code || 'XLM'}
                           issuer={balance.asset_issuer || ''}
                           balance={balance.balance}
+                          onClick={() => setSelectedAsset({
+                            code: balance.asset_code || 'XLM',
+                            issuer: balance.asset_issuer,
+                            balance: balance.balance,
+                          })}
                         />
                       ))
                     )}
@@ -167,6 +174,19 @@ export default function DashboardPage() {
       <CreateWalletModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
       <SendModal isOpen={isSendOpen} onClose={() => setIsSendOpen(false)} />
       <ReceiveModal isOpen={isReceiveOpen} onClose={() => setIsReceiveOpen(false)} />
+      <AssetDetailModal
+        isOpen={!!selectedAsset}
+        onClose={() => setSelectedAsset(null)}
+        asset={selectedAsset}
+        onSend={() => {
+          setSelectedAsset(null);
+          setIsSendOpen(true);
+        }}
+        onReceive={() => {
+          setSelectedAsset(null);
+          setIsReceiveOpen(true);
+        }}
+      />
     </main>
   );
 }

@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Search, X, Star, Loader2 } from 'lucide-react';
 import { TokenMetadata } from '@/types/token';
 import { getTokenPicks } from '@/lib/token-service';
+import { getIssuerTokenIcon } from '@/lib/stellar-utils';
 import {
   getFavoriteTokens,
   toggleFavoriteToken,
@@ -50,6 +51,86 @@ interface Token {
   verified?: boolean;
   domain?: string;
   source?: 'wallet' | 'picks' | 'search' | 'favorites';
+}
+
+// Token card component with cached icon loading
+function TokenCard({
+  token,
+  isFav,
+  onSelect,
+  onToggleFavorite,
+}: {
+  token: Token;
+  isFav: boolean;
+  onSelect: () => void;
+  onToggleFavorite: (e: React.MouseEvent) => void;
+}) {
+  const [iconUrl, setIconUrl] = useState<string | null>(token.image || null);
+  const [imageError, setImageError] = useState(false);
+
+  useEffect(() => {
+    if (!token.image && !imageError) {
+      let cancelled = false;
+      getIssuerTokenIcon(token.code, token.issuer || '').then((url) => {
+        if (!cancelled) setIconUrl(url);
+      });
+      return () => { cancelled = true; };
+    }
+  }, [token.code, token.issuer, token.image, imageError]);
+
+  return (
+    <button
+      onClick={onSelect}
+      className="group relative flex flex-col items-center gap-2 p-4 rounded-lg border border-border/50 hover:border-primary/50 bg-background/30 hover:bg-primary/10 transition-all"
+    >
+      {/* Favorite Star */}
+      <button
+        onClick={onToggleFavorite}
+        className="absolute top-2 right-2 text-muted-foreground hover:text-primary transition-colors"
+      >
+        <Star
+          className="w-4 h-4"
+          fill={isFav ? 'currentColor' : 'none'}
+        />
+      </button>
+
+      {/* Token Avatar */}
+      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-lg font-bold overflow-hidden">
+        {iconUrl && !imageError ? (
+          <img
+            src={iconUrl}
+            alt={token.code}
+            className="w-full h-full object-cover"
+            onError={() => setImageError(true)}
+          />
+        ) : (
+          <span>{token.code.charAt(0)}</span>
+        )}
+      </div>
+
+      {/* Token Code with Verified Badge */}
+      <div className="flex items-center gap-1">
+        <p className="font-semibold text-foreground text-center text-sm">{token.code}</p>
+        {token.verified && (
+          <span className="text-xs text-primary" title="Verified">
+            ✓
+          </span>
+        )}
+      </div>
+
+      {/* Token Name or Domain */}
+      {(token.name || token.domain) && (
+        <p className="text-xs text-muted-foreground text-center truncate w-full">
+          {token.name || token.domain}
+        </p>
+      )}
+
+      {/* Domain or Issuer - prefer domain over issuer address */}
+      <p className="text-xs text-muted-foreground/70 text-center truncate w-full">
+        {token.domain || (token.issuer ? token.issuer.substring(0, 12) + '...' : 'Native')}
+      </p>
+    </button>
+  );
 }
 
 interface TokenSelectorModalProps {
@@ -319,60 +400,13 @@ export function TokenSelectorModal({
               {displayTokens.map((token, idx) => {
                 const isFav = favorites.has(`${token.code}_${token.issuer}`);
                 return (
-                  <button
+                  <TokenCard
                     key={`${token.code}-${token.issuer || 'native'}-${idx}`}
-                    onClick={() => handleTokenSelect(token)}
-                    className="group relative flex flex-col items-center gap-2 p-4 rounded-lg border border-border/50 hover:border-primary/50 bg-background/30 hover:bg-primary/10 transition-all"
-                  >
-                    {/* Favorite Star */}
-                    <button
-                      onClick={(e) => handleToggleFavorite(e, token)}
-                      className="absolute top-2 right-2 text-muted-foreground hover:text-primary transition-colors"
-                    >
-                      <Star
-                        className="w-4 h-4"
-                        fill={isFav ? 'currentColor' : 'none'}
-                      />
-                    </button>
-
-                    {/* Token Avatar */}
-                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-lg font-bold overflow-hidden">
-                      {token.image ? (
-                        <img
-                          src={token.image}
-                          alt={token.code}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        <span>{token.code.charAt(0)}</span>
-                      )}
-                    </div>
-
-                    {/* Token Code with Verified Badge */}
-                    <div className="flex items-center gap-1">
-                      <p className="font-semibold text-foreground text-center text-sm">{token.code}</p>
-                      {token.verified && (
-                        <span className="text-xs text-primary" title="Verified">
-                          ✓
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Token Name or Domain */}
-                    {(token.name || token.domain) && (
-                      <p className="text-xs text-muted-foreground text-center truncate w-full">
-                        {token.name || token.domain}
-                      </p>
-                    )}
-
-                    {/* Domain or Issuer - prefer domain over issuer address */}
-                    <p className="text-xs text-muted-foreground/70 text-center truncate w-full">
-                      {token.domain || (token.issuer ? token.issuer.substring(0, 12) + '...' : 'Native')}
-                    </p>
-                  </button>
+                    token={token}
+                    isFav={isFav}
+                    onSelect={() => handleTokenSelect(token)}
+                    onToggleFavorite={(e) => handleToggleFavorite(e, token)}
+                  />
                 );
               })}
             </div>

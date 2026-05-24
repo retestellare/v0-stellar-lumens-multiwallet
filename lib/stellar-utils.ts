@@ -252,6 +252,121 @@ const KNOWN_TOKENS: Record<string, { domain: string; image: string; name: string
   'AQUA_GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA': { domain: 'aqua.network', image: 'https://aqua.network/assets/img/aqua-logo.png', name: 'Aquarius' },
   'BTC_GDPJALI4AZKUU2W426U5WKMAT6CN3AJRPIIRYR2YM54TL2GDWO5O2MZM': { domain: 'ultrastellar.com', image: 'https://assets.coingecko.com/coins/images/1/small/bitcoin.png', name: 'Bitcoin' },
   'ETH_GDPJALI4AZKUU2W426U5WKMAT6CN3AJRPIIRYR2YM54TL2GDWO5O2MZM': { domain: 'ultrastellar.com', image: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png', name: 'Ethereum' },
+  };
+
+// Token icon cache interface
+interface TokenIconCache {
+  url: string;
+  expiresAt: number;
+}
+
+// Default fallback icon - gradient circle placeholder
+const FALLBACK_ICON = '/placeholder-token.svg';
+
+// Cache duration: 24 hours in milliseconds
+const CACHE_DURATION_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Get token icon URL with 24-hour localStorage caching
+ * Checks: 1) Known tokens, 2) Lobstr API, 3) stellar.toml
+ */
+export const getIssuerTokenIcon = async (code: string, issuer: string): Promise<string> => {
+  // Handle XLM native asset
+  if (!issuer || code === 'XLM' || code === 'native') {
+    return KNOWN_TOKENS['XLM_'].image;
+  }
+
+  // Check known tokens first (no caching needed)
+  const knownKey = `${code}_${issuer}`;
+  if (KNOWN_TOKENS[knownKey]) {
+    return KNOWN_TOKENS[knownKey].image;
+  }
+
+  // Generate cache key
+  const cacheKey = `token_icon_${code}_${issuer}`;
+
+  // Check localStorage cache (client-side only)
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const cacheData: TokenIconCache = JSON.parse(cached);
+        // Check if cache is still valid
+        if (Date.now() < cacheData.expiresAt) {
+          return cacheData.url;
+        }
+        // Cache expired, remove it
+        localStorage.removeItem(cacheKey);
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+  }
+
+  // Helper to save to cache
+  const saveToCache = (url: string) => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cacheData: TokenIconCache = {
+          url,
+          expiresAt: Date.now() + CACHE_DURATION_MS,
+        };
+        localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+      } catch {
+        // Ignore localStorage errors (quota exceeded, etc.)
+      }
+    }
+    return url;
+  };
+
+  // Try Lobstr API first (faster, more reliable)
+  const lobstrUrl = `https://lobstr.co/api/v1/sep/assets/${code}-${issuer}/image.png`;
+  try {
+    const response = await fetch(lobstrUrl, { method: 'HEAD' });
+    if (response.ok) {
+      return saveToCache(lobstrUrl);
+    }
+  } catch {
+    // Lobstr failed, continue to stellar.toml
+  }
+
+  // Try stellar.toml via issuer's home_domain
+  try {
+    // Get issuer account to find home_domain
+    const accountResponse = await fetch(`${HORIZON_URL}/accounts/${issuer}`);
+    if (accountResponse.ok) {
+      const accountData = await accountResponse.json();
+      const homeDomain = accountData.home_domain;
+      
+      if (homeDomain) {
+        // Fetch stellar.toml
+        const tomlUrl = `https://${homeDomain}/.well-known/stellar.toml`;
+        const tomlResponse = await fetch(tomlUrl);
+        
+        if (tomlResponse.ok) {
+          const tomlText = await tomlResponse.text();
+          
+          // Find currency block matching this issuer
+          const currenciesMatch = tomlText.match(/\[\[CURRENCIES\]\]([\s\S]*?)(?=\[\[|$)/gi);
+          if (currenciesMatch) {
+            for (const currencyBlock of currenciesMatch) {
+              if (currencyBlock.includes(issuer)) {
+                const imageMatch = currencyBlock.match(/image\s*=\s*"([^"]+)"/i);
+                if (imageMatch && imageMatch[1]) {
+                  return saveToCache(imageMatch[1]);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch {
+    // stellar.toml failed
+  }
+
+  // Return fallback (don't cache fallback to allow retry)
+  return FALLBACK_ICON;
 };
 
 /**
@@ -259,69 +374,89 @@ const KNOWN_TOKENS: Record<string, { domain: string; image: string; name: string
  * Returns domain, image, and name if available
  */
 export const fetchTokenMetadataFromToml = async (
-  code: string,
   issuer: string
-): Promise<{ domain?: string; image?: string; name?: string; desc?: string }> => {
-  // Check known tokens cache first
-  const cacheKey = `${code}_${issuer}`;
-  if (KNOWN_TOKENS[cacheKey]) {
-    return KNOWN_TOKENS[cacheKey];
-  }
-  
-  if (!issuer || code === 'XLM') {
-    return KNOWN_TOKENS['XLM_'];
+): Promise<{ 
+  domain?: string; 
+  image?: string; 
+  name?: string; 
+  desc?: string;
+  orgName?: string;
+  orgUrl?: string;
+  orgEmail?: string;
+  orgTwitter?: string;
+  orgAddress?: string;
+  orgDesc?: string;
+  conditions?: string;
+}> => {
+  if (!issuer) {
+    return {
+      name: 'Stellar Lumens',
+      desc: 'XLM is the native asset of the Stellar network.',
+      orgName: 'Stellar Development Foundation',
+      orgUrl: 'https://stellar.org',
+    };
   }
   
   try {
-    // First, get asset info from Horizon to find the home_domain
-    const assetResponse = await fetch(
-      `${HORIZON_URL}/assets?asset_code=${code}&asset_issuer=${issuer}&limit=1`
-    );
+    // Get issuer account to find home_domain
+    const accountResponse = await fetch(`${HORIZON_URL}/accounts/${issuer}`);
+    if (!accountResponse.ok) return {};
     
-    if (!assetResponse.ok) return {};
-    
-    const assetData = await assetResponse.json();
-    const records = assetData._embedded?.records || [];
-    
-    if (records.length === 0) return {};
-    
-    const tomlUrl = records[0]._links?.toml?.href;
-    if (!tomlUrl) return {};
-    
-    // Extract domain from toml URL
-    const domainMatch = tomlUrl.match(/https?:\/\/([^/]+)/);
-    const domain = domainMatch ? domainMatch[1] : undefined;
+    const accountData = await accountResponse.json();
+    const homeDomain = accountData.home_domain;
+    if (!homeDomain) return {};
     
     // Fetch stellar.toml
+    const tomlUrl = `https://${homeDomain}/.well-known/stellar.toml`;
     const tomlResponse = await fetch(tomlUrl);
-    if (!tomlResponse.ok) return { domain };
+    if (!tomlResponse.ok) return { domain: homeDomain };
     
     const tomlText = await tomlResponse.text();
     
-    // Parse CURRENCIES section to find this asset
-    const currencyMatch = tomlText.match(
-      new RegExp(`\\[\\[CURRENCIES\\]\\][^\\[]*code\\s*=\\s*"${code}"[^\\[]*issuer\\s*=\\s*"${issuer}"[^\\[]*`, 'i')
-    ) || tomlText.match(
-      new RegExp(`\\[\\[CURRENCIES\\]\\][^\\[]*issuer\\s*=\\s*"${issuer}"[^\\[]*code\\s*=\\s*"${code}"[^\\[]*`, 'i')
-    );
+    // Parse DOCUMENTATION section for organization info
+    const docSection = tomlText.match(/\[DOCUMENTATION\]([\s\S]*?)(?=\[|$)/i);
+    let orgName, orgUrl, orgEmail, orgTwitter, orgAddress, orgDesc;
     
-    if (!currencyMatch) return { domain };
+    if (docSection) {
+      const docBlock = docSection[1];
+      orgName = docBlock.match(/ORG_NAME\s*=\s*"([^"]+)"/i)?.[1];
+      orgUrl = docBlock.match(/ORG_URL\s*=\s*"([^"]+)"/i)?.[1];
+      orgEmail = docBlock.match(/ORG_OFFICIAL_EMAIL\s*=\s*"([^"]+)"/i)?.[1];
+      orgTwitter = docBlock.match(/ORG_TWITTER\s*=\s*"([^"]+)"/i)?.[1];
+      orgAddress = docBlock.match(/ORG_PHYSICAL_ADDRESS\s*=\s*"([^"]+)"/i)?.[1];
+      orgDesc = docBlock.match(/ORG_DESCRIPTION\s*=\s*"([^"]+)"/i)?.[1];
+    }
     
-    const currencyBlock = currencyMatch[0];
+    // Parse CURRENCIES section - find any currency from this issuer
+    const currenciesMatch = tomlText.match(/\[\[CURRENCIES\]\]([\s\S]*?)(?=\[\[|$)/gi);
+    let image, name, desc, conditions;
     
-    // Extract image
-    const imageMatch = currencyBlock.match(/image\s*=\s*"([^"]+)"/);
-    const image = imageMatch ? imageMatch[1] : undefined;
+    if (currenciesMatch) {
+      for (const currencyBlock of currenciesMatch) {
+        // Check if this currency block contains the issuer
+        if (currencyBlock.includes(issuer)) {
+          image = currencyBlock.match(/image\s*=\s*"([^"]+)"/i)?.[1];
+          name = currencyBlock.match(/name\s*=\s*"([^"]+)"/i)?.[1];
+          desc = currencyBlock.match(/desc\s*=\s*"([^"]+)"/i)?.[1];
+          conditions = currencyBlock.match(/conditions\s*=\s*"([^"]+)"/i)?.[1];
+          break;
+        }
+      }
+    }
     
-    // Extract name
-    const nameMatch = currencyBlock.match(/name\s*=\s*"([^"]+)"/);
-    const name = nameMatch ? nameMatch[1] : undefined;
-    
-    // Extract description
-    const descMatch = currencyBlock.match(/desc\s*=\s*"([^"]+)"/);
-    const desc = descMatch ? descMatch[1] : undefined;
-    
-    return { domain, image, name, desc };
+    return { 
+      domain: homeDomain, 
+      image, 
+      name, 
+      desc, 
+      orgName, 
+      orgUrl, 
+      orgEmail, 
+      orgTwitter, 
+      orgAddress, 
+      orgDesc,
+      conditions 
+    };
   } catch (error) {
     return {};
   }
@@ -419,6 +554,161 @@ export const submitManageSellOffer = async (
     return { success: false, error: error.message || 'Unknown error' };
   }
 };
+
+/**
+ * Fetch recent trades for a trading pair from Horizon
+ */
+export const getRecentTrades = async (
+  baseAssetCode: string,
+  baseAssetIssuer: string,
+  counterAssetCode: string,
+  counterAssetIssuer: string,
+  limit: number = 30
+): Promise<any[]> => {
+  try {
+    // Build base asset params
+    const baseType = getAssetType(baseAssetCode);
+    const baseParams = baseType === 'native'
+      ? 'base_asset_type=native'
+      : `base_asset_type=${baseType}&base_asset_code=${baseAssetCode}&base_asset_issuer=${baseAssetIssuer}`;
+    
+    // Build counter asset params
+    const counterType = getAssetType(counterAssetCode);
+    const counterParams = counterType === 'native'
+      ? 'counter_asset_type=native'
+      : `counter_asset_type=${counterType}&counter_asset_code=${counterAssetCode}&counter_asset_issuer=${counterAssetIssuer}`;
+    
+    const url = `${HORIZON_URL}/trades?${baseParams}&${counterParams}&order=desc&limit=${limit}`;
+    const response = await fetch(url);
+    
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    return data._embedded?.records || [];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Fetch open offers for a specific account
+ */
+export const getAccountOffers = async (
+  publicKey: string,
+  limit: number = 50
+): Promise<any[]> => {
+  try {
+    const url = `${HORIZON_URL}/accounts/${publicKey}/offers?limit=${limit}&order=desc`;
+    const response = await fetch(url);
+    
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    return data._embedded?.records || [];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Cancel an open offer by submitting a manage_sell_offer with amount 0
+ */
+export const cancelOffer = async (
+  secretKey: string,
+  offerId: string,
+  sellingAssetCode: string,
+  sellingAssetIssuer: string,
+  buyingAssetCode: string,
+  buyingAssetIssuer: string
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    const server = new Horizon.Server(HORIZON_URL);
+    const keypair = Keypair.fromSecret(secretKey);
+    const sourcePublicKey = keypair.publicKey();
+    
+    // Load source account
+    const account = await server.loadAccount(sourcePublicKey);
+    
+    // Build selling and buying assets
+    const sellingAsset = sellingAssetCode === 'XLM' || sellingAssetCode === 'native'
+      ? Asset.native()
+      : new Asset(sellingAssetCode, sellingAssetIssuer);
+    
+    const buyingAsset = buyingAssetCode === 'XLM' || buyingAssetCode === 'native'
+      ? Asset.native()
+      : new Asset(buyingAssetCode, buyingAssetIssuer);
+    
+    // Build cancel offer transaction (amount: 0 deletes the offer)
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.manageSellOffer({
+          selling: sellingAsset,
+          buying: buyingAsset,
+          amount: '0',
+          price: '1', // Price doesn't matter when canceling
+          offerId: offerId,
+        })
+      )
+      .setTimeout(180)
+      .build();
+    
+    transaction.sign(keypair);
+    
+    const result = await server.submitTransaction(transaction);
+    return { success: true, hash: result.hash };
+  } catch (error: any) {
+    let errorMessage = error.message || 'Failed to cancel offer';
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+    return { success: false, error: errorMessage };
+  }
+};
+
+/**
+ * Fetch trade aggregations (OHLC data) for price charts
+ */
+export const getTradeAggregations = async (
+  baseAssetCode: string,
+  baseAssetIssuer: string,
+  counterAssetCode: string,
+  counterAssetIssuer: string,
+  resolution: number = 3600000, // 1 hour in ms
+  limit: number = 48
+): Promise<any[]> => {
+  try {
+    // Build base asset params
+    const baseType = getAssetType(baseAssetCode);
+    const baseParams = baseType === 'native'
+      ? 'base_asset_type=native'
+      : `base_asset_type=${baseType}&base_asset_code=${baseAssetCode}&base_asset_issuer=${baseAssetIssuer}`;
+    
+    // Build counter asset params
+    const counterType = getAssetType(counterAssetCode);
+    const counterParams = counterType === 'native'
+      ? 'counter_asset_type=native'
+      : `counter_asset_type=${counterType}&counter_asset_code=${counterAssetCode}&counter_asset_issuer=${counterAssetIssuer}`;
+    
+    // Calculate start time (limit * resolution ms ago)
+    const endTime = Date.now();
+    const startTime = endTime - (limit * resolution);
+    
+    const url = `${HORIZON_URL}/trade_aggregations?${baseParams}&${counterParams}&resolution=${resolution}&start_time=${startTime}&end_time=${endTime}&order=asc&limit=${limit}`;
+    const response = await fetch(url);
+    
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    return data._embedded?.records || [];
+  } catch {
+    return [];
+  }
+};
+
 
 /**
  * Build and submit a manage buy offer transaction
@@ -540,6 +830,103 @@ export const submitPayment = async (
     return { success: true, hash: result.hash };
   } catch (error: any) {
     let errorMessage = error.message || 'Payment failed';
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+    return { success: false, error: errorMessage };
+  }
+};
+
+/**
+ * Get the home_domain set on a Stellar account
+ */
+export const getAccountHomeDomain = async (publicKey: string): Promise<string | null> => {
+  try {
+    const response = await fetch(`${HORIZON_URL}/accounts/${publicKey}`);
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.home_domain || null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Set the home_domain on a Stellar account via setOptions transaction
+ */
+export const setHomeDomain = async (
+  secretKey: string,
+  homeDomain: string
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    const server = new Horizon.Server(HORIZON_URL);
+    const keypair = Keypair.fromSecret(secretKey);
+    const sourcePublicKey = keypair.publicKey();
+    
+    // Load source account
+    const account = await server.loadAccount(sourcePublicKey);
+    
+    // Build setOptions transaction with home_domain
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.setOptions({
+          homeDomain: homeDomain.toLowerCase().trim(),
+        })
+      )
+      .setTimeout(180)
+      .build();
+    
+    transaction.sign(keypair);
+    
+    const result = await server.submitTransaction(transaction);
+    return { success: true, hash: result.hash };
+  } catch (error: any) {
+    let errorMessage = error.message || 'Failed to set home domain';
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+    return { success: false, error: errorMessage };
+  }
+};
+
+/**
+ * Clear the home_domain from a Stellar account
+ */
+export const clearHomeDomain = async (
+  secretKey: string
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    const server = new Horizon.Server(HORIZON_URL);
+    const keypair = Keypair.fromSecret(secretKey);
+    const sourcePublicKey = keypair.publicKey();
+    
+    // Load source account
+    const account = await server.loadAccount(sourcePublicKey);
+    
+    // Build setOptions transaction to clear home_domain (empty string)
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.setOptions({
+          homeDomain: '',
+        })
+      )
+      .setTimeout(180)
+      .build();
+    
+    transaction.sign(keypair);
+    
+    const result = await server.submitTransaction(transaction);
+    return { success: true, hash: result.hash };
+  } catch (error: any) {
+    let errorMessage = error.message || 'Failed to clear home domain';
     if (error.response?.data?.extras?.result_codes) {
       const codes = error.response.data.extras.result_codes;
       errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
