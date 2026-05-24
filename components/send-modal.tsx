@@ -24,20 +24,16 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
   const [recipients, setRecipients] = useState<Recipient[]>([
     { id: '1', address: '', amount: '', memo: '' }
   ]);
-  const [selectedAsset, setSelectedAsset] = useState<{ code: string; issuer: string; balance: string }>({ 
-    code: 'XLM', 
-    issuer: '', 
-    balance: '0' 
-  });
+  const [selectedAsset, setSelectedAsset] = useState<{ code: string; issuer: string; balance: string } | null>(null);
   const [showAssetPicker, setShowAssetPicker] = useState(false);
   const [password, setPassword] = useState('');
   const [showPasswordStep, setShowPasswordStep] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string; hash?: string } | null>(null);
 
-  // Set default asset when wallet changes
+  // Set default asset only once when modal opens with no selection
   useEffect(() => {
-    if (activeWallet?.balances?.length) {
+    if (isOpen && !selectedAsset && activeWallet?.balances?.length) {
       const xlm = activeWallet.balances.find((b: any) => !b.asset_code || b.asset_code === 'XLM');
       if (xlm) {
         setSelectedAsset({ code: 'XLM', issuer: '', balance: xlm.balance });
@@ -50,7 +46,30 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
         });
       }
     }
-  }, [activeWallet]);
+  }, [isOpen, activeWallet, selectedAsset]);
+
+  // Update balance when wallet balances refresh
+  useEffect(() => {
+    if (selectedAsset && activeWallet?.balances?.length) {
+      const current = activeWallet.balances.find((b: any) => 
+        (b.asset_code || 'XLM') === selectedAsset.code && 
+        (b.asset_issuer || '') === selectedAsset.issuer
+      );
+      if (current && current.balance !== selectedAsset.balance) {
+        setSelectedAsset(prev => prev ? { ...prev, balance: current.balance } : null);
+      }
+    }
+  }, [activeWallet?.balances, selectedAsset]);
+
+  // Limit amount to 7 decimal places
+  const formatAmount = (value: string): string => {
+    if (!value) return '';
+    const parts = value.split('.');
+    if (parts.length === 2 && parts[1].length > 7) {
+      return `${parts[0]}.${parts[1].substring(0, 7)}`;
+    }
+    return value;
+  };
 
   const addRecipient = () => {
     setRecipients([...recipients, { 
@@ -68,8 +87,10 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
   };
 
   const updateRecipient = (id: string, field: keyof Recipient, value: string) => {
+    // Limit amount to 7 decimal places
+    const processedValue = field === 'amount' ? formatAmount(value) : value;
     setRecipients(recipients.map(r => 
-      r.id === id ? { ...r, [field]: value } : r
+      r.id === id ? { ...r, [field]: processedValue } : r
     ));
   };
 
@@ -158,10 +179,11 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
     setPassword('');
     setShowPasswordStep(false);
     setResult(null);
+    setSelectedAsset(null);
     onClose();
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !selectedAsset) return null;
 
   return (
     <>
@@ -193,7 +215,7 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
                   <span className="font-medium">{selectedAsset.code}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-muted-foreground">
-                      Balance: {parseFloat(selectedAsset.balance).toFixed(4)}
+                      Balance: {parseFloat(selectedAsset.balance).toFixed(7).replace(/\.?0+$/, '')}
                     </span>
                     <ChevronDown className="w-4 h-4" />
                   </div>
@@ -216,7 +238,7 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
                       >
                         <span className="font-medium">{b.asset_code || 'XLM'}</span>
                         <span className="text-sm text-muted-foreground">
-                          {parseFloat(b.balance).toFixed(4)}
+                          {parseFloat(b.balance).toFixed(7).replace(/\.?0+$/, '')}
                         </span>
                       </button>
                     ))}
@@ -265,6 +287,8 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
                     <div className="flex gap-2">
                       <Input
                         type="number"
+                        step="0.0000001"
+                        min="0.0000001"
                         placeholder="Amount"
                         value={recipient.amount}
                         onChange={(e) => updateRecipient(recipient.id, 'amount', e.target.value)}
@@ -298,7 +322,7 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Total to send:</span>
                   <span className="font-semibold text-primary">
-                    {getTotalAmount().toFixed(7)} {selectedAsset.code}
+                    {getTotalAmount().toFixed(7).replace(/\.?0+$/, '')} {selectedAsset.code}
                   </span>
                 </div>
               </div>
@@ -308,7 +332,7 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
             <div className="space-y-4">
               <div className="text-center py-4">
                 <p className="text-muted-foreground mb-4">
-                  Confirm sending {getTotalAmount().toFixed(4)} {selectedAsset.code} to {recipients.length} recipient{recipients.length > 1 ? 's' : ''}
+                  Confirm sending {getTotalAmount().toFixed(7).replace(/\.?0+$/, '')} {selectedAsset.code} to {recipients.length} recipient{recipients.length > 1 ? 's' : ''}
                 </p>
               </div>
               
