@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import { encryptSecret, decryptSecret, generateKeyPair, getPublicKeyFromSecret, getAccountBalances } from '@/lib/stellar-utils';
 
 export interface Wallet {
@@ -15,10 +15,12 @@ export interface Wallet {
 export interface WalletContextType {
   wallets: Wallet[];
   activeWalletId: string | null;
+  activeWallet: Wallet | null;
   addWallet: (name: string, secret: string, password: string) => void;
   createWallet: (name: string, password: string) => void;
   removeWallet: (id: string) => void;
   setActiveWallet: (id: string) => void;
+  updateWalletName: (id: string, name: string) => void;
   updateBalances: (walletId: string) => Promise<void>;
   unlockWallet: (walletId: string, password: string) => string;
 }
@@ -29,6 +31,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [activeWalletId, setActiveWalletId] = useState<string | null>(null);
 
+  // Compute active wallet
+  const activeWallet = useMemo(() => {
+    return wallets.find(w => w.id === activeWalletId || w.publicKey === activeWalletId) || null;
+  }, [wallets, activeWalletId]);
+
   // Load wallets from localStorage on mount
   useEffect(() => {
     const stored = localStorage.getItem('stellar_wallets');
@@ -37,10 +44,10 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const parsed = JSON.parse(stored);
         setWallets(parsed);
         if (parsed.length > 0) {
-          setActiveWalletId(parsed[0].id);
+          setActiveWalletId(parsed[0].id || parsed[0].publicKey);
         }
       } catch (error) {
-        console.error('[v0] Error loading wallets:', error);
+        // Silent fail
       }
     }
   }, []);
@@ -70,7 +77,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setWallets(prev => [...prev, newWallet]);
       setActiveWalletId(id);
     } catch (error) {
-      console.error('[v0] Error adding wallet:', error);
       throw error;
     }
   }, []);
@@ -80,20 +86,36 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const { publicKey, secret } = generateKeyPair();
       addWallet(name, secret, password);
     } catch (error) {
-      console.error('[v0] Error creating wallet:', error);
       throw error;
     }
   }, [addWallet]);
 
   const removeWallet = useCallback((id: string) => {
-    setWallets(prev => prev.filter(w => w.id !== id));
+    setWallets(prev => {
+      const filtered = prev.filter(w => w.id !== id && w.publicKey !== id);
+      // Update localStorage immediately
+      if (filtered.length > 0) {
+        localStorage.setItem('stellar_wallets', JSON.stringify(filtered));
+      } else {
+        localStorage.removeItem('stellar_wallets');
+      }
+      return filtered;
+    });
     if (activeWalletId === id) {
       setActiveWalletId(wallets.length > 1 ? wallets[0].id : null);
     }
   }, [activeWalletId, wallets]);
 
+  const updateWalletName = useCallback((id: string, name: string) => {
+    setWallets(prev =>
+      prev.map(w =>
+        (w.id === id || w.publicKey === id) ? { ...w, name } : w
+      )
+    );
+  }, []);
+
   const unlockWallet = useCallback((walletId: string, password: string): string => {
-    const wallet = wallets.find(w => w.id === walletId);
+    const wallet = wallets.find(w => w.id === walletId || w.publicKey === walletId);
     if (!wallet) throw new Error('Wallet not found');
     
     try {
@@ -104,18 +126,18 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, [wallets]);
 
   const updateBalances = useCallback(async (walletId: string) => {
-    const wallet = wallets.find(w => w.id === walletId);
+    const wallet = wallets.find(w => w.id === walletId || w.publicKey === walletId);
     if (!wallet) return;
 
     try {
       const balances = await getAccountBalances(wallet.publicKey);
       setWallets(prev =>
         prev.map(w =>
-          w.id === walletId ? { ...w, balances } : w
+          (w.id === walletId || w.publicKey === walletId) ? { ...w, balances } : w
         )
       );
     } catch (error) {
-      console.error('[v0] Error updating balances:', error);
+      // Account may not exist yet
     }
   }, [wallets]);
 
@@ -124,10 +146,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       value={{
         wallets,
         activeWalletId,
+        activeWallet,
         addWallet,
         createWallet,
         removeWallet,
         setActiveWallet: setActiveWalletId,
+        updateWalletName,
         updateBalances,
         unlockWallet,
       }}
