@@ -125,8 +125,8 @@ export default function ExchangePage() {
   useEffect(() => {
     const fetchMeta = async () => {
       const [sellMeta, buyMeta] = await Promise.all([
-        fetchTokenMetadataFromToml(sellingAsset, sellingIssuer),
-        fetchTokenMetadataFromToml(buyingAsset, buyingIssuer),
+        fetchTokenMetadataFromToml(sellingIssuer),
+        fetchTokenMetadataFromToml(buyingIssuer),
       ]);
       setSellingMeta(sellMeta);
       setBuyingMeta(buyMeta);
@@ -406,8 +406,8 @@ export default function ExchangePage() {
             buyingAsset={buyingAsset}
             sellingBalance={sellingBalance}
             buyingBalance={buyingBalance}
-            bestBid={bestBid}
-            bestAsk={bestAsk}
+            bestBid={bestBid ?? undefined}
+            bestAsk={bestAsk ?? undefined}
             buyPrice={buyPrice}
             buyAmount={buyAmount}
             sellPrice={sellPrice}
