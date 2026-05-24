@@ -567,3 +567,100 @@ export const submitPayment = async (
     return { success: false, error: errorMessage };
   }
 };
+
+/**
+ * Get the home_domain set on a Stellar account
+ */
+export const getAccountHomeDomain = async (publicKey: string): Promise<string | null> => {
+  try {
+    const response = await fetch(`${HORIZON_URL}/accounts/${publicKey}`);
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.home_domain || null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Set the home_domain on a Stellar account via setOptions transaction
+ */
+export const setHomeDomain = async (
+  secretKey: string,
+  homeDomain: string
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    const server = new Horizon.Server(HORIZON_URL);
+    const keypair = Keypair.fromSecret(secretKey);
+    const sourcePublicKey = keypair.publicKey();
+    
+    // Load source account
+    const account = await server.loadAccount(sourcePublicKey);
+    
+    // Build setOptions transaction with home_domain
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.setOptions({
+          homeDomain: homeDomain.toLowerCase().trim(),
+        })
+      )
+      .setTimeout(180)
+      .build();
+    
+    transaction.sign(keypair);
+    
+    const result = await server.submitTransaction(transaction);
+    return { success: true, hash: result.hash };
+  } catch (error: any) {
+    let errorMessage = error.message || 'Failed to set home domain';
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+    return { success: false, error: errorMessage };
+  }
+};
+
+/**
+ * Clear the home_domain from a Stellar account
+ */
+export const clearHomeDomain = async (
+  secretKey: string
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    const server = new Horizon.Server(HORIZON_URL);
+    const keypair = Keypair.fromSecret(secretKey);
+    const sourcePublicKey = keypair.publicKey();
+    
+    // Load source account
+    const account = await server.loadAccount(sourcePublicKey);
+    
+    // Build setOptions transaction to clear home_domain (empty string)
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.setOptions({
+          homeDomain: '',
+        })
+      )
+      .setTimeout(180)
+      .build();
+    
+    transaction.sign(keypair);
+    
+    const result = await server.submitTransaction(transaction);
+    return { success: true, hash: result.hash };
+  } catch (error: any) {
+    let errorMessage = error.message || 'Failed to clear home domain';
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+    return { success: false, error: errorMessage };
+  }
+};
