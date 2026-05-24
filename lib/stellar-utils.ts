@@ -556,6 +556,161 @@ export const submitManageSellOffer = async (
 };
 
 /**
+ * Fetch recent trades for a trading pair from Horizon
+ */
+export const getRecentTrades = async (
+  baseAssetCode: string,
+  baseAssetIssuer: string,
+  counterAssetCode: string,
+  counterAssetIssuer: string,
+  limit: number = 30
+): Promise<any[]> => {
+  try {
+    // Build base asset params
+    const baseType = getAssetType(baseAssetCode);
+    const baseParams = baseType === 'native'
+      ? 'base_asset_type=native'
+      : `base_asset_type=${baseType}&base_asset_code=${baseAssetCode}&base_asset_issuer=${baseAssetIssuer}`;
+    
+    // Build counter asset params
+    const counterType = getAssetType(counterAssetCode);
+    const counterParams = counterType === 'native'
+      ? 'counter_asset_type=native'
+      : `counter_asset_type=${counterType}&counter_asset_code=${counterAssetCode}&counter_asset_issuer=${counterAssetIssuer}`;
+    
+    const url = `${HORIZON_URL}/trades?${baseParams}&${counterParams}&order=desc&limit=${limit}`;
+    const response = await fetch(url);
+    
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    return data._embedded?.records || [];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Fetch open offers for a specific account
+ */
+export const getAccountOffers = async (
+  publicKey: string,
+  limit: number = 50
+): Promise<any[]> => {
+  try {
+    const url = `${HORIZON_URL}/accounts/${publicKey}/offers?limit=${limit}&order=desc`;
+    const response = await fetch(url);
+    
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    return data._embedded?.records || [];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Cancel an open offer by submitting a manage_sell_offer with amount 0
+ */
+export const cancelOffer = async (
+  secretKey: string,
+  offerId: string,
+  sellingAssetCode: string,
+  sellingAssetIssuer: string,
+  buyingAssetCode: string,
+  buyingAssetIssuer: string
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    const server = new Horizon.Server(HORIZON_URL);
+    const keypair = Keypair.fromSecret(secretKey);
+    const sourcePublicKey = keypair.publicKey();
+    
+    // Load source account
+    const account = await server.loadAccount(sourcePublicKey);
+    
+    // Build selling and buying assets
+    const sellingAsset = sellingAssetCode === 'XLM' || sellingAssetCode === 'native'
+      ? Asset.native()
+      : new Asset(sellingAssetCode, sellingAssetIssuer);
+    
+    const buyingAsset = buyingAssetCode === 'XLM' || buyingAssetCode === 'native'
+      ? Asset.native()
+      : new Asset(buyingAssetCode, buyingAssetIssuer);
+    
+    // Build cancel offer transaction (amount: 0 deletes the offer)
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.manageSellOffer({
+          selling: sellingAsset,
+          buying: buyingAsset,
+          amount: '0',
+          price: '1', // Price doesn't matter when canceling
+          offerId: offerId,
+        })
+      )
+      .setTimeout(180)
+      .build();
+    
+    transaction.sign(keypair);
+    
+    const result = await server.submitTransaction(transaction);
+    return { success: true, hash: result.hash };
+  } catch (error: any) {
+    let errorMessage = error.message || 'Failed to cancel offer';
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+    return { success: false, error: errorMessage };
+  }
+};
+
+/**
+ * Fetch trade aggregations (OHLC data) for price charts
+ */
+export const getTradeAggregations = async (
+  baseAssetCode: string,
+  baseAssetIssuer: string,
+  counterAssetCode: string,
+  counterAssetIssuer: string,
+  resolution: number = 3600000, // 1 hour in ms
+  limit: number = 48
+): Promise<any[]> => {
+  try {
+    // Build base asset params
+    const baseType = getAssetType(baseAssetCode);
+    const baseParams = baseType === 'native'
+      ? 'base_asset_type=native'
+      : `base_asset_type=${baseType}&base_asset_code=${baseAssetCode}&base_asset_issuer=${baseAssetIssuer}`;
+    
+    // Build counter asset params
+    const counterType = getAssetType(counterAssetCode);
+    const counterParams = counterType === 'native'
+      ? 'counter_asset_type=native'
+      : `counter_asset_type=${counterType}&counter_asset_code=${counterAssetCode}&counter_asset_issuer=${counterAssetIssuer}`;
+    
+    // Calculate start time (limit * resolution ms ago)
+    const endTime = Date.now();
+    const startTime = endTime - (limit * resolution);
+    
+    const url = `${HORIZON_URL}/trade_aggregations?${baseParams}&${counterParams}&resolution=${resolution}&start_time=${startTime}&end_time=${endTime}&order=asc&limit=${limit}`;
+    const response = await fetch(url);
+    
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    return data._embedded?.records || [];
+  } catch {
+    return [];
+  }
+};
+
+
+/**
  * Build and submit a manage buy offer transaction
  */
 export const submitManageBuyOffer = async (
