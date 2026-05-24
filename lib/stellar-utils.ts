@@ -474,3 +474,61 @@ export const submitManageBuyOffer = async (
     return { success: false, error: error.message || 'Unknown error' };
   }
 };
+
+/**
+ * Submit a payment transaction
+ */
+export const submitPayment = async (
+  secretKey: string,
+  destinationAddress: string,
+  assetCode: string,
+  assetIssuer: string,
+  amount: string,
+  memo?: string
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    const server = new Server(HORIZON_URL);
+    const keypair = Keypair.fromSecret(secretKey);
+    const sourcePublicKey = keypair.publicKey();
+    
+    // Load source account
+    const account = await server.loadAccount(sourcePublicKey);
+    
+    // Create asset
+    const asset = assetCode === 'XLM' || !assetIssuer 
+      ? Asset.native() 
+      : new Asset(assetCode, assetIssuer);
+    
+    // Build transaction
+    let txBuilder = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.payment({
+          destination: destinationAddress,
+          asset: asset,
+          amount: amount,
+        })
+      );
+    
+    // Add memo if provided
+    if (memo) {
+      const { Memo } = await import('@stellar/stellar-sdk');
+      txBuilder = txBuilder.addMemo(Memo.text(memo.substring(0, 28)));
+    }
+    
+    const transaction = txBuilder.setTimeout(180).build();
+    transaction.sign(keypair);
+    
+    const result = await server.submitTransaction(transaction);
+    return { success: true, hash: result.hash };
+  } catch (error: any) {
+    let errorMessage = error.message || 'Payment failed';
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+    return { success: false, error: errorMessage };
+  }
+};

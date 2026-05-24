@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation';
 import { Header } from '@/components/header';
 import { WalletCard } from '@/components/wallet-card';
 import { CreateWalletModal } from '@/components/create-wallet-modal';
+import { SendModal } from '@/components/send-modal';
+import { ReceiveModal } from '@/components/receive-modal';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/lib/wallet-context';
-import { Plus, Send, LogIn, ArrowRightLeft, Briefcase } from 'lucide-react';
+import { Plus, Send, ArrowRightLeft, Briefcase, Download } from 'lucide-react';
 import Link from 'next/link';
 import { AssetItem } from '@/components/asset-item';
 
@@ -15,6 +17,8 @@ export default function DashboardPage() {
   const router = useRouter();
   const { wallets, activeWalletId, setActiveWallet, removeWallet, updateBalances } = useWallet();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSendOpen, setIsSendOpen] = useState(false);
+  const [isReceiveOpen, setIsReceiveOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   const handleExchangeClick = () => {
@@ -81,14 +85,20 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <Link href="/send" className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group">
+                  <button 
+                    onClick={() => setIsSendOpen(true)}
+                    className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group"
+                  >
                     <Send className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
                     <p className="text-xs font-medium text-foreground">Send</p>
-                  </Link>
-                  <Link href="/receive" className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group">
-                    <LogIn className="w-5 h-5 text-primary mx-auto mb-2 rotate-180 group-hover:glow-pulse" />
+                  </button>
+                  <button 
+                    onClick={() => setIsReceiveOpen(true)}
+                    className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group"
+                  >
+                    <Download className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
                     <p className="text-xs font-medium text-foreground">Receive</p>
-                  </Link>
+                  </button>
                   <Link href="/portfolio" className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group">
                     <Briefcase className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
                     <p className="text-xs font-medium text-foreground">Portfolio</p>
@@ -155,6 +165,8 @@ export default function DashboardPage() {
       </div>
 
       <CreateWalletModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+      <SendModal isOpen={isSendOpen} onClose={() => setIsSendOpen(false)} />
+      <ReceiveModal isOpen={isReceiveOpen} onClose={() => setIsReceiveOpen(false)} />
     </main>
   );
 }

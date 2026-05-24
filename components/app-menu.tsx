@@ -12,15 +12,9 @@ import {
   Settings,
   Wallet,
   HelpCircle,
-  LayoutDashboard,
-  Coins,
   Info,
-  LogOut,
   Key,
-  Shield,
   ChevronRight,
-  Send,
-  Download,
 } from 'lucide-react';
 import { useWallet } from '@/lib/wallet-context';
 
@@ -40,8 +34,6 @@ export function AppMenu({ isOpen, onClose, onOpenSettings, onOpenSecretKey }: Ap
     { icon: ArrowRightLeft, label: 'Exchange', href: '/exchange' },
     { icon: TrendingUp, label: 'Portfolio', href: '/portfolio' },
     { icon: History, label: 'History', href: '/history' },
-    { icon: Send, label: 'Send', href: '/send' },
-    { icon: Download, label: 'Receive', href: '/receive' },
   ];
 
   const utilityItems = [
