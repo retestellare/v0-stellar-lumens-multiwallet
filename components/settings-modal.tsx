@@ -44,21 +44,36 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [submittingDomain, setSubmittingDomain] = useState(false);
   const [domainSuccess, setDomainSuccess] = useState(false);
 
+  // Reset states when closing modal or switching sections
+  useEffect(() => {
+    if (!isOpen) {
+      setActiveSection('main');
+      setBlockchainDomain(null);
+      setLoadingDomain(false);
+      setEditingDomain(false);
+      setDomainPassword('');
+      setDomainError('');
+      setDomainSuccess(false);
+    }
+  }, [isOpen]);
+
   // Fetch home_domain from blockchain when wallet section opens
   useEffect(() => {
-    if (activeSection === 'wallet' && activeWallet) {
+    if (activeSection === 'wallet' && activeWallet?.publicKey) {
+      const publicKey = activeWallet.publicKey;
       setLoadingDomain(true);
-      getAccountHomeDomain(activeWallet.publicKey)
+      getAccountHomeDomain(publicKey)
         .then(domain => {
           setBlockchainDomain(domain);
-          setLoadingDomain(false);
         })
         .catch(() => {
           setBlockchainDomain(null);
+        })
+        .finally(() => {
           setLoadingDomain(false);
         });
     }
-  }, [activeSection, activeWallet]);
+  }, [activeSection, activeWallet?.publicKey]);
 
   if (!isOpen) return null;
 
