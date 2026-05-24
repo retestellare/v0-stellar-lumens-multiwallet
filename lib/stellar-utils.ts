@@ -252,6 +252,121 @@ const KNOWN_TOKENS: Record<string, { domain: string; image: string; name: string
   'AQUA_GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA': { domain: 'aqua.network', image: 'https://aqua.network/assets/img/aqua-logo.png', name: 'Aquarius' },
   'BTC_GDPJALI4AZKUU2W426U5WKMAT6CN3AJRPIIRYR2YM54TL2GDWO5O2MZM': { domain: 'ultrastellar.com', image: 'https://assets.coingecko.com/coins/images/1/small/bitcoin.png', name: 'Bitcoin' },
   'ETH_GDPJALI4AZKUU2W426U5WKMAT6CN3AJRPIIRYR2YM54TL2GDWO5O2MZM': { domain: 'ultrastellar.com', image: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png', name: 'Ethereum' },
+  };
+
+// Token icon cache interface
+interface TokenIconCache {
+  url: string;
+  expiresAt: number;
+}
+
+// Default fallback icon - gradient circle placeholder
+const FALLBACK_ICON = '/placeholder-token.svg';
+
+// Cache duration: 24 hours in milliseconds
+const CACHE_DURATION_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Get token icon URL with 24-hour localStorage caching
+ * Checks: 1) Known tokens, 2) Lobstr API, 3) stellar.toml
+ */
+export const getIssuerTokenIcon = async (code: string, issuer: string): Promise<string> => {
+  // Handle XLM native asset
+  if (!issuer || code === 'XLM' || code === 'native') {
+    return KNOWN_TOKENS['XLM_'].image;
+  }
+
+  // Check known tokens first (no caching needed)
+  const knownKey = `${code}_${issuer}`;
+  if (KNOWN_TOKENS[knownKey]) {
+    return KNOWN_TOKENS[knownKey].image;
+  }
+
+  // Generate cache key
+  const cacheKey = `token_icon_${code}_${issuer}`;
+
+  // Check localStorage cache (client-side only)
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const cacheData: TokenIconCache = JSON.parse(cached);
+        // Check if cache is still valid
+        if (Date.now() < cacheData.expiresAt) {
+          return cacheData.url;
+        }
+        // Cache expired, remove it
+        localStorage.removeItem(cacheKey);
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+  }
+
+  // Helper to save to cache
+  const saveToCache = (url: string) => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cacheData: TokenIconCache = {
+          url,
+          expiresAt: Date.now() + CACHE_DURATION_MS,
+        };
+        localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+      } catch {
+        // Ignore localStorage errors (quota exceeded, etc.)
+      }
+    }
+    return url;
+  };
+
+  // Try Lobstr API first (faster, more reliable)
+  const lobstrUrl = `https://lobstr.co/api/v1/sep/assets/${code}-${issuer}/image.png`;
+  try {
+    const response = await fetch(lobstrUrl, { method: 'HEAD' });
+    if (response.ok) {
+      return saveToCache(lobstrUrl);
+    }
+  } catch {
+    // Lobstr failed, continue to stellar.toml
+  }
+
+  // Try stellar.toml via issuer's home_domain
+  try {
+    // Get issuer account to find home_domain
+    const accountResponse = await fetch(`${HORIZON_URL}/accounts/${issuer}`);
+    if (accountResponse.ok) {
+      const accountData = await accountResponse.json();
+      const homeDomain = accountData.home_domain;
+      
+      if (homeDomain) {
+        // Fetch stellar.toml
+        const tomlUrl = `https://${homeDomain}/.well-known/stellar.toml`;
+        const tomlResponse = await fetch(tomlUrl);
+        
+        if (tomlResponse.ok) {
+          const tomlText = await tomlResponse.text();
+          
+          // Find currency block matching this issuer
+          const currenciesMatch = tomlText.match(/\[\[CURRENCIES\]\]([\s\S]*?)(?=\[\[|$)/gi);
+          if (currenciesMatch) {
+            for (const currencyBlock of currenciesMatch) {
+              if (currencyBlock.includes(issuer)) {
+                const imageMatch = currencyBlock.match(/image\s*=\s*"([^"]+)"/i);
+                if (imageMatch && imageMatch[1]) {
+                  return saveToCache(imageMatch[1]);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch {
+    // stellar.toml failed
+  }
+
+  // Return fallback (don't cache fallback to allow retry)
+  return FALLBACK_ICON;
 };
 
 /**

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { fetchTokenMetadataFromToml } from '@/lib/stellar-utils';
+import { fetchTokenMetadataFromToml, getIssuerTokenIcon } from '@/lib/stellar-utils';
 import { getTokenPicks } from '@/lib/token-service';
 
 // Known tokens cache for instant metadata lookup
@@ -49,18 +49,32 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
   const [domain, setDomain] = useState<string | null>(cachedMeta?.domain || null);
   const [imageError, setImageError] = useState(false);
   
-  // Only fetch from TOML if not in cache
+  // Fetch image and domain
   useEffect(() => {
-    if (cachedMeta) return; // Already have metadata
+    let cancelled = false;
     
     const fetchMeta = async () => {
-      const meta = await fetchTokenMetadataFromToml(issuer);
-      if (meta.image) setImage(meta.image);
-      if (meta.domain) setDomain(meta.domain);
+      // Fetch icon with caching
+      if (!image) {
+        const iconUrl = await getIssuerTokenIcon(code, issuer);
+        if (!cancelled && iconUrl) {
+          setImage(iconUrl);
+        }
+      }
+      
+      // Fetch domain from TOML if not cached
+      if (!domain && issuer) {
+        const meta = await fetchTokenMetadataFromToml(issuer);
+        if (!cancelled && meta.domain) {
+          setDomain(meta.domain);
+        }
+      }
     };
     
     fetchMeta();
-  }, [issuer, cachedMeta]);
+    
+    return () => { cancelled = true; };
+  }, [code, issuer, image, domain]);
   
   return (
     <button 

@@ -3,7 +3,7 @@
 import { Header } from '@/components/header';
 import { useWallet } from '@/lib/wallet-context';
 import { Button } from '@/components/ui/button';
-import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret, fetchTokenMetadataFromToml } from '@/lib/stellar-utils';
+import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret, fetchTokenMetadataFromToml, getIssuerTokenIcon } from '@/lib/stellar-utils';
 import { TradingPairHeader } from '@/components/trading-pair-header';
 import { OrderBook } from '@/components/order-book';
 import { TradeHistory } from '@/components/trade-history';
@@ -121,15 +121,20 @@ export default function ExchangePage() {
     }
   }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
   
-  // Fetch token metadata when assets change
+  // Fetch token metadata and icons when assets change
   useEffect(() => {
     const fetchMeta = async () => {
-      const [sellMeta, buyMeta] = await Promise.all([
+      // Fetch metadata and icons in parallel
+      const [sellMeta, buyMeta, sellIcon, buyIcon] = await Promise.all([
         fetchTokenMetadataFromToml(sellingIssuer),
         fetchTokenMetadataFromToml(buyingIssuer),
+        getIssuerTokenIcon(sellingAsset, sellingIssuer),
+        getIssuerTokenIcon(buyingAsset, buyingIssuer),
       ]);
-      setSellingMeta(sellMeta);
-      setBuyingMeta(buyMeta);
+      
+      // Merge icon into metadata
+      setSellingMeta({ ...sellMeta, image: sellMeta.image || sellIcon });
+      setBuyingMeta({ ...buyMeta, image: buyMeta.image || buyIcon });
     };
     
     if (mounted) {
