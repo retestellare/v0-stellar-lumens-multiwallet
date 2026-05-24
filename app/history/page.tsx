@@ -2,55 +2,60 @@
 
 import { Header } from '@/components/header';
 import { useWallet } from '@/lib/wallet-context';
-import { getAccountTransactions } from '@/lib/stellar-utils';
+import { getAccountPayments } from '@/lib/stellar-utils';
 import { useState, useEffect } from 'react';
-import { ArrowLeft, ArrowUp, ArrowDown } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, ArrowDownLeft, ExternalLink, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 
-interface Transaction {
+interface Payment {
   id: string;
   created_at: string;
-  memo?: string;
-  operations_count: number;
-  type?: string;
+  type: string;
+  from: string;
+  to: string;
+  amount: string;
+  asset_type: string;
+  asset_code?: string;
+  asset_issuer?: string;
+  transaction_hash: string;
 }
 
 export default function HistoryPage() {
   const { wallets, activeWalletId } = useWallet();
   const [mounted, setMounted] = useState(false);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    if (activeWalletId && mounted) {
-      const fetchTransactions = async () => {
-        setLoading(true);
-        try {
-          const activeWallet = wallets.find(w => w.id === activeWalletId);
-          if (activeWallet) {
-            const txs = await getAccountTransactions(activeWallet.publicKey, 50);
-            setTransactions(txs);
-          }
-        } catch (error) {
-          console.error('[v0] Error fetching transactions:', error);
-        } finally {
-          setLoading(false);
-        }
-      };
+  const activeWallet = wallets.find(w => w.id === activeWalletId);
 
-      fetchTransactions();
-      const interval = setInterval(fetchTransactions, 30000);
-      return () => clearInterval(interval);
+  useEffect(() => {
+    if (activeWalletId && mounted && activeWallet) {
+      fetchPayments();
     }
-  }, [activeWalletId, wallets, mounted]);
+  }, [activeWalletId, mounted, activeWallet?.publicKey]);
+
+  const fetchPayments = async () => {
+    if (!activeWallet) return;
+    setLoading(true);
+    try {
+      const data = await getAccountPayments(activeWallet.publicKey, 50);
+      // Filter for payment operations only
+      const paymentOps = data.filter((op: any) => 
+        op.type === 'payment' || op.type === 'create_account' || op.type === 'path_payment_strict_send' || op.type === 'path_payment_strict_receive'
+      );
+      setPayments(paymentOps);
+    } catch (error) {
+      console.error('[v0] Error fetching payments:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (!mounted) return null;
-
-  const activeWallet = wallets.find(w => w.id === activeWalletId);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -62,6 +67,27 @@ export default function HistoryPage() {
     });
   };
 
+  const formatAmount = (amount: string) => {
+    const num = parseFloat(amount);
+    if (num >= 1000000) return (num / 1000000).toFixed(2) + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(2) + 'K';
+    return num.toFixed(4);
+  };
+
+  const getAssetCode = (payment: Payment) => {
+    if (payment.asset_type === 'native') return 'XLM';
+    return payment.asset_code || 'Unknown';
+  };
+
+  const isReceived = (payment: Payment) => {
+    return payment.to === activeWallet?.publicKey;
+  };
+
+  const getCounterparty = (payment: Payment) => {
+    const address = isReceived(payment) ? payment.from : payment.to;
+    return address ? `${address.substring(0, 4)}...${address.substring(address.length - 4)}` : 'Unknown';
+  };
+
   return (
     <main className="min-h-screen bg-background">
       <Header />
@@ -71,95 +97,113 @@ export default function HistoryPage() {
           Back to Dashboard
         </Link>
 
-        <div className="space-y-8">
+        <div className="space-y-6">
           {/* Header */}
           <div className="glow-border p-6 rounded-lg">
-            <h1 className="text-3xl font-bold text-foreground mb-2">Transaction History</h1>
-            <p className="text-muted-foreground text-sm">
-              {activeWallet?.name} • {transactions.length} transactions
-            </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl md:text-3xl font-bold text-foreground mb-2">Transaction History</h1>
+                <p className="text-muted-foreground text-sm">
+                  {activeWallet?.name} - {payments.length} payment{payments.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+              <button 
+                onClick={fetchPayments}
+                disabled={loading}
+                className="p-2 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors"
+              >
+                <RefreshCw className={`w-5 h-5 text-primary ${loading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
           </div>
 
-          {/* Transactions List */}
-          {loading ? (
+          {/* Payments List */}
+          {loading && payments.length === 0 ? (
             <div className="glow-border p-12 rounded-lg text-center">
+              <RefreshCw className="w-8 h-8 text-primary mx-auto mb-4 animate-spin" />
               <p className="text-muted-foreground">Loading transactions...</p>
             </div>
-          ) : transactions.length === 0 ? (
+          ) : payments.length === 0 ? (
             <div className="glow-border p-12 rounded-lg text-center">
-              <p className="text-muted-foreground">No transactions yet. Your transactions will appear here.</p>
+              <p className="text-muted-foreground">No transactions yet. Your payments will appear here.</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {transactions.map((tx: any, idx: number) => (
-                <div
-                  key={tx.id}
-                  className="glow-border p-4 rounded-lg hover:bg-card/50 transition-colors"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4 flex-1">
-                      {/* Transaction Type Icon */}
-                      <div className="flex-shrink-0">
-                        <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-                          {tx.type === 'payment_received' || tx.memo?.includes('receive') ? (
-                            <ArrowDown className="w-5 h-5 text-primary" />
-                          ) : (
-                            <ArrowUp className="w-5 h-5 text-accent" />
-                          )}
-                        </div>
+              {payments.map((payment) => {
+                const received = isReceived(payment);
+                const assetCode = getAssetCode(payment);
+                
+                return (
+                  <div
+                    key={payment.id}
+                    className="glow-border p-4 rounded-lg hover:bg-card/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-4">
+                      {/* Direction Icon */}
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                        received ? 'bg-green-500/20' : 'bg-accent/20'
+                      }`}>
+                        {received ? (
+                          <ArrowDownLeft className="w-5 h-5 text-green-500" />
+                        ) : (
+                          <ArrowUpRight className="w-5 h-5 text-accent" />
+                        )}
                       </div>
 
-                      {/* Transaction Details */}
-                      <div className="flex-1">
+                      {/* Details */}
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-medium text-foreground">
-                            Transaction {tx.id.substring(0, 8)}...
-                          </h3>
-                          <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded">
-                            {tx.operations_count} operation{tx.operations_count !== 1 ? 's' : ''}
+                          <span className={`font-semibold ${received ? 'text-green-500' : 'text-accent'}`}>
+                            {received ? '+' : '-'}{formatAmount(payment.amount)} {assetCode}
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {formatDate(tx.created_at)}
+                          {received ? 'From' : 'To'}: {getCounterparty(payment)}
                         </p>
-                        {tx.memo && (
-                          <p className="text-xs text-muted-foreground mt-1">Memo: {tx.memo}</p>
-                        )}
+                        <p className="text-xs text-muted-foreground">
+                          {formatDate(payment.created_at)}
+                        </p>
                       </div>
-                    </div>
 
-                    {/* View Link */}
-                    <Link
-                      href={`https://stellar.expert/explorer/public/tx/${tx.id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:text-primary/80 text-sm font-medium"
-                    >
-                      View →
-                    </Link>
+                      {/* View Link */}
+                      <Link
+                        href={`https://stellar.expert/explorer/public/tx/${payment.transaction_hash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors flex-shrink-0"
+                      >
+                        <ExternalLink className="w-4 h-4 text-primary" />
+                      </Link>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
-          {/* Stats */}
-          {transactions.length > 0 && (
-            <div className="grid md:grid-cols-3 gap-4">
+          {/* Summary Stats */}
+          {payments.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="glow-border p-4 rounded-lg">
-                <p className="text-xs font-medium text-muted-foreground mb-2">Total Transactions</p>
-                <p className="text-2xl font-bold text-primary">{transactions.length}</p>
+                <p className="text-xs font-medium text-muted-foreground mb-1">Total Payments</p>
+                <p className="text-xl font-bold text-primary">{payments.length}</p>
               </div>
               <div className="glow-border p-4 rounded-lg">
-                <p className="text-xs font-medium text-muted-foreground mb-2">Total Operations</p>
-                <p className="text-2xl font-bold text-primary">
-                  {transactions.reduce((sum: number, tx: any) => sum + tx.operations_count, 0)}
+                <p className="text-xs font-medium text-muted-foreground mb-1">Received</p>
+                <p className="text-xl font-bold text-green-500">
+                  {payments.filter(p => isReceived(p)).length}
                 </p>
               </div>
               <div className="glow-border p-4 rounded-lg">
-                <p className="text-xs font-medium text-muted-foreground mb-2">Latest Activity</p>
-                <p className="text-xs font-semibold text-foreground">
-                  {transactions.length > 0 ? formatDate(transactions[0].created_at) : 'N/A'}
+                <p className="text-xs font-medium text-muted-foreground mb-1">Sent</p>
+                <p className="text-xl font-bold text-accent">
+                  {payments.filter(p => !isReceived(p)).length}
+                </p>
+              </div>
+              <div className="glow-border p-4 rounded-lg">
+                <p className="text-xs font-medium text-muted-foreground mb-1">Latest</p>
+                <p className="text-xs font-semibold text-foreground truncate">
+                  {payments.length > 0 ? formatDate(payments[0].created_at) : 'N/A'}
                 </p>
               </div>
             </div>

@@ -1,18 +1,29 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Header } from '@/components/header';
 import { WalletCard } from '@/components/wallet-card';
 import { CreateWalletModal } from '@/components/create-wallet-modal';
+import { SendModal } from '@/components/send-modal';
+import { ReceiveModal } from '@/components/receive-modal';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/lib/wallet-context';
-import { Plus, Send, LogIn } from 'lucide-react';
+import { Plus, Send, ArrowRightLeft, Briefcase, Download } from 'lucide-react';
 import Link from 'next/link';
+import { AssetItem } from '@/components/asset-item';
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { wallets, activeWalletId, setActiveWallet, removeWallet, updateBalances } = useWallet();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSendOpen, setIsSendOpen] = useState(false);
+  const [isReceiveOpen, setIsReceiveOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+
+  const handleExchangeClick = () => {
+    router.push('/exchange');
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -74,20 +85,31 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <Link href="/send" className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group">
+                  <button 
+                    onClick={() => setIsSendOpen(true)}
+                    className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group"
+                  >
                     <Send className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
                     <p className="text-xs font-medium text-foreground">Send</p>
-                  </Link>
-                  <Link href="/receive" className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group">
-                    <LogIn className="w-5 h-5 text-primary mx-auto mb-2 rotate-180 group-hover:glow-pulse" />
+                  </button>
+                  <button 
+                    onClick={() => setIsReceiveOpen(true)}
+                    className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group"
+                  >
+                    <Download className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
                     <p className="text-xs font-medium text-foreground">Receive</p>
-                  </Link>
-                  <Link href="/portfolio" className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center">
+                  </button>
+                  <Link href="/portfolio" className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group">
+                    <Briefcase className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
                     <p className="text-xs font-medium text-foreground">Portfolio</p>
                   </Link>
-                  <Link href="/exchange" className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center">
+                  <button 
+                    onClick={handleExchangeClick}
+                    className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group"
+                  >
+                    <ArrowRightLeft className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
                     <p className="text-xs font-medium text-foreground">Exchange</p>
-                  </Link>
+                  </button>
                 </div>
 
                 {/* Assets List */}
@@ -98,21 +120,12 @@ export default function DashboardPage() {
                       <p className="text-xs text-muted-foreground text-center py-4">No assets yet. Fund your wallet to get started.</p>
                     ) : (
                       activeWallet.balances.map((balance: any, idx: number) => (
-                        <div key={idx} className="flex items-center justify-between p-2 bg-background/30 rounded border border-border/50">
-                          <div className="flex-1">
-                            <p className="text-xs font-medium text-foreground">
-                              {balance.asset_code || 'XLM'}
-                            </p>
-                            {balance.asset_issuer && (
-                              <p className="text-xs text-muted-foreground truncate">
-                                {balance.asset_issuer.substring(0, 12)}...
-                              </p>
-                            )}
-                          </div>
-                          <p className="text-sm font-semibold text-primary">
-                            {parseFloat(balance.balance).toFixed(4)}
-                          </p>
-                        </div>
+                        <AssetItem
+                          key={idx}
+                          code={balance.asset_code || 'XLM'}
+                          issuer={balance.asset_issuer || ''}
+                          balance={balance.balance}
+                        />
                       ))
                     )}
                   </div>
@@ -152,6 +165,8 @@ export default function DashboardPage() {
       </div>
 
       <CreateWalletModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+      <SendModal isOpen={isSendOpen} onClose={() => setIsSendOpen(false)} />
+      <ReceiveModal isOpen={isReceiveOpen} onClose={() => setIsReceiveOpen(false)} />
     </main>
   );
 }

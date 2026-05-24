@@ -1,8 +1,19 @@
-import { Keypair, Networks, TransactionBuilder, BASE_FEE, Asset, Operation } from '@stellar/stellar-sdk';
+import { Keypair, Networks, TransactionBuilder, BASE_FEE, Asset, Operation, Account, Memo, Horizon } from '@stellar/stellar-sdk';
 import nacl from 'tweetnacl';
 
 export const HORIZON_URL = 'https://horizon.stellar.org';
-export const NETWORK_PASSPHRASE = Networks.PUBLIC_NETWORK_PASSPHRASE;
+export const NETWORK_PASSPHRASE = Networks.PUBLIC;
+
+/**
+ * Determine asset type based on code length
+ * native = XLM
+ * credit_alphanum4 = 1-4 character codes
+ * credit_alphanum12 = 5-12 character codes
+ */
+function getAssetType(code: string): string {
+  if (code === 'XLM' || code === 'native') return 'native';
+  return code.length <= 4 ? 'credit_alphanum4' : 'credit_alphanum12';
+}
 
 // Simple uint8 to string conversion
 const uint8ToString = (arr: Uint8Array): string => {
@@ -140,7 +151,23 @@ export const getAccountTransactions = async (publicKey: string, limit = 10) => {
     );
     if (!response.ok) return [];
     const data = await response.json();
-    return data.records || [];
+    return data._embedded?.records || data.records || [];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Get account payment operations (sent/received)
+ */
+export const getAccountPayments = async (publicKey: string, limit = 50) => {
+  try {
+    const response = await fetch(
+      `${HORIZON_URL}/accounts/${publicKey}/payments?limit=${limit}&order=desc`
+    );
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data._embedded?.records || data.records || [];
   } catch {
     return [];
   }
@@ -154,17 +181,48 @@ export const getOrderBook = async (
   buyingAssetIssuer: string
 ) => {
   try {
-    const params = new URLSearchParams({
-      selling_asset_code: sellingAssetCode,
-      selling_asset_issuer: sellingAssetIssuer,
-      buying_asset_code: buyingAssetCode,
-      buying_asset_issuer: buyingAssetIssuer,
-    });
+    const params = new URLSearchParams();
     
-    const response = await fetch(`${HORIZON_URL}/order_book?${params}`);
-    if (!response.ok) return { bids: [], asks: [] };
-    return response.json();
-  } catch {
+    // Determine selling asset type based on code length
+    const sellingType = getAssetType(sellingAssetCode);
+    if (sellingType === 'native') {
+      params.append('selling_asset_type', 'native');
+    } else {
+      params.append('selling_asset_type', sellingType);
+      params.append('selling_asset_code', sellingAssetCode);
+      if (sellingAssetIssuer) {
+        params.append('selling_asset_issuer', sellingAssetIssuer);
+      }
+    }
+    
+    // Determine buying asset type based on code length
+    const buyingType = getAssetType(buyingAssetCode);
+    if (buyingType === 'native') {
+      params.append('buying_asset_type', 'native');
+    } else {
+      params.append('buying_asset_type', buyingType);
+      params.append('buying_asset_code', buyingAssetCode);
+      if (buyingAssetIssuer) {
+        params.append('buying_asset_issuer', buyingAssetIssuer);
+      }
+    }
+    
+    const url = `${HORIZON_URL}/order_book?${params}`;
+    console.log('[v0] Fetching order book from:', url);
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('[v0] Order book API error:', response.status, errorData);
+      return { bids: [], asks: [] };
+    }
+    
+    const data = await response.json();
+    console.log('[v0] Order book fetched:', { bids: data.bids?.length || 0, asks: data.asks?.length || 0 });
+    return data;
+  } catch (error) {
+    console.error('[v0] Error fetching order book:', error);
     return { bids: [], asks: [] };
   }
 };
@@ -182,5 +240,310 @@ export const searchAssets = async (code?: string, issuer?: string, limit = 10) =
     return data.records || [];
   } catch {
     return [];
+  }
+};
+
+// Common token metadata cache for fast lookups
+const KNOWN_TOKENS: Record<string, { domain: string; image: string; name: string }> = {
+  'XLM_': { domain: 'stellar.org', image: 'https://assets.coingecko.com/coins/images/100/small/Stellar_symbol_black_RGB.png', name: 'Stellar Lumens' },
+  'USDC_GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN': { domain: 'circle.com', image: 'https://assets.coingecko.com/coins/images/6319/small/usdc.png', name: 'USD Coin' },
+  'EURC_GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2': { domain: 'circle.com', image: 'https://assets.coingecko.com/coins/images/26045/small/euro-coin.png', name: 'Euro Coin' },
+  'yXLM_GARDNV3Q7YGT4AKSDF25LT32YSCCW4EV22Y2TV3I2PU2MMXJTEDL5T55': { domain: 'ultrastellar.com', image: 'https://ultrastellar.com/static/images/icons/yXLM.png', name: 'Yield XLM' },
+  'AQUA_GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA': { domain: 'aqua.network', image: 'https://aqua.network/assets/img/aqua-logo.png', name: 'Aquarius' },
+  'BTC_GDPJALI4AZKUU2W426U5WKMAT6CN3AJRPIIRYR2YM54TL2GDWO5O2MZM': { domain: 'ultrastellar.com', image: 'https://assets.coingecko.com/coins/images/1/small/bitcoin.png', name: 'Bitcoin' },
+  'ETH_GDPJALI4AZKUU2W426U5WKMAT6CN3AJRPIIRYR2YM54TL2GDWO5O2MZM': { domain: 'ultrastellar.com', image: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png', name: 'Ethereum' },
+};
+
+/**
+ * Fetch token metadata from stellar.toml file
+ * Returns domain, image, and name if available
+ */
+export const fetchTokenMetadataFromToml = async (
+  code: string,
+  issuer: string
+): Promise<{ domain?: string; image?: string; name?: string; desc?: string }> => {
+  // Check known tokens cache first
+  const cacheKey = `${code}_${issuer}`;
+  if (KNOWN_TOKENS[cacheKey]) {
+    return KNOWN_TOKENS[cacheKey];
+  }
+  
+  if (!issuer || code === 'XLM') {
+    return KNOWN_TOKENS['XLM_'];
+  }
+  
+  try {
+    // First, get asset info from Horizon to find the home_domain
+    const assetResponse = await fetch(
+      `${HORIZON_URL}/assets?asset_code=${code}&asset_issuer=${issuer}&limit=1`
+    );
+    
+    if (!assetResponse.ok) return {};
+    
+    const assetData = await assetResponse.json();
+    const records = assetData._embedded?.records || [];
+    
+    if (records.length === 0) return {};
+    
+    const tomlUrl = records[0]._links?.toml?.href;
+    if (!tomlUrl) return {};
+    
+    // Extract domain from toml URL
+    const domainMatch = tomlUrl.match(/https?:\/\/([^/]+)/);
+    const domain = domainMatch ? domainMatch[1] : undefined;
+    
+    // Fetch stellar.toml
+    const tomlResponse = await fetch(tomlUrl);
+    if (!tomlResponse.ok) return { domain };
+    
+    const tomlText = await tomlResponse.text();
+    
+    // Parse CURRENCIES section to find this asset
+    const currencyMatch = tomlText.match(
+      new RegExp(`\\[\\[CURRENCIES\\]\\][^\\[]*code\\s*=\\s*"${code}"[^\\[]*issuer\\s*=\\s*"${issuer}"[^\\[]*`, 'i')
+    ) || tomlText.match(
+      new RegExp(`\\[\\[CURRENCIES\\]\\][^\\[]*issuer\\s*=\\s*"${issuer}"[^\\[]*code\\s*=\\s*"${code}"[^\\[]*`, 'i')
+    );
+    
+    if (!currencyMatch) return { domain };
+    
+    const currencyBlock = currencyMatch[0];
+    
+    // Extract image
+    const imageMatch = currencyBlock.match(/image\s*=\s*"([^"]+)"/);
+    const image = imageMatch ? imageMatch[1] : undefined;
+    
+    // Extract name
+    const nameMatch = currencyBlock.match(/name\s*=\s*"([^"]+)"/);
+    const name = nameMatch ? nameMatch[1] : undefined;
+    
+    // Extract description
+    const descMatch = currencyBlock.match(/desc\s*=\s*"([^"]+)"/);
+    const desc = descMatch ? descMatch[1] : undefined;
+    
+    return { domain, image, name, desc };
+  } catch (error) {
+    return {};
+  }
+};
+
+/**
+ * Create an Asset object from code and issuer
+ */
+export const createAsset = (code: string, issuer?: string): Asset => {
+  if (code === 'XLM' || code === 'native' || !issuer) {
+    return Asset.native();
+  }
+  return new Asset(code, issuer);
+};
+
+/**
+ * Build and submit a manage sell offer transaction (limit order on DEX)
+ * @param sourceSecret - Secret key of the account placing the order
+ * @param sellingAsset - Asset being sold
+ * @param buyingAsset - Asset being bought
+ * @param amount - Amount of selling asset
+ * @param price - Price in terms of buying asset per selling asset
+ * @returns Transaction result
+ */
+export const submitManageSellOffer = async (
+  sourceSecret: string,
+  sellingCode: string,
+  sellingIssuer: string,
+  buyingCode: string,
+  buyingIssuer: string,
+  amount: string,
+  price: string,
+  offerId: string = '0' // 0 = new offer
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    const sourceKeypair = Keypair.fromSecret(sourceSecret);
+    const publicKey = sourceKeypair.publicKey();
+    
+    // Fetch current account info for sequence number
+    const accountResponse = await fetch(`${HORIZON_URL}/accounts/${publicKey}`);
+    if (!accountResponse.ok) {
+      throw new Error('Failed to fetch account details');
+    }
+    const accountData = await accountResponse.json();
+    
+    // Create account object with sequence number
+    const account = new Account(publicKey, accountData.sequence);
+    
+    // Create asset objects
+    const selling = createAsset(sellingCode, sellingIssuer);
+    const buying = createAsset(buyingCode, buyingIssuer);
+    
+    // Build transaction with manageSellOffer operation
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.manageSellOffer({
+          selling,
+          buying,
+          amount,
+          price,
+          offerId: offerId,
+        })
+      )
+      .setTimeout(30)
+      .build();
+    
+    // Sign the transaction
+    transaction.sign(sourceKeypair);
+    
+    // Submit to Horizon
+    const response = await fetch(`${HORIZON_URL}/transactions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: `tx=${encodeURIComponent(transaction.toEnvelope().toXDR('base64'))}`,
+    });
+    
+    const result = await response.json();
+    
+    if (response.ok && result.successful) {
+      return { success: true, hash: result.hash };
+    } else {
+      const errorMessage = result.extras?.result_codes?.operations?.[0] || 
+                          result.extras?.result_codes?.transaction ||
+                          result.detail ||
+                          'Transaction failed';
+      return { success: false, error: errorMessage };
+    }
+  } catch (error: any) {
+    console.error('[v0] Error submitting offer:', error);
+    return { success: false, error: error.message || 'Unknown error' };
+  }
+};
+
+/**
+ * Build and submit a manage buy offer transaction
+ */
+export const submitManageBuyOffer = async (
+  sourceSecret: string,
+  sellingCode: string,
+  sellingIssuer: string,
+  buyingCode: string,
+  buyingIssuer: string,
+  buyAmount: string,
+  price: string,
+  offerId: string = '0'
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    const sourceKeypair = Keypair.fromSecret(sourceSecret);
+    const publicKey = sourceKeypair.publicKey();
+    
+    const accountResponse = await fetch(`${HORIZON_URL}/accounts/${publicKey}`);
+    if (!accountResponse.ok) {
+      throw new Error('Failed to fetch account details');
+    }
+    const accountData = await accountResponse.json();
+    
+    const account = new Account(publicKey, accountData.sequence);
+    
+    const selling = createAsset(sellingCode, sellingIssuer);
+    const buying = createAsset(buyingCode, buyingIssuer);
+    
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.manageBuyOffer({
+          selling,
+          buying,
+          buyAmount,
+          price,
+          offerId: offerId,
+        })
+      )
+      .setTimeout(30)
+      .build();
+    
+    transaction.sign(sourceKeypair);
+    
+    const response = await fetch(`${HORIZON_URL}/transactions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: `tx=${encodeURIComponent(transaction.toEnvelope().toXDR('base64'))}`,
+    });
+    
+    const result = await response.json();
+    
+    if (response.ok && result.successful) {
+      return { success: true, hash: result.hash };
+    } else {
+      const errorMessage = result.extras?.result_codes?.operations?.[0] || 
+                          result.extras?.result_codes?.transaction ||
+                          result.detail ||
+                          'Transaction failed';
+      return { success: false, error: errorMessage };
+    }
+  } catch (error: any) {
+    console.error('[v0] Error submitting buy offer:', error);
+    return { success: false, error: error.message || 'Unknown error' };
+  }
+};
+
+/**
+ * Submit a payment transaction
+ */
+export const submitPayment = async (
+  secretKey: string,
+  destinationAddress: string,
+  assetCode: string,
+  assetIssuer: string,
+  amount: string,
+  memo?: string
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    const server = new Horizon.Server(HORIZON_URL);
+    const keypair = Keypair.fromSecret(secretKey);
+    const sourcePublicKey = keypair.publicKey();
+    
+    // Load source account
+    const account = await server.loadAccount(sourcePublicKey);
+    
+    // Create asset
+    const asset = assetCode === 'XLM' || !assetIssuer 
+      ? Asset.native() 
+      : new Asset(assetCode, assetIssuer);
+    
+    // Build transaction
+    let txBuilder = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.payment({
+          destination: destinationAddress,
+          asset: asset,
+          amount: amount,
+        })
+      );
+    
+    // Add memo if provided
+    if (memo) {
+      txBuilder = txBuilder.addMemo(Memo.text(memo.substring(0, 28)));
+    }
+    
+    const transaction = txBuilder.setTimeout(180).build();
+    transaction.sign(keypair);
+    
+    const result = await server.submitTransaction(transaction);
+    return { success: true, hash: result.hash };
+  } catch (error: any) {
+    let errorMessage = error.message || 'Payment failed';
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+    return { success: false, error: errorMessage };
   }
 };
