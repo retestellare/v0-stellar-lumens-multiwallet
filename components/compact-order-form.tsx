@@ -90,7 +90,6 @@ export function CompactOrderForm({
         <div className="space-y-1">
           <div className="flex items-center justify-between">
             <label className="text-xs text-muted-foreground">Amt ({sellingAsset})</label>
-            <span className="text-xs text-muted-foreground">{parseFloat(buyingBalance).toFixed(2)} {buyingAsset}</span>
           </div>
           <Input
             placeholder="Amt"
@@ -99,6 +98,9 @@ export function CompactOrderForm({
             onChange={(e) => onBuyAmountChange(e.target.value)}
             className="bg-input border-border text-foreground h-7 text-xs"
           />
+          <div className="text-right">
+            <span className="text-[10px] text-muted-foreground">Balance: {parseFloat(buyingBalance).toFixed(2)} {buyingAsset}</span>
+          </div>
         </div>
 
         <div className="flex gap-0.5">
@@ -153,7 +155,6 @@ export function CompactOrderForm({
         <div className="space-y-1">
           <div className="flex items-center justify-between">
             <label className="text-xs text-muted-foreground">Amt ({sellingAsset})</label>
-            <span className="text-xs text-muted-foreground">{parseFloat(sellingBalance).toFixed(2)} {sellingAsset}</span>
           </div>
           <Input
             placeholder="Amt"
@@ -162,6 +163,9 @@ export function CompactOrderForm({
             onChange={(e) => onSellAmountChange(e.target.value)}
             className="bg-input border-border text-foreground h-7 text-xs"
           />
+          <div className="text-right">
+            <span className="text-[10px] text-muted-foreground">Balance: {parseFloat(sellingBalance).toFixed(2)} {sellingAsset}</span>
+          </div>
         </div>
 
         <div className="flex gap-0.5">
