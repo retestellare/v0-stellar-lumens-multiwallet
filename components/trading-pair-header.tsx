@@ -26,6 +26,11 @@ export function TradingPairHeader({
   
   return (
     <div className="glow-border p-4 rounded-lg">
+      {/* XLM/USD Label - Market Reference Price */}
+      <div className="text-center mb-3 pb-3 border-b border-border/50">
+        <p className="text-xs text-muted-foreground">XLM / USD Market Stats</p>
+      </div>
+      
       {/* 24h Statistics Only - No Duplicate Pair Display */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <div className="text-center">

@@ -146,29 +146,94 @@ async function searchHorizonTokens(query: string): Promise<Token[]> {
   try {
     // Check if query looks like an issuer address (starts with G and is 56 chars)
     const isIssuerSearch = query.startsWith('G') && query.length >= 10;
+    // Check if query looks like a domain (contains a dot)
+    const isDomainSearch = query.includes('.') && !query.startsWith('G');
     
     let url: string;
+    let tokens: Token[] = [];
+    
     if (isIssuerSearch) {
       // Search by issuer
       url = `${HORIZON_URL}/assets?asset_issuer=${encodeURIComponent(query)}&limit=20`;
+      const response = await fetch(url);
+      if (!response.ok) return [];
+      const data = await response.json();
+      const records = data._embedded?.records || [];
+      tokens = records.map((r: any) => ({
+        code: r.asset_code,
+        issuer: r.asset_issuer,
+        name: r.asset_code,
+        verified: r.accounts?.authorized > 100,
+        source: 'search' as const,
+      }));
+    } else if (isDomainSearch) {
+      // Search by domain - fetch stellar.toml and extract currencies
+      const domain = query.toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
+      try {
+        const tomlUrl = `https://${domain}/.well-known/stellar.toml`;
+        const tomlResponse = await fetch(tomlUrl, { signal: AbortSignal.timeout(5000) });
+        if (tomlResponse.ok) {
+          const tomlText = await tomlResponse.text();
+          
+          // Parse [[CURRENCIES]] blocks
+          const currencyBlocks = tomlText.split(/\[\[CURRENCIES\]\]/i).slice(1);
+          
+          for (const block of currencyBlocks) {
+            const codeMatch = block.match(/code\s*=\s*"([^"]+)"/i);
+            const issuerMatch = block.match(/issuer\s*=\s*"([^"]+)"/i);
+            const nameMatch = block.match(/name\s*=\s*"([^"]+)"/i);
+            const imageMatch = block.match(/image\s*=\s*"([^"]+)"/i);
+            
+            if (codeMatch && issuerMatch) {
+              tokens.push({
+                code: codeMatch[1],
+                issuer: issuerMatch[1],
+                name: nameMatch?.[1] || codeMatch[1],
+                image: imageMatch?.[1],
+                domain: domain,
+                verified: true,
+                source: 'search' as const,
+              });
+            }
+          }
+        }
+      } catch {
+        // Domain search failed, fall back to code search
+      }
+      
+      // If domain search found nothing, also try code search
+      if (tokens.length === 0) {
+        url = `${HORIZON_URL}/assets?asset_code=${encodeURIComponent(query.toUpperCase())}&limit=20`;
+        const response = await fetch(url);
+        if (response.ok) {
+          const data = await response.json();
+          const records = data._embedded?.records || [];
+          tokens = records.map((r: any) => ({
+            code: r.asset_code,
+            issuer: r.asset_issuer,
+            name: r.asset_code,
+            verified: r.accounts?.authorized > 100,
+            source: 'search' as const,
+          }));
+        }
+      }
     } else {
       // Search by code
       url = `${HORIZON_URL}/assets?asset_code=${encodeURIComponent(query.toUpperCase())}&limit=20`;
+      const response = await fetch(url);
+      if (!response.ok) return [];
+      const data = await response.json();
+      const records = data._embedded?.records || [];
+      tokens = records.map((r: any) => ({
+        code: r.asset_code,
+        issuer: r.asset_issuer,
+        name: r.asset_code,
+        verified: r.accounts?.authorized > 100,
+        source: 'search' as const,
+      }));
     }
 
-    const response = await fetch(url);
-    if (!response.ok) return [];
-
-    const data = await response.json();
-    const records = data._embedded?.records || [];
-
-    return records.map((r: any) => ({
-      code: r.asset_code,
-      issuer: r.asset_issuer,
-      name: r.asset_code,
-      verified: r.accounts?.authorized > 100,
-      source: 'search' as const,
-    }));
+    return tokens;
   } catch (error) {
     console.error('[v0] Horizon search error:', error);
     return [];
@@ -337,7 +402,7 @@ export function TokenSelectorModal({
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Search by token code or issuer address (G...)"
+              placeholder="Search by token code, issuer address, or domain"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="bg-input border-border text-foreground pl-10 pr-10"
