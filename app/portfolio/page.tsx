@@ -2,7 +2,7 @@
 
 import { Header } from '@/components/header';
 import { useWallet } from '@/lib/wallet-context';
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -59,21 +59,21 @@ export default function PortfolioPage() {
 
           {/* Charts Section */}
           {chartData.length > 0 ? (
-            <div className="grid lg:grid-cols-2 gap-8">
-              {/* Pie Chart */}
+            <div className="space-y-6">
+              {/* Pie Chart - Centered without legend */}
               <div className="glow-border p-6 rounded-lg">
-                <h2 className="text-lg font-semibold text-foreground mb-4">Asset Distribution</h2>
-                <ResponsiveContainer width="100%" height={300}>
+                <h2 className="text-lg font-semibold text-foreground mb-4 text-center">Asset Distribution</h2>
+                <ResponsiveContainer width="100%" height={220}>
                   <PieChart>
                     <Pie
                       data={chartData}
                       cx="50%"
                       cy="50%"
-                      outerRadius={80}
-                      innerRadius={40}
+                      outerRadius={90}
+                      innerRadius={50}
                       fill="#00d9ff"
                       dataKey="value"
-                      paddingAngle={2}
+                      paddingAngle={1}
                     >
                       {chartData.map((_entry: any, index: number) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -86,12 +86,6 @@ export default function PortfolioPage() {
                         borderRadius: '0.5rem',
                       }}
                       formatter={(value: any, name: string) => [`${value.toFixed(4)} (${(value / totalValue * 100).toFixed(1)}%)`, name]}
-                    />
-                    <Legend 
-                      layout="vertical"
-                      align="right"
-                      verticalAlign="middle"
-                      formatter={(value: string) => <span className="text-xs text-foreground">{value}</span>}
                     />
                   </PieChart>
                 </ResponsiveContainer>
