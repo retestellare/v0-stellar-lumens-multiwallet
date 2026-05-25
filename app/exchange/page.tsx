@@ -3,11 +3,12 @@
 import { Header } from '@/components/header';
 import { useWallet } from '@/lib/wallet-context';
 import { Button } from '@/components/ui/button';
-import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations } from '@/lib/stellar-utils';
+import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations, getAccountTrades } from '@/lib/stellar-utils';
 import { TradingPairHeader } from '@/components/trading-pair-header';
 import { OrderBook } from '@/components/order-book';
 import { TradeHistory } from '@/components/trade-history';
 import { MyOrders } from '@/components/my-orders';
+import { FilledOrders } from '@/components/filled-orders';
 import { PriceChart } from '@/components/price-chart';
 import { TokenSelectorModal } from '@/components/token-selector-modal';
 import { CompactOrderForm } from '@/components/compact-order-form';
@@ -68,6 +69,8 @@ export default function ExchangePage() {
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [chartData, setChartData] = useState<any[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
+  const [filledOrders, setFilledOrders] = useState<any[]>([]);
+  const [filledLoading, setFilledLoading] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -236,6 +239,46 @@ export default function ExchangePage() {
       fetchChartData();
     }
   }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
+
+  // Fetch user's filled orders (trade history)
+  useEffect(() => {
+    const fetchFilledOrders = async () => {
+      if (!activeWalletId) return;
+      const wallet = wallets.find(w => w.id === activeWalletId);
+      if (!wallet) return;
+
+      setFilledLoading(true);
+      try {
+        const tradesData = await getAccountTrades(wallet.publicKey, 50);
+        // Transform Horizon trades to component format
+        const formattedOrders = tradesData.map((trade: any) => {
+          const isBuyer = trade.base_is_seller === false;
+          const price = trade.price?.n && trade.price?.d 
+            ? (parseFloat(trade.price.n) / parseFloat(trade.price.d)).toFixed(7)
+            : '0';
+          return {
+            id: trade.id,
+            price,
+            baseAmount: trade.base_amount || '0',
+            counterAmount: trade.counter_amount || '0',
+            baseCode: trade.base_asset_type === 'native' ? 'XLM' : trade.base_asset_code,
+            counterCode: trade.counter_asset_type === 'native' ? 'XLM' : trade.counter_asset_code,
+            timestamp: trade.ledger_close_time,
+            isBuyer,
+          };
+        });
+        setFilledOrders(formattedOrders);
+      } catch {
+        setFilledOrders([]);
+      } finally {
+        setFilledLoading(false);
+      }
+    };
+
+    if (mounted) {
+      fetchFilledOrders();
+    }
+  }, [activeWalletId, wallets, mounted]);
 
   if (!mounted) return null;
 
@@ -435,6 +478,7 @@ export default function ExchangePage() {
   const tabs = [
     { id: 'history', label: 'History', icon: '📊' },
     { id: 'my-orders', label: 'My Orders', icon: '📋' },
+    { id: 'filled', label: 'Filled', icon: '✅' },
     { id: 'charts', label: 'Charts', icon: '📈' },
   ] as const;
 
@@ -625,6 +669,13 @@ export default function ExchangePage() {
                 onCancelOrder={handleCancelOrder}
                 buyingAsset={buyingAsset}
                 sellingAsset={sellingAsset}
+              />
+            )}
+
+            {activeTab === 'filled' && (
+              <FilledOrders
+                orders={filledOrders}
+                loading={filledLoading}
               />
             )}
 

@@ -556,6 +556,26 @@ export const submitManageSellOffer = async (
 };
 
 /**
+ * Fetch trade history for a specific account (filled orders)
+ */
+export const getAccountTrades = async (
+  publicKey: string,
+  limit: number = 50
+): Promise<any[]> => {
+  try {
+    const url = `${HORIZON_URL}/accounts/${publicKey}/trades?limit=${limit}&order=desc`;
+    const response = await fetch(url);
+    
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    return data._embedded?.records || [];
+  } catch {
+    return [];
+  }
+};
+
+/**
  * Fetch recent trades for a trading pair from Horizon
  */
 export const getRecentTrades = async (
