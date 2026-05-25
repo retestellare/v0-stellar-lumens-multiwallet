@@ -3,7 +3,7 @@
 import { Header } from '@/components/header';
 import { useWallet } from '@/lib/wallet-context';
 import { Button } from '@/components/ui/button';
-import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations, getAccountTrades } from '@/lib/stellar-utils';
+import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations, getAccountTrades, getXLMUSDStats } from '@/lib/stellar-utils';
 import { TradingPairHeader } from '@/components/trading-pair-header';
 import { OrderBook } from '@/components/order-book';
 import { TradeHistory } from '@/components/trade-history';
@@ -71,6 +71,16 @@ export default function ExchangePage() {
   const [chartLoading, setChartLoading] = useState(false);
   const [filledOrders, setFilledOrders] = useState<any[]>([]);
   const [filledLoading, setFilledLoading] = useState(false);
+  
+  // XLM/USD market stats
+  const [xlmUsdStats, setXlmUsdStats] = useState<{
+    priceChange24h: number;
+    volume24h: string;
+    high24h: string;
+    low24h: string;
+    open24h: string;
+    close24h: string;
+  } | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -279,6 +289,23 @@ export default function ExchangePage() {
       fetchFilledOrders();
     }
   }, [activeWalletId, wallets, mounted]);
+
+  // Fetch XLM/USD market stats
+  useEffect(() => {
+    const fetchXlmStats = async () => {
+      const stats = await getXLMUSDStats();
+      if (stats) {
+        setXlmUsdStats(stats);
+      }
+    };
+
+    if (mounted) {
+      fetchXlmStats();
+      // Refresh every 60 seconds
+      const interval = setInterval(fetchXlmStats, 60000);
+      return () => clearInterval(interval);
+    }
+  }, [mounted]);
 
   if (!mounted) return null;
 
@@ -508,14 +535,7 @@ export default function ExchangePage() {
             buyingAsset={buyingAsset}
             buyingIssuer={buyingIssuer}
             onSwap={handleSwapPair}
-            stats={{
-              priceChange24h: 2.34,
-              volume24h: '1.23M',
-              high24h: '0.1453',
-              low24h: '0.1419',
-              open24h: '0.1452',
-              close24h: '0.1453',
-            }}
+            stats={xlmUsdStats || undefined}
           />
 
           {/* Token Pair Selector - Integrated Oval Design */}

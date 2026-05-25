@@ -57,11 +57,11 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
       ) : (
         <div className="overflow-x-auto">
           {/* Header */}
-          <div className="grid grid-cols-5 gap-2 px-4 py-2 text-xs font-medium text-muted-foreground bg-background/50 border-b border-border">
+          <div className="grid grid-cols-[60px_1fr_1fr_80px] sm:grid-cols-[70px_1fr_1fr_1fr_100px] gap-1 sm:gap-2 px-2 sm:px-4 py-2 text-[10px] sm:text-xs font-medium text-muted-foreground bg-background/50 border-b border-border min-w-[320px]">
             <div>Type</div>
-            <div className="text-right">Price</div>
             <div className="text-right">Base</div>
             <div className="text-right">Counter</div>
+            <div className="hidden sm:block text-right">Price</div>
             <div className="text-right">Time</div>
           </div>
 
@@ -70,23 +70,23 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
             {orders.map((order) => (
               <div
                 key={order.id}
-                className="grid grid-cols-5 gap-2 px-4 py-3 text-xs border-b border-border/30 hover:bg-background/50"
+                className="grid grid-cols-[60px_1fr_1fr_80px] sm:grid-cols-[70px_1fr_1fr_1fr_100px] gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs border-b border-border/30 hover:bg-background/50 min-w-[320px]"
               >
                 <div className={`font-medium ${order.isBuyer ? 'text-primary' : 'text-destructive'}`}>
                   {order.isBuyer ? 'BUY' : 'SELL'}
                 </div>
-                <div className="text-right font-mono text-foreground">
+                <div className="text-right font-mono truncate">
+                  <span className="text-foreground">{parseFloat(order.baseAmount).toFixed(2)}</span>
+                  <span className="text-muted-foreground text-[9px] sm:text-[10px] ml-0.5">{order.baseCode}</span>
+                </div>
+                <div className="text-right font-mono truncate">
+                  <span className="text-foreground">{parseFloat(order.counterAmount).toFixed(2)}</span>
+                  <span className="text-muted-foreground text-[9px] sm:text-[10px] ml-0.5">{order.counterCode}</span>
+                </div>
+                <div className="hidden sm:block text-right font-mono text-foreground">
                   {parseFloat(order.price).toFixed(7)}
                 </div>
-                <div className="text-right font-mono">
-                  <span className="text-foreground">{parseFloat(order.baseAmount).toFixed(4)}</span>
-                  <span className="text-muted-foreground ml-1">{order.baseCode}</span>
-                </div>
-                <div className="text-right font-mono">
-                  <span className="text-foreground">{parseFloat(order.counterAmount).toFixed(4)}</span>
-                  <span className="text-muted-foreground ml-1">{order.counterCode}</span>
-                </div>
-                <div className="text-right text-muted-foreground">
+                <div className="text-right text-muted-foreground text-[9px] sm:text-[10px]">
                   {formatTime(order.timestamp)}
                 </div>
               </div>
