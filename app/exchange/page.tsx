@@ -492,14 +492,16 @@ export default function ExchangePage() {
     }
   };
 
+  // When clicking a BID (someone's buy order), fill SELL form to sell to them
   const handleSelectBidOrder = (price: string, amount: string) => {
-    setBuyPrice(price);
-    setBuyAmount(amount);
-  };
-
-  const handleSelectAskOrder = (price: string, amount: string) => {
     setSellPrice(price);
     setSellAmount(amount);
+  };
+
+  // When clicking an ASK (someone's sell order), fill BUY form to buy from them
+  const handleSelectAskOrder = (price: string, amount: string) => {
+    setBuyPrice(price);
+    setBuyAmount(amount);
   };
 
   const tabs = [
