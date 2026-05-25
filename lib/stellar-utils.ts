@@ -556,6 +556,26 @@ export const submitManageSellOffer = async (
 };
 
 /**
+ * Fetch trade history for a specific account (filled orders)
+ */
+export const getAccountTrades = async (
+  publicKey: string,
+  limit: number = 50
+): Promise<any[]> => {
+  try {
+    const url = `${HORIZON_URL}/accounts/${publicKey}/trades?limit=${limit}&order=desc`;
+    const response = await fetch(url);
+    
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    return data._embedded?.records || [];
+  } catch {
+    return [];
+  }
+};
+
+/**
  * Fetch recent trades for a trading pair from Horizon
  */
 export const getRecentTrades = async (
@@ -706,6 +726,81 @@ export const getTradeAggregations = async (
     return data._embedded?.records || [];
   } catch {
     return [];
+  }
+};
+
+/**
+ * Fetch XLM/USD 24h market stats from trade aggregations
+ * Uses USDC as USD proxy (Centre's USDC on Stellar)
+ */
+export const getXLMUSDStats = async (): Promise<{
+  priceChange24h: number;
+  volume24h: string;
+  high24h: string;
+  low24h: string;
+  open24h: string;
+  close24h: string;
+} | null> => {
+  try {
+    // Use USDC (Centre) as USD proxy - most liquid USD stablecoin on Stellar
+    const USDC_ISSUER = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN';
+    
+    // Fetch 24h of hourly aggregations for XLM/USDC
+    const endTime = Date.now();
+    const startTime = endTime - (24 * 60 * 60 * 1000); // 24 hours ago
+    
+    const url = `${HORIZON_URL}/trade_aggregations?base_asset_type=native&counter_asset_type=credit_alphanum4&counter_asset_code=USDC&counter_asset_issuer=${USDC_ISSUER}&resolution=3600000&start_time=${startTime}&end_time=${endTime}&order=asc&limit=24`;
+    
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    
+    const data = await response.json();
+    const records = data._embedded?.records || [];
+    
+    if (records.length === 0) return null;
+    
+    // Calculate stats from aggregations
+    const firstRecord = records[0];
+    const lastRecord = records[records.length - 1];
+    
+    const open24h = parseFloat(firstRecord.open);
+    const close24h = parseFloat(lastRecord.close);
+    const priceChange24h = open24h > 0 ? ((close24h - open24h) / open24h) * 100 : 0;
+    
+    let high24h = 0;
+    let low24h = Infinity;
+    let totalVolume = 0;
+    
+    for (const record of records) {
+      const high = parseFloat(record.high);
+      const low = parseFloat(record.low);
+      const volume = parseFloat(record.base_volume);
+      
+      if (high > high24h) high24h = high;
+      if (low < low24h) low24h = low;
+      totalVolume += volume;
+    }
+    
+    // Format volume
+    let volumeStr: string;
+    if (totalVolume >= 1000000) {
+      volumeStr = (totalVolume / 1000000).toFixed(2) + 'M';
+    } else if (totalVolume >= 1000) {
+      volumeStr = (totalVolume / 1000).toFixed(2) + 'K';
+    } else {
+      volumeStr = totalVolume.toFixed(0);
+    }
+    
+    return {
+      priceChange24h,
+      volume24h: volumeStr,
+      high24h: high24h.toFixed(6),
+      low24h: low24h === Infinity ? '0' : low24h.toFixed(6),
+      open24h: open24h.toFixed(6),
+      close24h: close24h.toFixed(6),
+    };
+  } catch {
+    return null;
   }
 };
 

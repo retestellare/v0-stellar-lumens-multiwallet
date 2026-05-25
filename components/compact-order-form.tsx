@@ -41,10 +41,30 @@ export function CompactOrderForm({
   onSellClick,
 }: CompactOrderFormProps) {
 
-  const allocatePercentage = (percentage: number, balance: string, setValue: (v: string) => void) => {
-    const amount = (parseFloat(balance) * (percentage / 100)).toFixed(4);
-    setValue(amount);
+  // For SELL: percentage of token balance to sell
+  const allocateSellPercentage = (percentage: number) => {
+    const amount = (parseFloat(sellingBalance) * (percentage / 100)).toFixed(4);
+    onSellAmountChange(amount);
   };
+
+  // For BUY: percentage of XLM to spend, converted to token amount
+  const allocateBuyPercentage = (percentage: number) => {
+    const xlmToSpend = parseFloat(buyingBalance) * (percentage / 100);
+    const price = parseFloat(buyPrice);
+    if (price > 0) {
+      // Amount of tokens = XLM to spend / price per token
+      const tokenAmount = (xlmToSpend / price).toFixed(4);
+      onBuyAmountChange(tokenAmount);
+    }
+  };
+
+  // Calculate totals
+  const buyTotal = buyPrice && buyAmount 
+    ? (parseFloat(buyPrice) * parseFloat(buyAmount)).toFixed(7)
+    : '0';
+  const sellTotal = sellPrice && sellAmount
+    ? (parseFloat(sellPrice) * parseFloat(sellAmount)).toFixed(7)
+    : '0';
 
   return (
     <div className="grid grid-cols-2 gap-2 sm:gap-3">
@@ -69,8 +89,8 @@ export function CompactOrderForm({
 
         <div className="space-y-1">
           <div className="flex items-center justify-between">
-            <label className="text-xs text-muted-foreground">Amt</label>
-            <span className="text-xs text-muted-foreground">{parseFloat(buyingBalance).toFixed(2)}</span>
+            <label className="text-xs text-muted-foreground">Amt ({sellingAsset})</label>
+            <span className="text-xs text-muted-foreground">{parseFloat(buyingBalance).toFixed(2)} {buyingAsset}</span>
           </div>
           <Input
             placeholder="Amt"
@@ -85,12 +105,21 @@ export function CompactOrderForm({
           {[10, 50, 100].map((pct) => (
             <button
               key={pct}
-              onClick={() => allocatePercentage(pct, buyingBalance, onBuyAmountChange)}
-              className="flex-1 px-1 py-0.5 text-xs rounded border border-primary/50 text-primary hover:bg-primary/10 transition-colors"
+              onClick={() => allocateBuyPercentage(pct)}
+              disabled={!buyPrice || parseFloat(buyPrice) <= 0}
+              className="flex-1 px-1 py-0.5 text-xs rounded border border-primary/50 text-primary hover:bg-primary/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {pct}%
             </button>
           ))}
+        </div>
+
+        {/* Total XLM cost */}
+        <div className="bg-background/50 rounded p-1.5 border border-border/50">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">Total:</span>
+            <span className="font-mono text-primary">{buyTotal} {buyingAsset}</span>
+          </div>
         </div>
 
         <Button
@@ -123,8 +152,8 @@ export function CompactOrderForm({
 
         <div className="space-y-1">
           <div className="flex items-center justify-between">
-            <label className="text-xs text-muted-foreground">Amt</label>
-            <span className="text-xs text-muted-foreground">{parseFloat(sellingBalance).toFixed(2)}</span>
+            <label className="text-xs text-muted-foreground">Amt ({sellingAsset})</label>
+            <span className="text-xs text-muted-foreground">{parseFloat(sellingBalance).toFixed(2)} {sellingAsset}</span>
           </div>
           <Input
             placeholder="Amt"
@@ -139,12 +168,20 @@ export function CompactOrderForm({
           {[10, 50, 100].map((pct) => (
             <button
               key={pct}
-              onClick={() => allocatePercentage(pct, sellingBalance, onSellAmountChange)}
+              onClick={() => allocateSellPercentage(pct)}
               className="flex-1 px-1 py-0.5 text-xs rounded border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors"
             >
               {pct}%
             </button>
           ))}
+        </div>
+
+        {/* Total XLM received */}
+        <div className="bg-background/50 rounded p-1.5 border border-border/50">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">Total:</span>
+            <span className="font-mono text-destructive">{sellTotal} {buyingAsset}</span>
+          </div>
         </div>
 
         <Button

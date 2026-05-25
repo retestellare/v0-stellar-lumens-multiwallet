@@ -62,28 +62,28 @@ export function OrderBook({
           <div className="p-6 text-center text-muted-foreground">No orders available</div>
         ) : (
           <div className="overflow-x-auto">
-            {/* Column Headers */}
-            <div className="sticky top-0 bg-background/80 backdrop-blur border-b border-border grid grid-cols-4 gap-0 px-3 py-2 text-xs font-medium text-muted-foreground">
-              <div className="text-right pr-2">Amount ({sellingAsset})</div>
-              <div className="text-right pr-2 text-primary border-r border-border/50">Buy ({buyingAsset})</div>
-              <div className="text-left pl-2 text-destructive">Sell ({buyingAsset})</div>
-              <div className="text-left pl-2">Amount ({sellingAsset})</div>
+            {/* Column Headers - wider spacing on mobile */}
+            <div className="sticky top-0 bg-background/80 backdrop-blur border-b border-border grid grid-cols-4 px-1 sm:px-3 py-2 text-[10px] sm:text-xs font-medium text-muted-foreground">
+              <div className="text-right pr-1 sm:pr-2">{sellingAsset}</div>
+              <div className="text-right pr-1 sm:pr-2 text-primary border-r border-border/50">Buy</div>
+              <div className="text-left pl-1 sm:pl-2 text-destructive">Sell</div>
+              <div className="text-left pl-1 sm:pl-2">{sellingAsset}</div>
             </div>
 
-            {/* Order Rows */}
+            {/* Order Rows - improved mobile spacing */}
             <div className="max-h-[600px] overflow-y-auto">
               {mergedOrders.map((row, idx) => (
                 <div
                   key={idx}
-                  className="grid grid-cols-4 gap-0 px-3 py-2 text-xs border-b border-border/30 hover:bg-background/50 transition-colors cursor-pointer"
+                  className="grid grid-cols-4 px-1 sm:px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs border-b border-border/30 hover:bg-background/50 transition-colors cursor-pointer"
                   onClick={() => {
                     if (row.bid && onBidClick) {
                       onBidClick(row.bid.price, row.bid.amount);
                     }
                   }}
                 >
-                  {/* Bid Amount (Left) */}
-                  <div className="text-right pr-2 font-mono">
+                  {/* Bid Amount (Left) - edge aligned */}
+                  <div className="text-right pr-0.5 sm:pr-2 font-mono">
                     {row.bid ? (
                       <span className="text-blue-400">{parseFloat(row.bid.amount).toFixed(2)}</span>
                     ) : (
@@ -91,18 +91,18 @@ export function OrderBook({
                     )}
                   </div>
 
-                  {/* Bid Price (Center Left) - with right border divider */}
-                  <div className="text-right pr-2 font-mono font-semibold border-r border-border/50">
+                  {/* Bid Price (Center Left) - 7 decimal places */}
+                  <div className="text-right pr-0.5 sm:pr-2 font-mono font-semibold border-r border-border/50">
                     {row.bid ? (
-                      <span className="text-primary">{parseFloat(row.bid.price).toFixed(4)}</span>
+                      <span className="text-primary">{parseFloat(row.bid.price).toFixed(7)}</span>
                     ) : (
                       <span className="text-muted-foreground/30">-</span>
                     )}
                   </div>
 
-                  {/* Ask Price (Center Right) */}
+                  {/* Ask Price (Center Right) - 7 decimal places */}
                   <div
-                    className="text-left pl-2 font-mono font-semibold"
+                    className="text-left pl-0.5 sm:pl-2 font-mono font-semibold"
                     onClick={(e) => {
                       e.stopPropagation();
                       if (row.ask && onAskClick) {
@@ -111,14 +111,14 @@ export function OrderBook({
                     }}
                   >
                     {row.ask ? (
-                      <span className="text-destructive">{parseFloat(row.ask.price).toFixed(4)}</span>
+                      <span className="text-destructive">{parseFloat(row.ask.price).toFixed(7)}</span>
                     ) : (
                       <span className="text-muted-foreground/30">-</span>
                     )}
                   </div>
 
-                  {/* Ask Amount (Right) */}
-                  <div className="text-left pl-2 font-mono">
+                  {/* Ask Amount (Right) - edge aligned */}
+                  <div className="text-left pl-0.5 sm:pl-2 font-mono">
                     {row.ask ? (
                       <span className="text-pink-400">{parseFloat(row.ask.amount).toFixed(2)}</span>
                     ) : (

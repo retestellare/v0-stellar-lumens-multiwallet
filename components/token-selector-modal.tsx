@@ -26,6 +26,12 @@ const KNOWN_TOKEN_METADATA: Record<string, { name: string; domain: string; image
   'USD_GDUKMGUGDZQK6YHYA5Z6AY2G4XDSZPSZ3SW5UN3ARVMO6QSRDWP5YLEX': { name: 'AnchorUSD', domain: 'anchorusd.com', image: 'https://assets.coingecko.com/coins/images/325/small/Tether.png' },
   'VELO_GDM4RQUQQUVSKQA7S6EM7XBZP3FCGH4Q7CL6TABQ7B2BEJ5ERARM2M5M': { name: 'Velo', domain: 'velo.org', image: 'https://assets.coingecko.com/coins/images/12722/small/velo.png' },
   'RIO_GBNLJIYH34UWO5YZFA3A3HD3N76R6DOI33N4JONUOHEEYZYCAYTEJ5AK': { name: 'Realio', domain: 'realio.fund', image: 'https://assets.coingecko.com/coins/images/12206/small/realio.png' },
+  'ARST_GCSAZVWXZKWS4XS223M5F54H2B6XPIBER2JJ4CA4DDXPLGMIVLRMR2': { name: 'ARS Token', domain: 'anclap.com', image: 'https://anclap.com/assets/img/arst-logo.png' },
+  'BRLT_GCHH4UPC43VEMDOZ2OYSEFWPVNBVPZQLSUF3USKX6CJXJ6JKF3AIYBRLT': { name: 'BRL Token', domain: 'ntokens.com', image: 'https://ntokens.com/assets/brlt-logo.png' },
+  'DOGET_GDOEVDDBU6OBWKL7VHDAOKD77UP4DKHQYKOKJJT5PR3WRDBTX35HUEUX': { name: 'Doge Token', domain: 'doget.org', image: 'https://doget.org/assets/doget-logo.png' },
+  'yUSDC_GDGTVWSM4MGS4T7Z6W4RPWOCHE2I6RDFCIFZG5YCHF3QHFKWVWDCCV': { name: 'Yield USDC', domain: 'ultrastellar.com', image: 'https://ultrastellar.com/static/images/icons/yUSDC.png' },
+  'FIDR_GBZQNUAGO4DZFWOHJ3PVXZKZ2LTSOVAMCTVM46OEMWNWTED4DFS3NAYH': { name: 'FIDR', domain: 'fidr.io', image: '' },
+  'LSP_GAB7STHVD5BDH3EEYXPI3OM7PCS4V443PYB5FNT6CFGJVPDLMKDM24WK': { name: 'Lumenswap', domain: 'lumenswap.io', image: '' },
 };
 
 // Enrich token with metadata from cache or picks
@@ -53,7 +59,7 @@ interface Token {
   source?: 'wallet' | 'picks' | 'search' | 'favorites';
 }
 
-// Token card component with cached icon loading
+// Token card component with cached icon loading and domain fetching
 function TokenCard({
   token,
   isFav,
@@ -67,16 +73,37 @@ function TokenCard({
 }) {
   const [iconUrl, setIconUrl] = useState<string | null>(token.image || null);
   const [imageError, setImageError] = useState(false);
+  const [domain, setDomain] = useState<string | undefined>(token.domain);
 
+  // Fetch icon from issuer's stellar.toml if not provided
   useEffect(() => {
-    if (!token.image && !imageError) {
+    if (!token.image && !imageError && token.issuer) {
       let cancelled = false;
-      getIssuerTokenIcon(token.code, token.issuer || '').then((url) => {
-        if (!cancelled) setIconUrl(url);
+      getIssuerTokenIcon(token.code, token.issuer).then((url) => {
+        if (!cancelled && url) setIconUrl(url);
       });
       return () => { cancelled = true; };
     }
   }, [token.code, token.issuer, token.image, imageError]);
+
+  // Fetch domain from Horizon account if not provided
+  useEffect(() => {
+    if (!token.domain && token.issuer) {
+      let cancelled = false;
+      fetch(`${HORIZON_URL}/accounts/${token.issuer}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (!cancelled && data?.home_domain) {
+            setDomain(data.home_domain);
+          }
+        })
+        .catch(() => {});
+      return () => { cancelled = true; };
+    }
+  }, [token.domain, token.issuer]);
+
+  // Display domain or truncated issuer
+  const displayDomain = domain || token.domain || (token.issuer ? token.issuer.substring(0, 12) + '...' : 'Native');
 
   return (
     <button
@@ -118,16 +145,16 @@ function TokenCard({
         )}
       </div>
 
-      {/* Token Name or Domain */}
-      {(token.name || token.domain) && (
+      {/* Token Name */}
+      {token.name && (
         <p className="text-xs text-muted-foreground text-center truncate w-full">
-          {token.name || token.domain}
+          {token.name}
         </p>
       )}
 
       {/* Domain or Issuer - prefer domain over issuer address */}
       <p className="text-xs text-muted-foreground/70 text-center truncate w-full">
-        {token.domain || (token.issuer ? token.issuer.substring(0, 12) + '...' : 'Native')}
+        {displayDomain}
       </p>
     </button>
   );
@@ -146,29 +173,94 @@ async function searchHorizonTokens(query: string): Promise<Token[]> {
   try {
     // Check if query looks like an issuer address (starts with G and is 56 chars)
     const isIssuerSearch = query.startsWith('G') && query.length >= 10;
+    // Check if query looks like a domain (contains a dot)
+    const isDomainSearch = query.includes('.') && !query.startsWith('G');
     
     let url: string;
+    let tokens: Token[] = [];
+    
     if (isIssuerSearch) {
       // Search by issuer
       url = `${HORIZON_URL}/assets?asset_issuer=${encodeURIComponent(query)}&limit=20`;
+      const response = await fetch(url);
+      if (!response.ok) return [];
+      const data = await response.json();
+      const records = data._embedded?.records || [];
+      tokens = records.map((r: any) => ({
+        code: r.asset_code,
+        issuer: r.asset_issuer,
+        name: r.asset_code,
+        verified: r.accounts?.authorized > 100,
+        source: 'search' as const,
+      }));
+    } else if (isDomainSearch) {
+      // Search by domain - fetch stellar.toml and extract currencies
+      const domain = query.toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
+      try {
+        const tomlUrl = `https://${domain}/.well-known/stellar.toml`;
+        const tomlResponse = await fetch(tomlUrl, { signal: AbortSignal.timeout(5000) });
+        if (tomlResponse.ok) {
+          const tomlText = await tomlResponse.text();
+          
+          // Parse [[CURRENCIES]] blocks
+          const currencyBlocks = tomlText.split(/\[\[CURRENCIES\]\]/i).slice(1);
+          
+          for (const block of currencyBlocks) {
+            const codeMatch = block.match(/code\s*=\s*"([^"]+)"/i);
+            const issuerMatch = block.match(/issuer\s*=\s*"([^"]+)"/i);
+            const nameMatch = block.match(/name\s*=\s*"([^"]+)"/i);
+            const imageMatch = block.match(/image\s*=\s*"([^"]+)"/i);
+            
+            if (codeMatch && issuerMatch) {
+              tokens.push({
+                code: codeMatch[1],
+                issuer: issuerMatch[1],
+                name: nameMatch?.[1] || codeMatch[1],
+                image: imageMatch?.[1],
+                domain: domain,
+                verified: true,
+                source: 'search' as const,
+              });
+            }
+          }
+        }
+      } catch {
+        // Domain search failed, fall back to code search
+      }
+      
+      // If domain search found nothing, also try code search
+      if (tokens.length === 0) {
+        url = `${HORIZON_URL}/assets?asset_code=${encodeURIComponent(query.toUpperCase())}&limit=20`;
+        const response = await fetch(url);
+        if (response.ok) {
+          const data = await response.json();
+          const records = data._embedded?.records || [];
+          tokens = records.map((r: any) => ({
+            code: r.asset_code,
+            issuer: r.asset_issuer,
+            name: r.asset_code,
+            verified: r.accounts?.authorized > 100,
+            source: 'search' as const,
+          }));
+        }
+      }
     } else {
       // Search by code
       url = `${HORIZON_URL}/assets?asset_code=${encodeURIComponent(query.toUpperCase())}&limit=20`;
+      const response = await fetch(url);
+      if (!response.ok) return [];
+      const data = await response.json();
+      const records = data._embedded?.records || [];
+      tokens = records.map((r: any) => ({
+        code: r.asset_code,
+        issuer: r.asset_issuer,
+        name: r.asset_code,
+        verified: r.accounts?.authorized > 100,
+        source: 'search' as const,
+      }));
     }
 
-    const response = await fetch(url);
-    if (!response.ok) return [];
-
-    const data = await response.json();
-    const records = data._embedded?.records || [];
-
-    return records.map((r: any) => ({
-      code: r.asset_code,
-      issuer: r.asset_issuer,
-      name: r.asset_code,
-      verified: r.accounts?.authorized > 100,
-      source: 'search' as const,
-    }));
+    return tokens;
   } catch (error) {
     console.error('[v0] Horizon search error:', error);
     return [];
@@ -337,7 +429,7 @@ export function TokenSelectorModal({
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Search by token code or issuer address (G...)"
+              placeholder="Search by token code, issuer address, or domain"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="bg-input border-border text-foreground pl-10 pr-10"
