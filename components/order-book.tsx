@@ -62,20 +62,12 @@ export function OrderBook({
           <div className="p-6 text-center text-muted-foreground">No orders available</div>
         ) : (
           <div className="overflow-x-auto">
-            {/* Column Headers with side labels */}
-            <div className="sticky top-0 bg-background/80 backdrop-blur border-b border-border">
-              {/* Side Labels */}
-              <div className="grid grid-cols-2 text-center text-[10px] font-bold border-b border-border/30">
-                <div className="text-primary py-1 border-r border-border/50">BIDS (Buy Orders)</div>
-                <div className="text-destructive py-1">ASKS (Sell Orders)</div>
-              </div>
-              {/* Asset Labels */}
-              <div className="grid grid-cols-4 gap-1 px-2 sm:px-4 py-1 text-[10px] sm:text-xs font-medium text-muted-foreground">
-                <div className="text-left text-blue-400">Amount</div>
-                <div className="text-center text-primary border-r border-border/50">Price</div>
-                <div className="text-center text-destructive">Price</div>
-                <div className="text-right text-pink-400">Amount</div>
-              </div>
+            {/* Column Headers - wider spacing on mobile */}
+            <div className="sticky top-0 bg-background/80 backdrop-blur border-b border-border grid grid-cols-4 gap-1 px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium text-muted-foreground">
+              <div className="text-left">{sellingAsset}</div>
+              <div className="text-center text-primary border-r border-border/50">Buy</div>
+              <div className="text-center text-destructive">Sell</div>
+              <div className="text-right">{sellingAsset}</div>
             </div>
 
             {/* Order Rows - improved mobile spacing */}
