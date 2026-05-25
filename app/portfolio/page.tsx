@@ -69,11 +69,11 @@ export default function PortfolioPage() {
                       data={chartData}
                       cx="50%"
                       cy="50%"
-                      labelLine={false}
-                      label={({ name, value }) => `${name}: ${(value / totalValue * 100).toFixed(1)}%`}
                       outerRadius={80}
+                      innerRadius={40}
                       fill="#00d9ff"
                       dataKey="value"
+                      paddingAngle={2}
                     >
                       {chartData.map((_entry: any, index: number) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -85,7 +85,13 @@ export default function PortfolioPage() {
                         border: '1px solid rgba(0, 217, 255, 0.2)',
                         borderRadius: '0.5rem',
                       }}
-                      formatter={(value: any) => value.toFixed(4)}
+                      formatter={(value: any, name: string) => [`${value.toFixed(4)} (${(value / totalValue * 100).toFixed(1)}%)`, name]}
+                    />
+                    <Legend 
+                      layout="vertical"
+                      align="right"
+                      verticalAlign="middle"
+                      formatter={(value: string) => <span className="text-xs text-foreground">{value}</span>}
                     />
                   </PieChart>
                 </ResponsiveContainer>

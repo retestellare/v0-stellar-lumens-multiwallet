@@ -26,6 +26,12 @@ const KNOWN_TOKEN_METADATA: Record<string, { name: string; domain: string; image
   'USD_GDUKMGUGDZQK6YHYA5Z6AY2G4XDSZPSZ3SW5UN3ARVMO6QSRDWP5YLEX': { name: 'AnchorUSD', domain: 'anchorusd.com', image: 'https://assets.coingecko.com/coins/images/325/small/Tether.png' },
   'VELO_GDM4RQUQQUVSKQA7S6EM7XBZP3FCGH4Q7CL6TABQ7B2BEJ5ERARM2M5M': { name: 'Velo', domain: 'velo.org', image: 'https://assets.coingecko.com/coins/images/12722/small/velo.png' },
   'RIO_GBNLJIYH34UWO5YZFA3A3HD3N76R6DOI33N4JONUOHEEYZYCAYTEJ5AK': { name: 'Realio', domain: 'realio.fund', image: 'https://assets.coingecko.com/coins/images/12206/small/realio.png' },
+  'ARST_GCSAZVWXZKWS4XS223M5F54H2B6XPIBER2JJ4CA4DDXPLGMIVLRMR2': { name: 'ARS Token', domain: 'anclap.com', image: 'https://anclap.com/assets/img/arst-logo.png' },
+  'BRLT_GCHH4UPC43VEMDOZ2OYSEFWPVNBVPZQLSUF3USKX6CJXJ6JKF3AIYBRLT': { name: 'BRL Token', domain: 'ntokens.com', image: 'https://ntokens.com/assets/brlt-logo.png' },
+  'DOGET_GDOEVDDBU6OBWKL7VHDAOKD77UP4DKHQYKOKJJT5PR3WRDBTX35HUEUX': { name: 'Doge Token', domain: 'doget.org', image: 'https://doget.org/assets/doget-logo.png' },
+  'yUSDC_GDGTVWSM4MGS4T7Z6W4RPWOCHE2I6RDFCIFZG5YCHF3QHFKWVWDCCV': { name: 'Yield USDC', domain: 'ultrastellar.com', image: 'https://ultrastellar.com/static/images/icons/yUSDC.png' },
+  'FIDR_GBZQNUAGO4DZFWOHJ3PVXZKZ2LTSOVAMCTVM46OEMWNWTED4DFS3NAYH': { name: 'FIDR', domain: 'fidr.io', image: '' },
+  'LSP_GAB7STHVD5BDH3EEYXPI3OM7PCS4V443PYB5FNT6CFGJVPDLMKDM24WK': { name: 'Lumenswap', domain: 'lumenswap.io', image: '' },
 };
 
 // Enrich token with metadata from cache or picks
@@ -53,7 +59,7 @@ interface Token {
   source?: 'wallet' | 'picks' | 'search' | 'favorites';
 }
 
-// Token card component with cached icon loading
+// Token card component with cached icon loading and domain fetching
 function TokenCard({
   token,
   isFav,
@@ -67,16 +73,37 @@ function TokenCard({
 }) {
   const [iconUrl, setIconUrl] = useState<string | null>(token.image || null);
   const [imageError, setImageError] = useState(false);
+  const [domain, setDomain] = useState<string | undefined>(token.domain);
 
+  // Fetch icon from issuer's stellar.toml if not provided
   useEffect(() => {
-    if (!token.image && !imageError) {
+    if (!token.image && !imageError && token.issuer) {
       let cancelled = false;
-      getIssuerTokenIcon(token.code, token.issuer || '').then((url) => {
-        if (!cancelled) setIconUrl(url);
+      getIssuerTokenIcon(token.code, token.issuer).then((url) => {
+        if (!cancelled && url) setIconUrl(url);
       });
       return () => { cancelled = true; };
     }
   }, [token.code, token.issuer, token.image, imageError]);
+
+  // Fetch domain from Horizon account if not provided
+  useEffect(() => {
+    if (!token.domain && token.issuer) {
+      let cancelled = false;
+      fetch(`${HORIZON_URL}/accounts/${token.issuer}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (!cancelled && data?.home_domain) {
+            setDomain(data.home_domain);
+          }
+        })
+        .catch(() => {});
+      return () => { cancelled = true; };
+    }
+  }, [token.domain, token.issuer]);
+
+  // Display domain or truncated issuer
+  const displayDomain = domain || token.domain || (token.issuer ? token.issuer.substring(0, 12) + '...' : 'Native');
 
   return (
     <button
@@ -118,16 +145,16 @@ function TokenCard({
         )}
       </div>
 
-      {/* Token Name or Domain */}
-      {(token.name || token.domain) && (
+      {/* Token Name */}
+      {token.name && (
         <p className="text-xs text-muted-foreground text-center truncate w-full">
-          {token.name || token.domain}
+          {token.name}
         </p>
       )}
 
       {/* Domain or Issuer - prefer domain over issuer address */}
       <p className="text-xs text-muted-foreground/70 text-center truncate w-full">
-        {token.domain || (token.issuer ? token.issuer.substring(0, 12) + '...' : 'Native')}
+        {displayDomain}
       </p>
     </button>
   );
