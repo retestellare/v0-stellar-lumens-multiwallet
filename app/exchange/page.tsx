@@ -191,8 +191,12 @@ export default function ExchangePage() {
     }
   }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
 
-  // Fetch user's open offers
+  // Fetch user's open offers - clear immediately when wallet changes
   useEffect(() => {
+    // Immediately clear orders when wallet changes to prevent stale data
+    setMyOrders([]);
+    setFilledOrders([]);
+    
     const fetchOffers = async () => {
       if (!activeWalletId) return;
       const wallet = wallets.find(w => w.id === activeWalletId);
@@ -251,12 +255,18 @@ export default function ExchangePage() {
     }
   }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
 
-  // Fetch user's filled orders (trade history)
+  // Fetch user's filled orders (trade history) - also clears on wallet change
   useEffect(() => {
     const fetchFilledOrders = async () => {
-      if (!activeWalletId) return;
+      if (!activeWalletId) {
+        setFilledOrders([]);
+        return;
+      }
       const wallet = wallets.find(w => w.id === activeWalletId);
-      if (!wallet) return;
+      if (!wallet) {
+        setFilledOrders([]);
+        return;
+      }
 
       setFilledLoading(true);
       try {
