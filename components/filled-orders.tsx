@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { CheckCircle2, ArrowRightLeft } from 'lucide-react';
+import { CheckCircle2, ArrowUpRight, ArrowDownRight, Clock } from 'lucide-react';
 
 interface FilledOrder {
   id: string;
@@ -25,6 +25,7 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
     return date.toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
+      year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
     });
@@ -48,7 +49,7 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
               <CheckCircle2 className="w-5 h-5 text-green-500" />
             </div>
             <div>
-              <h3 className="text-lg sm:text-xl font-bold text-foreground">My Filled Orders</h3>
+              <h3 className="text-lg sm:text-xl font-bold text-foreground">Trade History</h3>
               <p className="text-sm text-muted-foreground mt-0.5">
                 Your completed trades on the Stellar DEX
               </p>
@@ -63,57 +64,89 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
 
       {orders.length === 0 ? (
         <div className="p-8 text-center text-muted-foreground">
-          <ArrowRightLeft className="w-12 h-12 mx-auto mb-3 opacity-30" />
+          <CheckCircle2 className="w-12 h-12 mx-auto mb-3 opacity-30" />
           <p className="text-lg">No completed trades yet</p>
           <p className="text-sm mt-1">Your trade history will appear here</p>
         </div>
       ) : (
-        <div className="divide-y divide-border/30 max-h-[500px] overflow-y-auto">
-          {orders.map((order) => (
-            <div
-              key={order.id}
-              className="p-4 sm:p-5 hover:bg-background/50 transition-colors"
-            >
-              {/* Trade Row */}
-              <div className="flex items-center justify-between gap-4">
-                {/* Left: Type & Details */}
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <span className={`shrink-0 px-3 py-1.5 rounded-lg text-sm font-bold ${
-                    order.isBuyer 
-                      ? 'bg-primary/20 text-primary' 
-                      : 'bg-destructive/20 text-destructive'
-                  }`}>
-                    {order.isBuyer ? 'BUY' : 'SELL'}
-                  </span>
-                  
-                  <div className="min-w-0 flex-1">
-                    {/* Trade amounts */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-lg sm:text-xl font-bold text-foreground">
-                        {parseFloat(order.baseAmount).toFixed(4)}
-                      </span>
-                      <span className="text-sm font-medium text-muted-foreground">{order.baseCode}</span>
-                      <ArrowRightLeft className="w-4 h-4 text-muted-foreground shrink-0" />
-                      <span className="text-lg sm:text-xl font-bold text-foreground">
-                        {parseFloat(order.counterAmount).toFixed(4)}
-                      </span>
-                      <span className="text-sm font-medium text-muted-foreground">{order.counterCode}</span>
-                    </div>
-                    
-                    {/* Price */}
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Price: <span className="font-mono text-foreground">{parseFloat(order.price).toFixed(7)}</span>
-                    </p>
+        <div className="divide-y divide-border/30 max-h-[600px] overflow-y-auto">
+          {orders.map((order) => {
+            // Trading pair
+            const tradingPair = `${order.baseCode} / ${order.counterCode}`;
+            
+            // Calculate price per base unit
+            const baseAmt = parseFloat(order.baseAmount);
+            const counterAmt = parseFloat(order.counterAmount);
+            const pricePerUnit = baseAmt > 0 ? (counterAmt / baseAmt) : 0;
+            
+            // What you sold (-) and what you received (+)
+            // If isBuyer: you bought base (received base, paid counter)
+            // If seller: you sold base (paid base, received counter)
+            const soldAmount = order.isBuyer ? counterAmt : baseAmt;
+            const soldAsset = order.isBuyer ? order.counterCode : order.baseCode;
+            const receivedAmount = order.isBuyer ? baseAmt : counterAmt;
+            const receivedAsset = order.isBuyer ? order.baseCode : order.counterCode;
+            
+            return (
+              <div
+                key={order.id}
+                className={`p-4 sm:p-5 ${
+                  order.isBuyer ? 'border-l-4 border-l-primary' : 'border-l-4 border-l-destructive'
+                } hover:bg-muted/30 transition-colors`}
+              >
+                {/* Header Row: Trading Pair + Badge + Time */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded ${
+                      order.isBuyer 
+                        ? 'bg-primary/20 text-primary' 
+                        : 'bg-destructive/20 text-destructive'
+                    }`}>
+                      {order.isBuyer ? 'BUY' : 'SELL'}
+                    </span>
+                    <span className="text-base sm:text-lg font-bold text-foreground">{tradingPair}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>{formatTime(order.timestamp)}</span>
                   </div>
                 </div>
                 
-                {/* Right: Time */}
-                <div className="text-right shrink-0">
-                  <p className="text-sm font-medium text-foreground">{formatTime(order.timestamp)}</p>
+                {/* Price Per Unit */}
+                <div className="mb-4 text-sm">
+                  <span className="text-muted-foreground">Price per {order.baseCode}: </span>
+                  <span className="font-mono font-semibold text-foreground">{pricePerUnit.toFixed(7)} {order.counterCode}</span>
+                </div>
+                
+                {/* Amount Flow - What you sold/received */}
+                <div className="flex items-center justify-between gap-4 pt-3 border-t border-border/30">
+                  {/* You Sold */}
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 text-destructive">
+                      <ArrowUpRight className="w-5 h-5" />
+                      <span className="text-xl sm:text-2xl font-bold font-mono">
+                        -{soldAmount.toFixed(4)}
+                      </span>
+                      <span className="text-sm font-medium">{soldAsset}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 ml-7">You paid</p>
+                  </div>
+                  
+                  {/* You Received */}
+                  <div className="flex-1 text-right">
+                    <div className="flex items-center justify-end gap-2 text-green-500">
+                      <ArrowDownRight className="w-5 h-5" />
+                      <span className="text-xl sm:text-2xl font-bold font-mono">
+                        +{receivedAmount.toFixed(4)}
+                      </span>
+                      <span className="text-sm font-medium">{receivedAsset}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 mr-7">You received</p>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

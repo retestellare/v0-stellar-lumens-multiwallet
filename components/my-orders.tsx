@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { X, ShoppingCart, Tag } from 'lucide-react';
+import { X, ArrowDownRight, ArrowUpRight, TrendingUp, TrendingDown } from 'lucide-react';
 
 interface ActiveOrder {
   id: string;
@@ -11,6 +11,10 @@ interface ActiveOrder {
   amount: string;
   filled: string;
   timestamp: string;
+  sellingCode: string;
+  sellingIssuer: string;
+  buyingCode: string;
+  buyingIssuer: string;
 }
 
 interface MyOrdersProps {
@@ -21,7 +25,13 @@ interface MyOrdersProps {
   sellingAsset: string;
 }
 
-export function MyOrders({ orders, loading, onCancelOrder, buyingAsset, sellingAsset }: MyOrdersProps) {
+// Truncate issuer for display
+const truncateIssuer = (issuer: string) => {
+  if (!issuer || issuer.length < 10) return '';
+  return `${issuer.slice(0, 4)}...${issuer.slice(-4)}`;
+};
+
+export function MyOrders({ orders, loading, onCancelOrder }: MyOrdersProps) {
   return (
     <div className="glow-border rounded-lg overflow-hidden">
       {/* Header */}
@@ -33,12 +43,12 @@ export function MyOrders({ orders, loading, onCancelOrder, buyingAsset, sellingA
               {orders.length} open order{orders.length !== 1 ? 's' : ''}
             </p>
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-primary"></span> Buy
+          <div className="flex items-center gap-3 text-xs">
+            <span className="flex items-center gap-1.5 text-primary">
+              <TrendingUp className="w-3.5 h-3.5" /> Buy
             </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-destructive"></span> Sell
+            <span className="flex items-center gap-1.5 text-destructive">
+              <TrendingDown className="w-3.5 h-3.5" /> Sell
             </span>
           </div>
         </div>
@@ -50,77 +60,108 @@ export function MyOrders({ orders, loading, onCancelOrder, buyingAsset, sellingA
         </div>
       ) : orders.length === 0 ? (
         <div className="p-8 text-center text-muted-foreground">
-          <Tag className="w-12 h-12 mx-auto mb-3 opacity-30" />
+          <TrendingUp className="w-12 h-12 mx-auto mb-3 opacity-30" />
           <p className="text-lg">No active orders</p>
           <p className="text-sm mt-1">Place a buy or sell order to get started</p>
         </div>
       ) : (
         <div className="divide-y divide-border/30 max-h-[500px] overflow-y-auto">
           {orders.map((order: ActiveOrder, idx: number) => {
-            const remaining = (parseFloat(order.amount) - parseFloat(order.filled)).toFixed(4);
-            const progress = (parseFloat(order.filled) / parseFloat(order.amount) * 100).toFixed(0);
             const isBuy = order.type === 'buy';
+            const price = parseFloat(order.price);
+            const amount = parseFloat(order.amount);
+            
+            // Calculate what you give and what you receive
+            // For a SELL: you give sellingCode, you receive buyingCode
+            // For a BUY: you give buyingCode (pay), you receive sellingCode
+            // Stellar offers: amount is always in selling asset, price is buying/selling ratio
+            const youGiveAmount = amount;
+            const youGiveAsset = order.sellingCode;
+            const youReceiveAmount = amount * price;
+            const youReceiveAsset = order.buyingCode;
+            
+            // Trading pair display
+            const tradingPair = `${order.sellingCode} / ${order.buyingCode}`;
+            
+            const remaining = amount - parseFloat(order.filled);
+            const progress = (parseFloat(order.filled) / amount * 100);
             
             return (
               <div
                 key={idx}
                 className={`p-4 sm:p-5 ${
-                  isBuy ? 'hover:bg-primary/5' : 'hover:bg-destructive/5'
-                } transition-colors`}
+                  isBuy ? 'border-l-4 border-l-primary' : 'border-l-4 border-l-destructive'
+                } hover:bg-muted/30 transition-colors`}
               >
-                {/* Order Header */}
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    {/* Type Badge */}
-                    <div className={`flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-lg ${
-                      isBuy ? 'bg-primary/20' : 'bg-destructive/20'
+                {/* Trading Pair Header */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded ${
+                      isBuy ? 'bg-primary/20 text-primary' : 'bg-destructive/20 text-destructive'
                     }`}>
-                      {isBuy ? (
-                        <ShoppingCart className={`w-5 h-5 sm:w-6 sm:h-6 ${isBuy ? 'text-primary' : 'text-destructive'}`} />
-                      ) : (
-                        <Tag className={`w-5 h-5 sm:w-6 sm:h-6 ${isBuy ? 'text-primary' : 'text-destructive'}`} />
-                      )}
-                    </div>
-                    
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                          isBuy ? 'bg-primary/30 text-primary' : 'bg-destructive/30 text-destructive'
-                        }`}>
-                          {order.type.toUpperCase()}
-                        </span>
-                        <span className="text-lg sm:text-xl font-bold text-foreground">
-                          {parseFloat(order.amount).toFixed(4)}
-                        </span>
-                        <span className="text-sm text-muted-foreground">{sellingAsset}</span>
-                      </div>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        @ <span className="font-mono font-medium text-foreground">{parseFloat(order.price).toFixed(6)}</span> {buyingAsset}
-                      </p>
-                    </div>
+                      {isBuy ? 'BUY' : 'SELL'}
+                    </span>
+                    <span className="text-base sm:text-lg font-bold text-foreground">{tradingPair}</span>
                   </div>
-                  
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => onCancelOrder(order.id)}
-                    className="text-destructive hover:bg-destructive/10 h-10 w-10 p-0 rounded-lg"
+                    className="text-destructive hover:bg-destructive/10 h-8 w-8 p-0 rounded-lg"
                   >
-                    <X className="w-5 h-5" />
+                    <X className="w-4 h-4" />
                   </Button>
                 </div>
                 
+                {/* Issuer Info */}
+                <p className="text-xs text-muted-foreground mb-4">
+                  {truncateIssuer(order.sellingIssuer) || 'native'} / {truncateIssuer(order.buyingIssuer) || 'native'}
+                </p>
+                
+                {/* Price Per Unit */}
+                <div className="mb-4 text-sm">
+                  <span className="text-muted-foreground">Price per {order.sellingCode}: </span>
+                  <span className="font-mono font-semibold text-foreground">{price.toFixed(7)} {order.buyingCode}</span>
+                </div>
+                
+                {/* Amount Flow - What you give/receive */}
+                <div className="flex items-center justify-between gap-4 mb-4">
+                  {/* You Give (Selling) */}
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 text-destructive">
+                      <ArrowUpRight className="w-4 h-4" />
+                      <span className="text-xl sm:text-2xl font-bold font-mono">
+                        -{youGiveAmount.toFixed(4)}
+                      </span>
+                      <span className="text-sm font-medium">{youGiveAsset}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 ml-6">You sell</p>
+                  </div>
+                  
+                  {/* You Receive (Buying) */}
+                  <div className="flex-1 text-right">
+                    <div className="flex items-center justify-end gap-2 text-green-500">
+                      <ArrowDownRight className="w-4 h-4" />
+                      <span className="text-xl sm:text-2xl font-bold font-mono">
+                        +{youReceiveAmount.toFixed(4)}
+                      </span>
+                      <span className="text-sm font-medium">{youReceiveAsset}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 mr-6">You receive</p>
+                  </div>
+                </div>
+                
                 {/* Progress Section */}
-                <div className="mt-4 space-y-2">
+                <div className="pt-3 border-t border-border/30 space-y-2">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">
-                      Remaining: <span className="font-mono text-foreground">{remaining}</span> {sellingAsset}
+                      Remaining: <span className="font-mono font-medium text-foreground">{remaining.toFixed(4)}</span> {order.sellingCode}
                     </span>
-                    <span className={`font-bold ${isBuy ? 'text-primary' : 'text-destructive'}`}>
-                      {progress}% filled
+                    <span className={`font-bold ${progress > 0 ? 'text-green-500' : 'text-muted-foreground'}`}>
+                      {progress.toFixed(0)}% filled
                     </span>
                   </div>
-                  <div className="w-full h-2 bg-background/80 rounded-full overflow-hidden border border-border/50">
+                  <div className="w-full h-1.5 bg-muted/50 rounded-full overflow-hidden">
                     <div
                       className={`h-full transition-all duration-300 ${
                         isBuy ? 'bg-primary' : 'bg-destructive'
