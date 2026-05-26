@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { Zap, Menu } from 'lucide-react';
 import { AppMenu } from '@/components/app-menu';
 import { SettingsModal } from '@/components/settings-modal';
+import { NotificationBadge } from '@/components/notification-badge';
 
 export function Header() {
   const pathname = usePathname();
@@ -56,8 +57,11 @@ export function Header() {
               ))}
             </nav>
 
-            {/* Right Side - Mobile Menu Button + Live Status */}
-            <div className="flex items-center gap-4">
+            {/* Right Side - Notification Badge + Mobile Menu Button + Live Status */}
+            <div className="flex items-center gap-3">
+              {/* Notification Badge */}
+              <NotificationBadge />
+
               {/* Mobile Menu Button */}
               <button
                 onClick={() => setMenuOpen(true)}
