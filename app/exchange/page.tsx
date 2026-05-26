@@ -13,7 +13,8 @@ import { PriceChart } from '@/components/price-chart';
 import { TokenSelectorModal } from '@/components/token-selector-modal';
 import { CompactOrderForm } from '@/components/compact-order-form';
 import { useState, useEffect } from 'react';
-import { ArrowLeft, TrendingUp, ArrowRightLeft, X, Loader2 } from 'lucide-react';
+import { ArrowLeft, TrendingUp, ArrowRightLeft, X, Loader2, Wallet } from 'lucide-react';
+import { WalletSelectorDropdown } from '@/components/wallet-selector-dropdown';
 import { Input } from '@/components/ui/input';
 import Link from 'next/link';
 
@@ -492,14 +493,16 @@ export default function ExchangePage() {
     }
   };
 
+  // Clicking a BID order = someone wants to BUY, so you can SELL to them
   const handleSelectBidOrder = (price: string, amount: string) => {
-    setBuyPrice(price);
-    setBuyAmount(amount);
-  };
-
-  const handleSelectAskOrder = (price: string, amount: string) => {
     setSellPrice(price);
     setSellAmount(amount);
+  };
+
+  // Clicking an ASK order = someone wants to SELL, so you can BUY from them
+  const handleSelectAskOrder = (price: string, amount: string) => {
+    setBuyPrice(price);
+    setBuyAmount(amount);
   };
 
   const tabs = [
@@ -513,18 +516,23 @@ export default function ExchangePage() {
     <main className="min-h-screen bg-background">
       <Header />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Link href="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-8 transition-colors">
-          <ArrowLeft className="w-4 h-4" />
-          Back to Dashboard
-        </Link>
+        <div className="flex items-center justify-between mb-8">
+          <Link href="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="w-4 h-4" />
+            Back to Dashboard
+          </Link>
+          <WalletSelectorDropdown />
+        </div>
 
         <div className="space-y-6">
           {/* Header */}
-          <div className="flex items-center gap-3">
-            <TrendingUp className="w-8 h-8 text-primary" />
-            <div>
-              <h1 className="text-4xl font-bold text-foreground">Stellar DEX</h1>
-              <p className="text-muted-foreground">Trade on the Stellar Decentralized Exchange</p>
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-3">
+              <TrendingUp className="w-8 h-8 text-primary" />
+              <div>
+                <h1 className="text-3xl sm:text-4xl font-bold text-foreground">Stellar DEX</h1>
+                <p className="text-muted-foreground text-sm">Trade on the Stellar Decentralized Exchange</p>
+              </div>
             </div>
           </div>
 
