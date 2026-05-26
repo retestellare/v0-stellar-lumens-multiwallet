@@ -3,7 +3,7 @@
 import { Header } from '@/components/header';
 import { useWallet } from '@/lib/wallet-context';
 import { Button } from '@/components/ui/button';
-import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations, getAccountTrades, getXLMUSDStats } from '@/lib/stellar-utils';
+import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations, getAccountTrades, getXLMUSDStats, hasTrustline, addTrustline } from '@/lib/stellar-utils';
 import { TradingPairHeader } from '@/components/trading-pair-header';
 import { OrderBook } from '@/components/order-book';
 import { TradeHistory } from '@/components/trade-history';
@@ -27,7 +27,7 @@ type TabType = 'history' | 'my-orders' | 'charts';
 type TokenModalType = 'selling' | 'buying' | null;
 
 export default function ExchangePage() {
-  const { wallets, activeWalletId } = useWallet();
+  const { wallets, activeWalletId, updateBalances } = useWallet();
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('history');
   
@@ -117,6 +117,21 @@ export default function ExchangePage() {
       }
     }
   }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
+
+  // Reset password state and refresh balances when wallet changes
+  useEffect(() => {
+    if (activeWalletId && mounted) {
+      // Clear password-related state when wallet changes
+      setIsPasswordUnlocked(false);
+      setDecryptedSecret(null);
+      setPassword('');
+      setPendingOrder(null);
+      setTxResult(null);
+      
+      // Refresh balances for the new wallet
+      updateBalances(activeWalletId);
+    }
+  }, [activeWalletId, mounted, updateBalances]);
 
   // Fetch order book
   useEffect(() => {
@@ -404,6 +419,36 @@ export default function ExchangePage() {
     setTxResult(null);
     
     try {
+      // Check trustline for the asset we're buying/receiving
+      const assetToCheck = order.type === 'buy' 
+        ? { code: buyingAsset, issuer: buyingIssuer }
+        : { code: buyingAsset, issuer: buyingIssuer }; // When selling, we receive the buying asset
+      
+      if (assetToCheck.code !== 'XLM' && assetToCheck.issuer && activeWallet?.balances) {
+        const hasTrust = hasTrustline(activeWallet.balances, assetToCheck.code, assetToCheck.issuer);
+        
+        if (!hasTrust) {
+          // Auto-add trustline
+          setTxResult({ success: false, message: `Adding trustline for ${assetToCheck.code}...` });
+          const trustResult = await addTrustline(secret, assetToCheck.code, assetToCheck.issuer);
+          
+          if (!trustResult.success) {
+            setTxResult({ success: false, message: `Failed to add trustline: ${trustResult.error}` });
+            setIsSubmitting(false);
+            return;
+          }
+          
+          // Refresh balances after adding trustline
+          if (activeWalletId) {
+            await updateBalances(activeWalletId);
+          }
+          
+          setTxResult({ success: true, message: `Trustline added for ${assetToCheck.code}. Submitting order...` });
+          // Small delay to let the UI update
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+      
       let result;
       if (order.type === 'buy') {
         result = await submitManageBuyOffer(
@@ -438,6 +483,10 @@ export default function ExchangePage() {
         }
         const data = await getOrderBook(sellingAsset, sellingIssuer, buyingAsset, buyingIssuer);
         setOrderBook(data);
+        // Refresh balances after order
+        if (activeWalletId) {
+          await updateBalances(activeWalletId);
+        }
       } else {
         setTxResult({ success: false, message: result.error || 'Order failed' });
       }

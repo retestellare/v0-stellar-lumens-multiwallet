@@ -547,13 +547,66 @@ export const submitManageSellOffer = async (
                           result.extras?.result_codes?.transaction ||
                           result.detail ||
                           'Transaction failed';
-      return { success: false, error: errorMessage };
-    }
-  } catch (error: any) {
-    console.error('[v0] Error submitting offer:', error);
-    return { success: false, error: error.message || 'Unknown error' };
+    return { success: false, error: errorMessage };
   }
 };
+
+/**
+ * Check if an account has a trustline for a specific asset
+ */
+export const hasTrustline = (balances: any[], assetCode: string, assetIssuer: string): boolean => {
+  if (assetCode === 'XLM' || assetCode === 'native') return true; // Native XLM doesn't need trustline
+  return balances.some((b: any) => 
+    b.asset_code === assetCode && b.asset_issuer === assetIssuer
+  );
+};
+
+/**
+ * Add a trustline for a specific asset
+ */
+export const addTrustline = async (
+  secretKey: string,
+  assetCode: string,
+  assetIssuer: string
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    const server = new Horizon.Server(HORIZON_URL);
+    const keypair = Keypair.fromSecret(secretKey);
+    const sourcePublicKey = keypair.publicKey();
+    
+    // Load source account
+    const account = await server.loadAccount(sourcePublicKey);
+    
+    // Create asset
+    const asset = new Asset(assetCode, assetIssuer);
+    
+    // Build changeTrust transaction
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.changeTrust({
+          asset: asset,
+        })
+      )
+      .setTimeout(180)
+      .build();
+    
+    transaction.sign(keypair);
+    
+    const result = await server.submitTransaction(transaction);
+    return { success: true, hash: result.hash };
+  } catch (error: any) {
+    let errorMessage = error.message || 'Failed to add trustline';
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+    return { success: false, error: errorMessage };
+  }
+};
+
 
 /**
  * Fetch trade history for a specific account (filled orders)
