@@ -29,11 +29,11 @@ export function OrderBook({
 }: OrderBookProps) {
   // Merge orders for interleaved display
   // Bids: highest price at top (already sorted desc from API)
-  // Asks: lowest price at top (already sorted asc from API) - DON'T reverse
+  // Asks: lowest price at top (already sorted asc from API)
   const maxRows = Math.max(bids.length, asks.length);
   const mergedOrders = Array.from({ length: maxRows }, (_, idx) => ({
     bid: bids[idx] || null,
-    ask: asks[idx] || null, // Keep asks in natural order (lowest/best ask at top)
+    ask: asks[idx] || null,
   }));
 
   return (
@@ -47,7 +47,7 @@ export function OrderBook({
           {bestBid && bestAsk && (
             <p className="text-xs text-muted-foreground">
               Diff: <span className="text-accent font-semibold">
-                {(parseFloat(bestAsk) - parseFloat(bestBid)).toFixed(8)} {buyingAsset}
+                {(parseFloat(bestAsk) - parseFloat(bestBid)).toFixed(4)} {buyingAsset}
               </span>
             </p>
           )}
@@ -62,65 +62,72 @@ export function OrderBook({
           <div className="p-6 text-center text-muted-foreground">No orders available</div>
         ) : (
           <div className="overflow-x-auto">
-            {/* Column Headers - wider spacing on mobile */}
-            <div className="sticky top-0 bg-background/80 backdrop-blur border-b border-border grid grid-cols-4 gap-1 px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium text-muted-foreground">
+            {/* Column Headers */}
+            <div className="sticky top-0 bg-background/95 backdrop-blur border-b border-border grid grid-cols-4 px-2 sm:px-4 py-3 text-xs font-semibold">
+              <div className="text-left text-blue-400">Bid Amt</div>
+              <div className="text-center text-primary">Bid ({buyingAsset})</div>
+              <div className="text-center text-destructive">Ask ({buyingAsset})</div>
+              <div className="text-right text-pink-400">Ask Amt</div>
+            </div>
+            
+            {/* Subheader showing base asset */}
+            <div className="bg-background/80 border-b border-border/50 grid grid-cols-4 px-2 sm:px-4 py-1 text-[10px] text-muted-foreground">
               <div className="text-left">{sellingAsset}</div>
-              <div className="text-center text-primary border-r border-border/50">Buy</div>
-              <div className="text-center text-destructive">Sell</div>
+              <div className="text-center">Price</div>
+              <div className="text-center">Price</div>
               <div className="text-right">{sellingAsset}</div>
             </div>
 
-            {/* Order Rows - improved mobile spacing */}
-            <div className="max-h-[600px] overflow-y-auto">
+            {/* Order Rows */}
+            <div className="max-h-[500px] overflow-y-auto">
               {mergedOrders.map((row, idx) => (
                 <div
                   key={idx}
-                  className="grid grid-cols-4 gap-1 px-2 sm:px-4 py-2 text-xs sm:text-sm border-b border-border/30 hover:bg-background/50 transition-colors cursor-pointer"
-                  onClick={() => {
-                    if (row.bid && onBidClick) {
-                      onBidClick(row.bid.price, row.bid.amount);
-                    }
-                  }}
+                  className="grid grid-cols-4 px-2 sm:px-4 py-2 text-sm border-b border-border/20 hover:bg-primary/5 transition-colors"
                 >
-                  {/* Bid Amount (Left) - edge aligned */}
-                  <div className="text-left font-mono">
+                  {/* Bid Amount - Click to SELL */}
+                  <div 
+                    className="text-left font-mono cursor-pointer hover:bg-blue-500/10 rounded px-1 -mx-1"
+                    onClick={() => row.bid && onBidClick?.(row.bid.price, row.bid.amount)}
+                  >
                     {row.bid ? (
-                      <span className="text-blue-400">{parseFloat(row.bid.amount).toFixed(2)}</span>
+                      <span className="text-blue-400 font-medium">{parseFloat(row.bid.amount).toFixed(2)}</span>
                     ) : (
                       <span className="text-muted-foreground/30">-</span>
                     )}
                   </div>
 
-                  {/* Bid Price (Center Left) */}
-                  <div className="text-center font-mono font-semibold border-r border-border/50">
+                  {/* Bid Price */}
+                  <div 
+                    className="text-center font-mono cursor-pointer hover:bg-primary/10 rounded"
+                    onClick={() => row.bid && onBidClick?.(row.bid.price, row.bid.amount)}
+                  >
                     {row.bid ? (
-                      <span className="text-primary">{parseFloat(row.bid.price).toFixed(4)}</span>
+                      <span className="text-primary font-semibold">{parseFloat(row.bid.price).toFixed(4)}</span>
                     ) : (
                       <span className="text-muted-foreground/30">-</span>
                     )}
                   </div>
 
-                  {/* Ask Price (Center Right) */}
-                  <div
-                    className="text-center font-mono font-semibold"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (row.ask && onAskClick) {
-                        onAskClick(row.ask.price, row.ask.amount);
-                      }
-                    }}
+                  {/* Ask Price */}
+                  <div 
+                    className="text-center font-mono cursor-pointer hover:bg-destructive/10 rounded"
+                    onClick={() => row.ask && onAskClick?.(row.ask.price, row.ask.amount)}
                   >
                     {row.ask ? (
-                      <span className="text-destructive">{parseFloat(row.ask.price).toFixed(4)}</span>
+                      <span className="text-destructive font-semibold">{parseFloat(row.ask.price).toFixed(4)}</span>
                     ) : (
                       <span className="text-muted-foreground/30">-</span>
                     )}
                   </div>
 
-                  {/* Ask Amount (Right) - edge aligned */}
-                  <div className="text-right font-mono">
+                  {/* Ask Amount - Click to BUY */}
+                  <div 
+                    className="text-right font-mono cursor-pointer hover:bg-pink-500/10 rounded px-1 -mx-1"
+                    onClick={() => row.ask && onAskClick?.(row.ask.price, row.ask.amount)}
+                  >
                     {row.ask ? (
-                      <span className="text-pink-400">{parseFloat(row.ask.amount).toFixed(2)}</span>
+                      <span className="text-pink-400 font-medium">{parseFloat(row.ask.amount).toFixed(2)}</span>
                     ) : (
                       <span className="text-muted-foreground/30">-</span>
                     )}
@@ -130,6 +137,12 @@ export function OrderBook({
             </div>
           </div>
         )}
+      </div>
+      
+      {/* Legend */}
+      <div className="flex justify-center gap-6 text-xs text-muted-foreground">
+        <span><span className="text-blue-400">Bid</span> = Buyers (click to sell)</span>
+        <span><span className="text-pink-400">Ask</span> = Sellers (click to buy)</span>
       </div>
     </div>
   );
