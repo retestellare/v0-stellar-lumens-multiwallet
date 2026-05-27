@@ -579,6 +579,186 @@ export const submitManageSellOffer = async (
 };
 
 /**
+ * Find strict send payment paths from Horizon
+ * This shows how much you would receive for a given send amount
+ */
+export const findStrictSendPaths = async (
+  sourceAssetCode: string,
+  sourceAssetIssuer: string | undefined,
+  destAssetCode: string,
+  destAssetIssuer: string | undefined,
+  sendAmount: string
+): Promise<any[]> => {
+  try {
+    const sourceAsset = sourceAssetCode === 'XLM' || sourceAssetCode === 'native'
+      ? 'native'
+      : `${sourceAssetCode}:${sourceAssetIssuer}`;
+    
+    const destAsset = destAssetCode === 'XLM' || destAssetCode === 'native'
+      ? 'native'
+      : `${destAssetCode}:${destAssetIssuer}`;
+    
+    const url = `${HORIZON_URL}/paths/strict-send?source_asset_type=${
+      sourceAssetCode === 'XLM' ? 'native' : getAssetType(sourceAssetCode)
+    }${sourceAssetCode !== 'XLM' ? `&source_asset_code=${sourceAssetCode}&source_asset_issuer=${sourceAssetIssuer}` : ''}&destination_assets=${destAsset}&source_amount=${sendAmount}`;
+    
+    const response = await fetch(url);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data._embedded?.records || [];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Execute a Path Payment Strict Send operation
+ * This is the core of atomic arbitrage - send exact amount, receive at least destMin
+ * If the path doesn't yield destMin, the transaction FAILS atomically (no loss)
+ * 
+ * @param secretKey - Secret key of the sender
+ * @param sendAssetCode - Asset code to send (e.g., 'XLM')
+ * @param sendAssetIssuer - Issuer of send asset (undefined for XLM)
+ * @param sendAmount - Exact amount to send
+ * @param destAssetCode - Asset code to receive (e.g., 'XLM' for round-trip)
+ * @param destAssetIssuer - Issuer of dest asset (undefined for XLM)
+ * @param destMin - MINIMUM amount to receive (anti-loss protection)
+ * @param path - Intermediate assets for the path (the arbitrage route)
+ * @param destPublicKey - Destination account (usually same as sender for arbitrage)
+ */
+export const pathPaymentStrictSend = async (
+  secretKey: string,
+  sendAssetCode: string,
+  sendAssetIssuer: string | undefined,
+  sendAmount: string,
+  destAssetCode: string,
+  destAssetIssuer: string | undefined,
+  destMin: string,
+  path: Array<{ code: string; issuer?: string }>,
+  destPublicKey?: string
+): Promise<{ success: boolean; hash?: string; destAmount?: string; error?: string }> => {
+  try {
+    const server = new Horizon.Server(HORIZON_URL);
+    const keypair = Keypair.fromSecret(secretKey);
+    const sourcePublicKey = keypair.publicKey();
+    const destination = destPublicKey || sourcePublicKey; // Default: send to self (arbitrage)
+    
+    // Load source account
+    const account = await server.loadAccount(sourcePublicKey);
+    
+    // Create send asset
+    const sendAsset = sendAssetCode === 'XLM' || sendAssetCode === 'native'
+      ? Asset.native()
+      : new Asset(sendAssetCode, sendAssetIssuer!);
+    
+    // Create destination asset
+    const destAsset = destAssetCode === 'XLM' || destAssetCode === 'native'
+      ? Asset.native()
+      : new Asset(destAssetCode, destAssetIssuer!);
+    
+    // Create path assets (intermediate hops)
+    const pathAssets = path.map(p => 
+      p.code === 'XLM' || p.code === 'native'
+        ? Asset.native()
+        : new Asset(p.code, p.issuer!)
+    );
+    
+    // Build pathPaymentStrictSend transaction
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.pathPaymentStrictSend({
+          sendAsset: sendAsset,
+          sendAmount: sendAmount,
+          destination: destination,
+          destAsset: destAsset,
+          destMin: destMin, // CRITICAL: Anti-loss protection
+          path: pathAssets,
+        })
+      )
+      .setTimeout(180)
+      .build();
+    
+    transaction.sign(keypair);
+    
+    const result = await server.submitTransaction(transaction);
+    
+    // Extract the actual amount received from the result
+    let destAmount: string | undefined;
+    try {
+      const opResult = (result as any).result_xdr;
+      // In practice, you'd parse the XDR to get exact amount
+      // For now, we return success and let the UI refresh balances
+    } catch {}
+    
+    return { success: true, hash: result.hash, destAmount };
+  } catch (error: any) {
+    let errorMessage = error.message || 'Path payment failed';
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      const opCode = codes.operations?.[0];
+      
+      // Translate common error codes
+      if (opCode === 'op_under_dest_min') {
+        errorMessage = 'Arbitrage cancelled: profit below minimum threshold (anti-loss protection triggered)';
+      } else if (opCode === 'op_too_few_offers') {
+        errorMessage = 'No viable path found for this arbitrage';
+      } else if (opCode === 'op_cross_self') {
+        errorMessage = 'Cannot cross your own offers';
+      } else if (opCode === 'op_over_source_max') {
+        errorMessage = 'Insufficient balance for this operation';
+      } else {
+        errorMessage = opCode || codes.transaction || errorMessage;
+      }
+    }
+    return { success: false, error: errorMessage };
+  }
+};
+
+/**
+ * Get orderbook price for an asset pair
+ */
+export const getOrderbookPrice = async (
+  baseCode: string,
+  baseIssuer: string | undefined,
+  counterCode: string,
+  counterIssuer: string | undefined
+): Promise<{ bestBid: number; bestAsk: number } | null> => {
+  try {
+    let url = `${HORIZON_URL}/order_book?`;
+    
+    if (baseCode === 'XLM' || baseCode === 'native') {
+      url += 'selling_asset_type=native';
+    } else {
+      url += `selling_asset_type=${getAssetType(baseCode)}&selling_asset_code=${baseCode}&selling_asset_issuer=${baseIssuer}`;
+    }
+    
+    url += '&';
+    
+    if (counterCode === 'XLM' || counterCode === 'native') {
+      url += 'buying_asset_type=native';
+    } else {
+      url += `buying_asset_type=${getAssetType(counterCode)}&buying_asset_code=${counterCode}&buying_asset_issuer=${counterIssuer}`;
+    }
+    
+    url += '&limit=1';
+    
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const data = await response.json();
+    
+    const bestBid = data.bids?.[0]?.price ? parseFloat(data.bids[0].price) : 0;
+    const bestAsk = data.asks?.[0]?.price ? parseFloat(data.asks[0].price) : 0;
+    
+    return { bestBid, bestAsk };
+  } catch {
+    return null;
+  }
+};
+
+/**
  * Get liquidity pools for an account
  */
 export const getAccountLiquidityPools = async (publicKey: string): Promise<any[]> => {

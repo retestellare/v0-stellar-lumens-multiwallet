@@ -15,6 +15,7 @@ import {
   Info,
   ChevronRight,
   Droplets,
+  Zap,
 } from 'lucide-react';
 import { useWallet } from '@/lib/wallet-context';
 
@@ -32,6 +33,7 @@ export function AppMenu({ isOpen, onClose, onOpenSettings }: AppMenuProps) {
     { icon: Home, label: 'Home', href: '/' },
     { icon: ArrowRightLeft, label: 'Exchange', href: '/exchange' },
     { icon: Droplets, label: 'Pools', href: '/pools' },
+    { icon: Zap, label: 'Arbitrage', href: '/arbitrage' },
     { icon: TrendingUp, label: 'Portfolio', href: '/portfolio' },
     { icon: History, label: 'History', href: '/history' },
   ];
