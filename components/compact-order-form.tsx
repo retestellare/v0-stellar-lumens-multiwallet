@@ -134,6 +134,16 @@ export function CompactOrderForm({
   const allocateSellPercentage = (percentage: number) => {
     const balance = parseFloat(sellingBalance);
     if (isNaN(balance) || balance <= 0) return;
+    
+    // Auto-fill price from best bid if not set
+    let price = parseFloat(sellPrice);
+    if (isNaN(price) || price <= 0) {
+      price = bestBid ? parseFloat(bestBid) : 0;
+      if (price > 0) {
+        onSellPriceChange(formatNumber(price));
+      }
+    }
+    
     const amount = balance * (percentage / 100);
     onSellAmountChange(formatNumber(amount));
   };
@@ -141,10 +151,20 @@ export function CompactOrderForm({
   // For BUY: percentage of counter currency balance to spend
   const allocateBuyPercentage = (percentage: number) => {
     const balance = parseFloat(buyingBalance); // Counter currency balance (e.g., XLM)
-    const price = parseFloat(buyPrice);
     
     if (isNaN(balance) || balance <= 0) return;
-    if (isNaN(price) || price <= 0) return;
+    
+    // Use entered price or best ask as fallback
+    let price = parseFloat(buyPrice);
+    if (isNaN(price) || price <= 0) {
+      price = bestAsk ? parseFloat(bestAsk) : 0;
+      if (price > 0) {
+        // Auto-fill price from best ask
+        onBuyPriceChange(formatNumber(price));
+      }
+    }
+    
+    if (price <= 0) return;
     
     // How much counter currency to spend
     const counterToSpend = balance * (percentage / 100);
@@ -219,7 +239,7 @@ export function CompactOrderForm({
             <button
               key={pct}
               onClick={() => allocateBuyPercentage(pct)}
-              disabled={!buyPrice || parseFloat(buyPrice) <= 0}
+              disabled={parseFloat(buyingBalance) <= 0}
               className="flex-1 px-1 py-0.5 text-xs rounded border border-primary/50 text-primary hover:bg-primary/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {pct}%

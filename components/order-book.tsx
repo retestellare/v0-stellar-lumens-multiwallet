@@ -125,19 +125,19 @@ export function OrderBook({
         ) : (
           <div className="overflow-x-auto">
             {/* Column Headers */}
-            <div className="sticky top-0 bg-background/95 backdrop-blur border-b border-border grid grid-cols-4 gap-1 px-1 sm:px-2 py-3 text-[10px] sm:text-xs font-semibold">
-              <div className="text-left text-blue-400 truncate">Bid Amt</div>
-              <div className="text-right text-primary truncate pr-1">Bid</div>
-              <div className="text-left text-destructive truncate pl-1">Ask</div>
-              <div className="text-right text-pink-400 truncate">Ask Amt</div>
+            <div className="sticky top-0 bg-background/95 backdrop-blur border-b border-border flex px-1 sm:px-2 py-3 text-[10px] sm:text-xs font-semibold">
+              <div className="w-[22%] text-left text-blue-400 truncate">Bid Amt</div>
+              <div className="w-[28%] text-right text-primary truncate pr-2">Bid</div>
+              <div className="w-[28%] text-left text-destructive truncate pl-2">Ask</div>
+              <div className="w-[22%] text-right text-pink-400 truncate">Ask Amt</div>
             </div>
             
             {/* Subheader showing base asset */}
-            <div className="bg-background/80 border-b border-border/50 grid grid-cols-4 gap-1 px-1 sm:px-2 py-1 text-[9px] sm:text-[10px] text-muted-foreground">
-              <div className="text-left truncate">{sellingAsset}</div>
-              <div className="text-right truncate pr-1">{buyingAsset}</div>
-              <div className="text-left truncate pl-1">{buyingAsset}</div>
-              <div className="text-right truncate">{sellingAsset}</div>
+            <div className="bg-background/80 border-b border-border/50 flex px-1 sm:px-2 py-1 text-[9px] sm:text-[10px] text-muted-foreground">
+              <div className="w-[22%] text-left truncate">{sellingAsset}</div>
+              <div className="w-[28%] text-right truncate pr-2">{buyingAsset}</div>
+              <div className="w-[28%] text-left truncate pl-2">{buyingAsset}</div>
+              <div className="w-[22%] text-right truncate">{sellingAsset}</div>
             </div>
 
             {/* Order Rows */}
@@ -145,11 +145,11 @@ export function OrderBook({
               {mergedOrders.map((row, idx) => (
                 <div
                   key={idx}
-                  className="grid grid-cols-4 gap-1 px-1 sm:px-2 py-1.5 text-[11px] sm:text-xs border-b border-border/20 hover:bg-primary/5 transition-colors"
+                  className="flex px-1 sm:px-2 py-1.5 text-[11px] sm:text-xs border-b border-border/20 hover:bg-primary/5 transition-colors"
                 >
                   {/* Bid Amount - Click to SELL */}
                   <div 
-                    className="text-left font-mono cursor-pointer hover:bg-blue-500/10 rounded truncate"
+                    className="w-[22%] text-left font-mono cursor-pointer hover:bg-blue-500/10 rounded truncate"
                     onClick={() => row.bid && onBidClick?.(row.bid.price, row.bid.amount)}
                     title={row.bid ? row.bid.amount : undefined}
                   >
@@ -162,7 +162,7 @@ export function OrderBook({
 
                   {/* Bid Price */}
                   <div 
-                    className="text-right font-mono cursor-pointer hover:bg-primary/10 rounded pr-1 truncate"
+                    className="w-[28%] text-right font-mono cursor-pointer hover:bg-primary/10 rounded pr-2 truncate"
                     onClick={() => row.bid && onBidClick?.(row.bid.price, row.bid.amount)}
                     title={row.bid ? row.bid.price : undefined}
                   >
@@ -175,7 +175,7 @@ export function OrderBook({
 
                   {/* Ask Price */}
                   <div 
-                    className="text-left font-mono cursor-pointer hover:bg-destructive/10 rounded pl-1 truncate"
+                    className="w-[28%] text-left font-mono cursor-pointer hover:bg-destructive/10 rounded pl-2 truncate"
                     onClick={() => row.ask && onAskClick?.(row.ask.price, row.ask.amount)}
                     title={row.ask ? row.ask.price : undefined}
                   >
@@ -188,7 +188,7 @@ export function OrderBook({
 
                   {/* Ask Amount - Click to BUY */}
                   <div 
-                    className="text-right font-mono cursor-pointer hover:bg-pink-500/10 rounded truncate"
+                    className="w-[22%] text-right font-mono cursor-pointer hover:bg-pink-500/10 rounded truncate"
                     onClick={() => row.ask && onAskClick?.(row.ask.price, row.ask.amount)}
                     title={row.ask ? row.ask.amount : undefined}
                   >
