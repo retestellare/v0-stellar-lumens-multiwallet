@@ -213,7 +213,7 @@ export default function ExchangePage() {
   useEffect(() => {
     // Immediately clear orders when wallet changes to prevent stale data
     setMyOrders([]);
-    setFilledOrders([]);
+    // Note: Don't clear filledOrders here - it's managed by its own effect
     
     const fetchOffers = async () => {
       if (!activeWalletId) return;
@@ -224,18 +224,37 @@ export default function ExchangePage() {
       try {
         const offersData = await getAccountOffers(wallet.publicKey);
         // Transform Horizon offers to component format
-        const formattedOrders = offersData.map((offer: any) => ({
-          id: offer.id,
-          type: offer.selling?.asset_type === 'native' || offer.selling?.asset_code === sellingAsset ? 'sell' : 'buy',
-          price: offer.price,
-          amount: offer.amount,
-          filled: '0', // Horizon doesn't track partial fills on open offers
-          timestamp: offer.last_modified_time,
-          sellingCode: offer.selling?.asset_type === 'native' ? 'XLM' : offer.selling?.asset_code,
-          sellingIssuer: offer.selling?.asset_issuer || '',
-          buyingCode: offer.buying?.asset_type === 'native' ? 'XLM' : offer.buying?.asset_code,
-          buyingIssuer: offer.buying?.asset_issuer || '',
-        }));
+        // Determine type based on what the offer is selling vs the current pair's base asset
+        const formattedOrders = offersData.map((offer: any) => {
+          const offerSellingCode = offer.selling?.asset_type === 'native' ? 'XLM' : offer.selling?.asset_code;
+          const offerBuyingCode = offer.buying?.asset_type === 'native' ? 'XLM' : offer.buying?.asset_code;
+          
+          // If offer is selling the base asset (sellingAsset), it's a SELL order
+          // If offer is buying the base asset (sellingAsset), it's a BUY order
+          // This ensures consistency regardless of pair direction
+          let orderType: 'buy' | 'sell';
+          if (offerSellingCode === sellingAsset) {
+            orderType = 'sell'; // Selling base = SELL
+          } else if (offerBuyingCode === sellingAsset) {
+            orderType = 'buy'; // Buying base = BUY
+          } else {
+            // Order is for a different pair - use the raw offer direction
+            orderType = 'sell';
+          }
+          
+          return {
+            id: offer.id,
+            type: orderType,
+            price: offer.price,
+            amount: offer.amount,
+            filled: '0', // Horizon doesn't track partial fills on open offers
+            timestamp: offer.last_modified_time,
+            sellingCode: offerSellingCode,
+            sellingIssuer: offer.selling?.asset_issuer || '',
+            buyingCode: offerBuyingCode,
+            buyingIssuer: offer.buying?.asset_issuer || '',
+          };
+        });
         setMyOrders(formattedOrders);
       } catch {
         setMyOrders([]);
