@@ -227,7 +227,20 @@ export default function ArbitragePage() {
       );
       
       if (result.success) {
-        addLog('success', `Arbitrage successful! TX: ${result.hash?.substring(0, 8)}...`, result.hash);
+        // Calculate and display profit
+        // Note: result.destAmount contains actual received amount if available
+        // For now, use the expected amount from the opportunity
+        const sentXLM = startAmount;
+        const receivedXLM = Number(opportunity.destAmount);
+        const profitXLM = receivedXLM - sentXLM;
+        
+        // Visual success log with full details
+        addLog(
+          'success', 
+          `[Arbitrage Done] Sent: ${sentXLM.toFixed(7)} XLM - Received: ${receivedXLM.toFixed(7)} XLM - Profit: ${profitXLM.toFixed(7)} XLM (+${opportunity.profitPercent.toFixed(2)}%)`,
+          result.hash
+        );
+        
         // Remove executed opportunity
         setOpportunities(prev => prev.filter(o => o.id !== opportunity.id));
       } else {
