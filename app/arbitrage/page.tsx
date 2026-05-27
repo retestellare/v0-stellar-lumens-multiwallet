@@ -198,10 +198,13 @@ export default function ArbitragePage() {
       
       setOpportunities(newOpportunities);
       
+      // Generate FRESH timestamp at exact moment of end-of-scan log
+      const endTimestamp = new Date().toLocaleTimeString();
+      
       if (newOpportunities.length === 0) {
-        addLog('info', `[${new Date().toLocaleTimeString()}] Scan complete - No profitable opportunities`);
+        addLog('info', `[${endTimestamp}] Scan complete - No profitable opportunities`);
       } else {
-        addLog('success', `[${new Date().toLocaleTimeString()}] Found ${newOpportunities.length} arbitrage opportunities`);
+        addLog('success', `[${endTimestamp}] Found ${newOpportunities.length} arbitrage opportunities`);
       }
     } catch (error: any) {
       addLog('error', `Scan failed: ${error.message}`);
