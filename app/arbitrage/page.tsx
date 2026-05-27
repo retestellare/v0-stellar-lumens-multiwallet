@@ -7,6 +7,7 @@ import {
   pathPaymentStrictSend, 
   findStrictSendPaths, 
   getAccountBalances,
+  getOrderbookPrice,
   decryptSecret,
   getLiquidityPoolDetails
 } from '@/lib/stellar-utils';
@@ -114,7 +115,6 @@ export default function ArbitragePage() {
     if (!activeWallet || isScanning) return;
     
     setIsScanning(true);
-    addLog('info', 'Scanning for arbitrage opportunities...');
     
     const newOpportunities: ArbitrageOpportunity[] = [];
     const sendAmount = xlmQuota;
@@ -122,19 +122,42 @@ export default function ArbitragePage() {
     
     try {
       for (const token of SCAN_TOKENS) {
-        // Find path: XLM -> Token -> XLM (round trip)
-        // Step 1: XLM -> Token
+        // Fetch orderbook price for XLM/TOKEN
+        const orderbookData = await getOrderbookPrice(
+          'XLM', undefined,
+          token.code, token.issuer
+        );
+        
+        // Find path prices: XLM -> Token -> XLM (round trip via pools/paths)
         const pathsToToken = await findStrictSendPaths(
           'XLM', undefined,
           token.code, token.issuer,
           sendAmount
         );
         
-        if (pathsToToken.length === 0) continue;
+        if (pathsToToken.length === 0) {
+          addLog('info', `[${new Date().toLocaleTimeString()}] XLM/${token.code} -> No paths available`);
+          continue;
+        }
         
         // Get best token amount we'd receive
         const bestToToken = pathsToToken[0];
         const tokenAmount = bestToToken.destination_amount;
+        
+        // Calculate effective pool price (how many tokens per 1 XLM)
+        const poolPrice = parseFloat(tokenAmount) / parseFloat(sendAmount);
+        const orderbookPrice = orderbookData?.bestAsk || 0;
+        
+        // Calculate spread between orderbook and pool
+        const spread = orderbookPrice > 0 
+          ? ((poolPrice - orderbookPrice) / orderbookPrice * 100)
+          : 0;
+        
+        // Log real-time prices for this token
+        addLog(
+          'info', 
+          `[${new Date().toLocaleTimeString()}] XLM/${token.code} -> Orderbook: ${orderbookPrice.toFixed(6)} | Pool: ${poolPrice.toFixed(6)} | Spread: ${spread.toFixed(3)}%`
+        );
         
         // Step 2: Token -> XLM (with that token amount)
         const pathsBackToXLM = await findStrictSendPaths(
@@ -161,6 +184,7 @@ export default function ArbitragePage() {
             tokenCode: token.code,
             tokenIssuer: token.issuer,
             sendAmount: sendAmount,
+            destAmount: returnAmount.toFixed(7),
             expectedReturn: returnAmount.toFixed(7),
             profitPercent: profitPercent,
             path: [{ code: token.code, issuer: token.issuer }],
@@ -175,9 +199,9 @@ export default function ArbitragePage() {
       setOpportunities(newOpportunities);
       
       if (newOpportunities.length === 0) {
-        addLog('info', 'No profitable opportunities found in this scan');
+        addLog('info', `[${new Date().toLocaleTimeString()}] Scan complete - No profitable opportunities`);
       } else {
-        addLog('success', `Found ${newOpportunities.length} arbitrage opportunities`);
+        addLog('success', `[${new Date().toLocaleTimeString()}] Found ${newOpportunities.length} arbitrage opportunities`);
       }
     } catch (error: any) {
       addLog('error', `Scan failed: ${error.message}`);
