@@ -17,6 +17,7 @@ export function Header() {
     { href: '/', label: 'Dashboard' },
     { href: '/portfolio', label: 'Portfolio' },
     { href: '/exchange', label: 'Exchange' },
+    { href: '/pools', label: 'Pools' },
     { href: '/history', label: 'History' },
   ];
 

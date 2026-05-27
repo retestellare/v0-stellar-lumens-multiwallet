@@ -311,23 +311,31 @@ export default function ExchangePage() {
         // Transform Horizon trades to component format
         const formattedOrders = tradesData.map((trade: any) => {
           // Determine if the current user was the buyer or seller of the BASE asset
-          // base_is_seller: true means base_account was SELLING the base asset
-          // If our wallet is base_account and base_is_seller=true: we SOLD base (received counter)
-          // If our wallet is base_account and base_is_seller=false: we BOUGHT base (paid counter)
-          // If our wallet is counter_account: opposite of above
-          const isBaseAccount = trade.base_account === wallet.publicKey;
+          // For regular trades: check base_is_seller and which account we are
+          // For LP trades: liquidity_pool_id is present, and direction is determined differently
           let isBuyer: boolean;
           
-          if (isBaseAccount) {
-            // We are the base account
-            // base_is_seller=true means we sold base asset
-            // base_is_seller=false means we bought base asset
+          if (trade.liquidity_pool_id) {
+            // This is a trade against a liquidity pool
+            // In LP trades, the user account is always "base_account" when they initiate
+            // base_is_seller=true means user sent base to LP (SELL)
+            // base_is_seller=false means user received base from LP (BUY)
             isBuyer = !trade.base_is_seller;
           } else {
-            // We are the counter account
-            // If base sold base, we (counter) bought base
-            // If base bought base, we (counter) sold base
-            isBuyer = trade.base_is_seller;
+            // Regular order book trade
+            const isBaseAccount = trade.base_account === wallet.publicKey;
+            
+            if (isBaseAccount) {
+              // We are the base account
+              // base_is_seller=true means we sold base asset
+              // base_is_seller=false means we bought base asset
+              isBuyer = !trade.base_is_seller;
+            } else {
+              // We are the counter account
+              // If base sold base, we (counter) bought base
+              // If base bought base, we (counter) sold base
+              isBuyer = trade.base_is_seller;
+            }
           }
           
           const price = trade.price?.n && trade.price?.d 
@@ -342,6 +350,7 @@ export default function ExchangePage() {
             counterCode: trade.counter_asset_type === 'native' ? 'XLM' : trade.counter_asset_code,
             timestamp: trade.ledger_close_time,
             isBuyer,
+            isLPTrade: !!trade.liquidity_pool_id, // Flag for visual inversion in component
           };
         });
         setFilledOrders(formattedOrders);

@@ -133,11 +133,30 @@ export const getAccountDetails = async (publicKey: string) => {
   return response.json();
 };
 
-// Fetch account balances
+// Fetch account balances (raw, may include LP shares)
 export const getAccountBalances = async (publicKey: string) => {
   try {
     const account = await getAccountDetails(publicKey);
     return account.balances || [];
+  } catch {
+    return [];
+  }
+};
+
+// Fetch account balances, deduplicated (excludes LP shares)
+export const getAccountBalancesClean = async (publicKey: string) => {
+  try {
+    const account = await getAccountDetails(publicKey);
+    const balances = account.balances || [];
+    // Inline deduplication to avoid forward reference
+    const seen = new Set<string>();
+    return balances.filter((b: any) => {
+      if (b.asset_type === 'liquidity_pool_shares') return false;
+      const key = `${b.asset_code || 'XLM'}_${b.asset_issuer || ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   } catch {
     return [];
   }
@@ -557,6 +576,181 @@ export const submitManageSellOffer = async (
     }
     return { success: false, error: errorMessage };
   }
+};
+
+/**
+ * Get liquidity pools for an account
+ */
+export const getAccountLiquidityPools = async (publicKey: string): Promise<any[]> => {
+  try {
+    const url = `${HORIZON_URL}/accounts/${publicKey}/liquidity_pools?limit=200`;
+    const response = await fetch(url);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data._embedded?.records || [];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Get details of a specific liquidity pool
+ */
+export const getLiquidityPoolDetails = async (poolId: string): Promise<any | null> => {
+  try {
+    const url = `${HORIZON_URL}/liquidity_pools/${poolId}`;
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    return response.json();
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Deposit assets into a Liquidity Pool
+ * @param secretKey - Secret key of the depositing account
+ * @param poolId - The liquidity pool ID (SHA256 hash)
+ * @param maxAmountA - Maximum amount of asset A to deposit
+ * @param maxAmountB - Maximum amount of asset B to deposit
+ * @param minPrice - Minimum price (assetA/assetB) willing to accept
+ * @param maxPrice - Maximum price (assetA/assetB) willing to accept
+ */
+export const depositToLiquidityPool = async (
+  secretKey: string,
+  poolId: string,
+  maxAmountA: string,
+  maxAmountB: string,
+  minPrice: { n: number; d: number },
+  maxPrice: { n: number; d: number }
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    const server = new Horizon.Server(HORIZON_URL);
+    const keypair = Keypair.fromSecret(secretKey);
+    const sourcePublicKey = keypair.publicKey();
+    
+    // Load source account
+    const account = await server.loadAccount(sourcePublicKey);
+    
+    // Build liquidityPoolDeposit transaction
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.liquidityPoolDeposit({
+          liquidityPoolId: poolId,
+          maxAmountA: maxAmountA,
+          maxAmountB: maxAmountB,
+          minPrice: minPrice,
+          maxPrice: maxPrice,
+        })
+      )
+      .setTimeout(180)
+      .build();
+    
+    transaction.sign(keypair);
+    
+    const result = await server.submitTransaction(transaction);
+    return { success: true, hash: result.hash };
+  } catch (error: any) {
+    let errorMessage = error.message || 'Failed to deposit to liquidity pool';
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+    return { success: false, error: errorMessage };
+  }
+};
+
+/**
+ * Withdraw assets from a Liquidity Pool
+ * @param secretKey - Secret key of the withdrawing account
+ * @param poolId - The liquidity pool ID
+ * @param amount - Amount of pool shares to redeem
+ * @param minAmountA - Minimum amount of asset A to receive
+ * @param minAmountB - Minimum amount of asset B to receive
+ */
+export const withdrawFromLiquidityPool = async (
+  secretKey: string,
+  poolId: string,
+  amount: string,
+  minAmountA: string,
+  minAmountB: string
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    const server = new Horizon.Server(HORIZON_URL);
+    const keypair = Keypair.fromSecret(secretKey);
+    const sourcePublicKey = keypair.publicKey();
+    
+    // Load source account
+    const account = await server.loadAccount(sourcePublicKey);
+    
+    // Build liquidityPoolWithdraw transaction
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.liquidityPoolWithdraw({
+          liquidityPoolId: poolId,
+          amount: amount,
+          minAmountA: minAmountA,
+          minAmountB: minAmountB,
+        })
+      )
+      .setTimeout(180)
+      .build();
+    
+    transaction.sign(keypair);
+    
+    const result = await server.submitTransaction(transaction);
+    return { success: true, hash: result.hash };
+  } catch (error: any) {
+    let errorMessage = error.message || 'Failed to withdraw from liquidity pool';
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+    return { success: false, error: errorMessage };
+  }
+};
+
+/**
+ * Parse wallet balances to separate regular assets from pool shares
+ * This prevents balance multiplication bugs
+ */
+export const parseWalletBalances = (balances: any[]): {
+  assets: any[];
+  poolShares: any[];
+} => {
+  const assets: any[] = [];
+  const poolShares: any[] = [];
+  
+  // Use a Set to track unique assets (code + issuer)
+  const seenAssets = new Set<string>();
+  
+  for (const balance of balances) {
+    if (balance.asset_type === 'liquidity_pool_shares') {
+      // This is a pool share, not a regular asset
+      poolShares.push({
+        poolId: balance.liquidity_pool_id,
+        balance: balance.balance,
+      });
+    } else {
+      // Regular asset - deduplicate
+      const code = balance.asset_code || 'XLM';
+      const issuer = balance.asset_issuer || '';
+      const key = `${code}_${issuer}`;
+      
+      if (!seenAssets.has(key)) {
+        seenAssets.add(key);
+        assets.push(balance);
+      }
+    }
+  }
+  
+  return { assets, poolShares };
 };
 
 /**

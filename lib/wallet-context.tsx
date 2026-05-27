@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
-import { encryptSecret, decryptSecret, generateKeyPair, getPublicKeyFromSecret, getAccountBalances } from '@/lib/stellar-utils';
+import { encryptSecret, decryptSecret, generateKeyPair, getPublicKeyFromSecret, getAccountBalances, parseWalletBalances } from '@/lib/stellar-utils';
 
 export interface Wallet {
   id: string;
@@ -9,6 +9,7 @@ export interface Wallet {
   publicKey: string;
   encryptedSecret: string;
   balances: any[];
+  poolShares: any[]; // Separate pool shares from regular balances
   createdAt: Date;
   federationName?: string;
   homeDomain?: string;
@@ -45,9 +46,17 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
-        setWallets(parsed);
-        if (parsed.length > 0) {
-          setActiveWalletId(parsed[0].id || parsed[0].publicKey);
+        // Clean up balances when loading from storage to remove duplicates
+        const cleanedWallets = parsed.map((wallet: any) => {
+          if (wallet.balances && Array.isArray(wallet.balances)) {
+            const { assets, poolShares } = parseWalletBalances(wallet.balances);
+            return { ...wallet, balances: assets, poolShares: poolShares || [] };
+          }
+          return { ...wallet, poolShares: wallet.poolShares || [] };
+        });
+        setWallets(cleanedWallets);
+        if (cleanedWallets.length > 0) {
+          setActiveWalletId(cleanedWallets[0].id || cleanedWallets[0].publicKey);
         }
       } catch (error) {
         // Silent fail
@@ -74,6 +83,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         publicKey,
         encryptedSecret,
         balances: [],
+        poolShares: [],
         createdAt: new Date(),
       };
 
@@ -144,10 +154,14 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       
       // Fetch balances asynchronously
       getAccountBalances(wallet.publicKey)
-        .then(balances => {
+        .then(rawBalances => {
+          // Parse balances to separate regular assets from pool shares
+          const { assets, poolShares } = parseWalletBalances(rawBalances);
           setWallets(current =>
             current.map(w =>
-              (w.id === walletId || w.publicKey === walletId) ? { ...w, balances } : w
+              (w.id === walletId || w.publicKey === walletId) 
+                ? { ...w, balances: assets, poolShares } 
+                : w
             )
           );
         })
