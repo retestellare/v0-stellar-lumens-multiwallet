@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
-import { encryptSecret, decryptSecret, generateKeyPair, getPublicKeyFromSecret, getAccountBalances } from '@/lib/stellar-utils';
+import { encryptSecret, decryptSecret, generateKeyPair, getPublicKeyFromSecret, getAccountBalances, parseWalletBalances } from '@/lib/stellar-utils';
 
 export interface Wallet {
   id: string;
@@ -9,6 +9,7 @@ export interface Wallet {
   publicKey: string;
   encryptedSecret: string;
   balances: any[];
+  poolShares: any[]; // Separate pool shares from regular balances
   createdAt: Date;
   federationName?: string;
   homeDomain?: string;
@@ -74,6 +75,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         publicKey,
         encryptedSecret,
         balances: [],
+        poolShares: [],
         createdAt: new Date(),
       };
 
@@ -144,10 +146,14 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       
       // Fetch balances asynchronously
       getAccountBalances(wallet.publicKey)
-        .then(balances => {
+        .then(rawBalances => {
+          // Parse balances to separate regular assets from pool shares
+          const { assets, poolShares } = parseWalletBalances(rawBalances);
           setWallets(current =>
             current.map(w =>
-              (w.id === walletId || w.publicKey === walletId) ? { ...w, balances } : w
+              (w.id === walletId || w.publicKey === walletId) 
+                ? { ...w, balances: assets, poolShares } 
+                : w
             )
           );
         })

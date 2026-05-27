@@ -282,25 +282,36 @@ export function TokenSelectorModal({
   const [searchResults, setSearchResults] = useState<Token[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Memoize wallet tokens with enriched metadata
-  const walletTokens = useMemo(
-    () =>
-      walletBalances.map((b) => {
-        const code = b.asset_code || 'XLM';
-        const issuer = b.asset_issuer;
-        const meta = enrichTokenWithMetadata(code, issuer);
-        return {
+  // Memoize wallet tokens with enriched metadata and deduplication
+  const walletTokens = useMemo(() => {
+    // Create a map to deduplicate tokens by code+issuer
+    const tokenMap = new Map<string, Token>();
+    
+    walletBalances.forEach((b) => {
+      // Skip liquidity_pool_shares - they're not tradable assets
+      if (b.asset_type === 'liquidity_pool_shares') return;
+      
+      const code = b.asset_code || 'XLM';
+      const issuer = b.asset_issuer || '';
+      const key = `${code}_${issuer}`;
+      
+      // Only add if not already in map (deduplication)
+      if (!tokenMap.has(key)) {
+        const meta = enrichTokenWithMetadata(code, issuer || undefined);
+        tokenMap.set(key, {
           code,
-          issuer,
+          issuer: issuer || undefined,
           name: meta.name,
           domain: meta.domain,
           image: meta.image,
           verified: meta.verified,
           source: 'wallet' as const,
-        };
-      }),
-    [walletBalances]
-  );
+        });
+      }
+    });
+    
+    return Array.from(tokenMap.values());
+  }, [walletBalances]);
 
   // Get curated picks with more tokens
   const tokenPicks = useMemo(() => {
