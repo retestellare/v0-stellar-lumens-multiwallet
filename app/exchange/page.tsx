@@ -350,6 +350,7 @@ export default function ExchangePage() {
             counterCode: trade.counter_asset_type === 'native' ? 'XLM' : trade.counter_asset_code,
             timestamp: trade.ledger_close_time,
             isBuyer,
+            isLPTrade: !!trade.liquidity_pool_id, // Flag for visual inversion in component
           };
         });
         setFilledOrders(formattedOrders);

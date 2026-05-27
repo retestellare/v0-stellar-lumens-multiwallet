@@ -7,11 +7,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { WalletSelectorDropdown } from '@/components/wallet-selector-dropdown';
 import { 
-  getAccountLiquidityPools, 
   getLiquidityPoolDetails, 
   depositToLiquidityPool, 
   withdrawFromLiquidityPool,
-  decryptSecret 
+  decryptSecret,
+  getAccountBalances
 } from '@/lib/stellar-utils';
 import { 
   ArrowLeft, 
@@ -24,35 +24,38 @@ import {
   AlertCircle,
   CheckCircle2,
   X,
-  Wallet
+  Wallet,
+  ExternalLink
 } from 'lucide-react';
 import Link from 'next/link';
 
-interface PoolPosition {
-  poolId: string;
-  shares: string;
-  assetA: { code: string; issuer?: string };
-  assetB: { code: string; issuer?: string };
-  reserveA: string;
-  reserveB: string;
-  fee: number;
+interface PoolShare {
+  liquidity_pool_id: string;
+  balance: string;
+  // Enriched data from pool details
+  assetA?: { code: string; issuer?: string };
+  assetB?: { code: string; issuer?: string };
+  reserveA?: string;
+  reserveB?: string;
+  fee?: number;
+  totalShares?: string;
 }
 
 export default function PoolsPage() {
   const { wallets, activeWalletId, updateBalances } = useWallet();
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [positions, setPositions] = useState<PoolPosition[]>([]);
+  const [poolShares, setPoolShares] = useState<PoolShare[]>([]);
   
   // Modal state
   const [activeModal, setActiveModal] = useState<'deposit' | 'withdraw' | null>(null);
-  const [selectedPool, setSelectedPool] = useState<PoolPosition | null>(null);
+  const [selectedPool, setSelectedPool] = useState<PoolShare | null>(null);
   
   // Form state
   const [amountA, setAmountA] = useState('');
   const [amountB, setAmountB] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
-  const [slippage, setSlippage] = useState('1'); // 1% default
+  const [slippage, setSlippage] = useState('1');
   
   // Transaction state
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -67,44 +70,68 @@ export default function PoolsPage() {
     setMounted(true);
   }, []);
 
-  // Fetch user's LP positions
-  const fetchPositions = useCallback(async () => {
-    if (!activeWallet) return;
+  // RESET: Read LP shares directly from wallet.balances array
+  const fetchPoolShares = useCallback(async () => {
+    if (!activeWallet) {
+      setPoolShares([]);
+      return;
+    }
     
     setLoading(true);
     try {
-      const pools = await getAccountLiquidityPools(activeWallet.publicKey);
+      // Fetch fresh balances from Horizon
+      const balances = await getAccountBalances(activeWallet.publicKey);
       
-      // Get details for each pool
-      const positionsWithDetails = await Promise.all(
-        pools.map(async (pool: any) => {
-          const details = await getLiquidityPoolDetails(pool.id);
-          if (!details) return null;
+      // Filter for liquidity_pool_shares type
+      const lpShares = balances.filter((b: any) => b.asset_type === 'liquidity_pool_shares');
+      
+      console.log('[v0] Found LP shares in balances:', lpShares);
+      
+      if (lpShares.length === 0) {
+        setPoolShares([]);
+        setLoading(false);
+        return;
+      }
+      
+      // Enrich each LP share with pool details
+      const enrichedShares = await Promise.all(
+        lpShares.map(async (share: any) => {
+          const poolId = share.liquidity_pool_id;
+          const details = await getLiquidityPoolDetails(poolId);
           
-          const assetA = details.reserves[0];
-          const assetB = details.reserves[1];
+          if (!details) {
+            return {
+              liquidity_pool_id: poolId,
+              balance: share.balance,
+            };
+          }
+          
+          const reserveA = details.reserves?.[0];
+          const reserveB = details.reserves?.[1];
           
           return {
-            poolId: pool.id,
-            shares: pool.balance || '0',
-            assetA: {
-              code: assetA.asset === 'native' ? 'XLM' : assetA.asset.split(':')[0],
-              issuer: assetA.asset === 'native' ? undefined : assetA.asset.split(':')[1],
-            },
-            assetB: {
-              code: assetB.asset === 'native' ? 'XLM' : assetB.asset.split(':')[0],
-              issuer: assetB.asset === 'native' ? undefined : assetB.asset.split(':')[1],
-            },
-            reserveA: assetA.amount,
-            reserveB: assetB.amount,
-            fee: details.fee_bp / 100, // Convert basis points to percentage
+            liquidity_pool_id: poolId,
+            balance: share.balance,
+            assetA: reserveA ? {
+              code: reserveA.asset === 'native' ? 'XLM' : reserveA.asset.split(':')[0],
+              issuer: reserveA.asset === 'native' ? undefined : reserveA.asset.split(':')[1],
+            } : undefined,
+            assetB: reserveB ? {
+              code: reserveB.asset === 'native' ? 'XLM' : reserveB.asset.split(':')[0],
+              issuer: reserveB.asset === 'native' ? undefined : reserveB.asset.split(':')[1],
+            } : undefined,
+            reserveA: reserveA?.amount,
+            reserveB: reserveB?.amount,
+            fee: details.fee_bp ? details.fee_bp / 100 : 0.3,
+            totalShares: details.total_shares,
           };
         })
       );
       
-      setPositions(positionsWithDetails.filter(Boolean) as PoolPosition[]);
+      setPoolShares(enrichedShares);
     } catch (error) {
-      console.error('Failed to fetch LP positions:', error);
+      console.error('[v0] Error fetching pool shares:', error);
+      setPoolShares([]);
     } finally {
       setLoading(false);
     }
@@ -112,9 +139,9 @@ export default function PoolsPage() {
 
   useEffect(() => {
     if (mounted && activeWallet) {
-      fetchPositions();
+      fetchPoolShares();
     }
-  }, [mounted, activeWallet, fetchPositions]);
+  }, [mounted, activeWallet, fetchPoolShares]);
 
   // Handle deposit
   const handleDeposit = async () => {
@@ -149,7 +176,6 @@ export default function PoolsPage() {
       let result;
       
       if (pendingAction === 'deposit') {
-        // Calculate price bounds with slippage
         const slippageFactor = parseFloat(slippage) / 100;
         const priceRatio = parseFloat(amountA) / parseFloat(amountB);
         const minPrice = { n: Math.floor(priceRatio * (1 - slippageFactor) * 10000000), d: 10000000 };
@@ -157,17 +183,16 @@ export default function PoolsPage() {
         
         result = await depositToLiquidityPool(
           secret,
-          selectedPool.poolId,
+          selectedPool.liquidity_pool_id,
           amountA,
           amountB,
           minPrice,
           maxPrice
         );
       } else {
-        // Withdraw with 0 minimum (accept any amount)
         result = await withdrawFromLiquidityPool(
           secret,
-          selectedPool.poolId,
+          selectedPool.liquidity_pool_id,
           withdrawAmount,
           '0',
           '0'
@@ -175,13 +200,12 @@ export default function PoolsPage() {
       }
       
       if (result.success) {
-        setTxResult({ success: true, message: `Transaction successful! Hash: ${result.hash?.slice(0, 8)}...` });
+        setTxResult({ success: true, message: `Success! TX: ${result.hash?.slice(0, 8)}...` });
         setActiveModal(null);
         setAmountA('');
         setAmountB('');
         setWithdrawAmount('');
-        // Refresh positions and balances
-        fetchPositions();
+        fetchPoolShares();
         if (activeWallet) {
           updateBalances(activeWallet.id);
         }
@@ -197,13 +221,17 @@ export default function PoolsPage() {
     }
   };
 
-  // Format number for display
-  const formatNumber = (value: string, decimals = 4) => {
+  const formatNumber = (value: string | undefined, decimals = 4) => {
+    if (!value) return '0';
     const num = parseFloat(value);
     if (isNaN(num)) return '0';
     if (num >= 1000000) return (num / 1000000).toFixed(2) + 'M';
     if (num >= 1000) return (num / 1000).toFixed(2) + 'K';
     return num.toFixed(decimals);
+  };
+
+  const truncatePoolId = (id: string) => {
+    return `${id.slice(0, 8)}...${id.slice(-8)}`;
   };
 
   if (!mounted) return null;
@@ -226,7 +254,7 @@ export default function PoolsPage() {
                 <Droplets className="w-6 h-6 text-primary" />
                 Liquidity Pools
               </h1>
-              <p className="text-sm text-muted-foreground">Provide liquidity and earn fees</p>
+              <p className="text-sm text-muted-foreground">Your LP positions from wallet balances</p>
             </div>
           </div>
           
@@ -234,7 +262,7 @@ export default function PoolsPage() {
             <Button 
               variant="outline" 
               size="icon"
-              onClick={fetchPositions}
+              onClick={fetchPoolShares}
               disabled={loading}
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -249,7 +277,7 @@ export default function PoolsPage() {
             <Wallet className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
             <h3 className="text-lg font-semibold mb-2">No Wallet Selected</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              Please select or create a wallet to manage liquidity pools.
+              Select a wallet to view your liquidity pool positions.
             </p>
             <Link href="/">
               <Button>Go to Dashboard</Button>
@@ -270,10 +298,7 @@ export default function PoolsPage() {
                 <span className={txResult.success ? 'text-green-500' : 'text-destructive'}>
                   {txResult.message}
                 </span>
-                <button 
-                  onClick={() => setTxResult(null)}
-                  className="ml-auto hover:opacity-70"
-                >
+                <button onClick={() => setTxResult(null)} className="ml-auto hover:opacity-70">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -283,21 +308,21 @@ export default function PoolsPage() {
             <div className="mb-6 p-4 rounded-lg bg-primary/5 border border-primary/20 flex items-start gap-3">
               <Info className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
               <div className="text-sm">
-                <p className="font-medium text-foreground mb-1">How Liquidity Pools Work</p>
+                <p className="font-medium text-foreground mb-1">Reading from Wallet Balances</p>
                 <p className="text-muted-foreground">
-                  Deposit two assets in equal value to earn trading fees. Your share of the pool 
-                  determines your portion of fees. Withdraw anytime to reclaim your assets.
+                  LP shares are stored in your wallet as asset_type: liquidity_pool_shares. 
+                  This page reads directly from your balance data.
                 </p>
               </div>
             </div>
 
-            {/* Your Positions */}
+            {/* Your LP Shares */}
             <div className="glow-border rounded-lg overflow-hidden">
               <div className="p-4 border-b border-border bg-background/50">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold">Your LP Positions</h2>
+                  <h2 className="text-lg font-semibold">Your LP Shares</h2>
                   <span className="text-sm text-muted-foreground">
-                    {positions.length} pool{positions.length !== 1 ? 's' : ''}
+                    {poolShares.length} position{poolShares.length !== 1 ? 's' : ''}
                   </span>
                 </div>
               </div>
@@ -305,64 +330,84 @@ export default function PoolsPage() {
               {loading ? (
                 <div className="p-8 text-center">
                   <Loader2 className="w-8 h-8 mx-auto animate-spin text-primary" />
-                  <p className="mt-2 text-muted-foreground">Loading positions...</p>
+                  <p className="mt-2 text-muted-foreground">Loading LP shares from wallet...</p>
                 </div>
-              ) : positions.length === 0 ? (
+              ) : poolShares.length === 0 ? (
                 <div className="p-8 text-center">
                   <Droplets className="w-12 h-12 mx-auto mb-3 text-muted-foreground/30" />
-                  <p className="text-lg font-medium mb-1">No LP Positions</p>
+                  <p className="text-lg font-medium mb-1">No LP Positions Found</p>
                   <p className="text-sm text-muted-foreground mb-4">
-                    You don&apos;t have any liquidity pool shares yet.
+                    No liquidity_pool_shares found in wallet balances.
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    To deposit, you need to establish a trustline to a liquidity pool first via the Stellar network.
+                    Add liquidity to a pool via StellarX, StellarTerm, or other DEX interfaces.
                   </p>
                 </div>
               ) : (
                 <div className="divide-y divide-border/30">
-                  {positions.map((position) => (
-                    <div key={position.poolId} className="p-4 hover:bg-muted/30 transition-colors">
+                  {poolShares.map((pool) => (
+                    <div key={pool.liquidity_pool_id} className="p-4 hover:bg-muted/30 transition-colors">
+                      {/* Pool Header */}
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
                           <div className="flex -space-x-2">
                             <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold border-2 border-background">
-                              {position.assetA.code.slice(0, 2)}
+                              {pool.assetA?.code?.slice(0, 2) || '??'}
                             </div>
                             <div className="w-8 h-8 rounded-full bg-cyan-500/20 flex items-center justify-center text-xs font-bold border-2 border-background">
-                              {position.assetB.code.slice(0, 2)}
+                              {pool.assetB?.code?.slice(0, 2) || '??'}
                             </div>
                           </div>
                           <div>
                             <p className="font-semibold">
-                              {position.assetA.code} / {position.assetB.code}
+                              {pool.assetA?.code || '?'} / {pool.assetB?.code || '?'}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              Fee: {position.fee}%
+                              Fee: {pool.fee || 0.3}%
                             </p>
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm font-mono">{formatNumber(position.shares)} shares</p>
+                          <p className="text-lg font-mono font-bold text-primary">{formatNumber(pool.balance)}</p>
+                          <p className="text-xs text-muted-foreground">shares</p>
                         </div>
                       </div>
                       
-                      <div className="grid grid-cols-2 gap-4 mb-3 text-sm">
-                        <div className="bg-background/50 rounded p-2">
-                          <p className="text-muted-foreground text-xs">Pool Reserve A</p>
-                          <p className="font-mono">{formatNumber(position.reserveA)} {position.assetA.code}</p>
-                        </div>
-                        <div className="bg-background/50 rounded p-2">
-                          <p className="text-muted-foreground text-xs">Pool Reserve B</p>
-                          <p className="font-mono">{formatNumber(position.reserveB)} {position.assetB.code}</p>
-                        </div>
+                      {/* Pool ID */}
+                      <div className="mb-3 p-2 bg-background/50 rounded text-xs">
+                        <span className="text-muted-foreground">Pool ID: </span>
+                        <code className="font-mono text-foreground">{truncatePoolId(pool.liquidity_pool_id)}</code>
+                        <a 
+                          href={`https://stellar.expert/explorer/public/liquidity-pool/${pool.liquidity_pool_id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="ml-2 inline-flex items-center text-primary hover:underline"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
                       </div>
                       
+                      {/* Reserves */}
+                      {pool.reserveA && pool.reserveB && (
+                        <div className="grid grid-cols-2 gap-4 mb-3 text-sm">
+                          <div className="bg-background/50 rounded p-2">
+                            <p className="text-muted-foreground text-xs">Reserve {pool.assetA?.code}</p>
+                            <p className="font-mono">{formatNumber(pool.reserveA)}</p>
+                          </div>
+                          <div className="bg-background/50 rounded p-2">
+                            <p className="text-muted-foreground text-xs">Reserve {pool.assetB?.code}</p>
+                            <p className="font-mono">{formatNumber(pool.reserveB)}</p>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Actions */}
                       <div className="flex gap-2">
                         <Button 
                           size="sm" 
                           className="flex-1"
                           onClick={() => {
-                            setSelectedPool(position);
+                            setSelectedPool(pool);
                             setActiveModal('deposit');
                           }}
                         >
@@ -374,7 +419,7 @@ export default function PoolsPage() {
                           variant="outline"
                           className="flex-1"
                           onClick={() => {
-                            setSelectedPool(position);
+                            setSelectedPool(pool);
                             setActiveModal('withdraw');
                           }}
                         >
@@ -403,13 +448,13 @@ export default function PoolsPage() {
             </div>
             
             <p className="text-sm text-muted-foreground mb-4">
-              {selectedPool.assetA.code} / {selectedPool.assetB.code} Pool
+              {selectedPool.assetA?.code || '?'} / {selectedPool.assetB?.code || '?'} Pool
             </p>
             
             <div className="space-y-4">
               <div>
                 <label className="text-sm text-muted-foreground mb-1 block">
-                  Amount {selectedPool.assetA.code}
+                  Amount {selectedPool.assetA?.code || 'A'}
                 </label>
                 <Input
                   type="number"
@@ -421,7 +466,7 @@ export default function PoolsPage() {
               
               <div>
                 <label className="text-sm text-muted-foreground mb-1 block">
-                  Amount {selectedPool.assetB.code}
+                  Amount {selectedPool.assetB?.code || 'B'}
                 </label>
                 <Input
                   type="number"
@@ -474,12 +519,12 @@ export default function PoolsPage() {
             </div>
             
             <p className="text-sm text-muted-foreground mb-4">
-              {selectedPool.assetA.code} / {selectedPool.assetB.code} Pool
+              {selectedPool.assetA?.code || '?'} / {selectedPool.assetB?.code || '?'} Pool
             </p>
             
             <div className="mb-4 p-3 bg-background/50 rounded">
               <p className="text-sm text-muted-foreground">Your shares</p>
-              <p className="text-lg font-mono">{formatNumber(selectedPool.shares)}</p>
+              <p className="text-lg font-mono font-bold">{formatNumber(selectedPool.balance)}</p>
             </div>
             
             <div className="space-y-4">
@@ -498,7 +543,7 @@ export default function PoolsPage() {
                     <button
                       key={pct}
                       onClick={() => setWithdrawAmount(
-                        (parseFloat(selectedPool.shares) * pct / 100).toFixed(7)
+                        (parseFloat(selectedPool.balance) * pct / 100).toFixed(7)
                       )}
                       className="flex-1 text-xs py-1 rounded border border-primary/50 text-primary hover:bg-primary/10"
                     >
@@ -534,7 +579,7 @@ export default function PoolsPage() {
           <div className="bg-sidebar border border-border rounded-lg max-w-sm w-full p-6">
             <h3 className="text-lg font-bold mb-4">Enter Password</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              Enter your wallet password to sign the transaction.
+              Enter your wallet password to sign this transaction.
             </p>
             <Input
               type="password"

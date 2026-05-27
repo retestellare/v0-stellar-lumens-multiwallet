@@ -12,6 +12,7 @@ interface FilledOrder {
   counterCode: string;
   timestamp: string;
   isBuyer: boolean;
+  isLPTrade?: boolean; // Flag for liquidity pool trades
 }
 
 interface FilledOrdersProps {
@@ -90,32 +91,42 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
             const counterAmt = parseFloat(order.counterAmount);
             const pricePerUnit = baseAmt > 0 ? (counterAmt / baseAmt) : 0;
             
+            // VISUAL INVERSION FOR LP TRADES:
+            // If isLPTrade is true, INVERT the visual display
+            // The blockchain records from pool's perspective, so we flip it for user's view
+            const displayAsBuyer = order.isLPTrade ? !order.isBuyer : order.isBuyer;
+            
             // What you sold (-) and what you received (+)
-            // If isBuyer: you bought base (received base, paid counter)
+            // If displayAsBuyer: you bought base (received base, paid counter)
             // If seller: you sold base (paid base, received counter)
-            const soldAmount = order.isBuyer ? counterAmt : baseAmt;
-            const soldAsset = order.isBuyer ? order.counterCode : order.baseCode;
-            const receivedAmount = order.isBuyer ? baseAmt : counterAmt;
-            const receivedAsset = order.isBuyer ? order.baseCode : order.counterCode;
+            const soldAmount = displayAsBuyer ? counterAmt : baseAmt;
+            const soldAsset = displayAsBuyer ? order.counterCode : order.baseCode;
+            const receivedAmount = displayAsBuyer ? baseAmt : counterAmt;
+            const receivedAsset = displayAsBuyer ? order.baseCode : order.counterCode;
             
             return (
               <div
                 key={order.id}
                 className={`p-3 sm:p-4 ${
-                  order.isBuyer ? 'border-l-4 border-l-primary' : 'border-l-4 border-l-destructive'
+                  displayAsBuyer ? 'border-l-4 border-l-primary' : 'border-l-4 border-l-destructive'
                 } hover:bg-muted/30 transition-colors`}
               >
                 {/* Header Row: Trading Pair + Badge + Time */}
                 <div className="flex items-start justify-between mb-2 gap-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                      order.isBuyer 
+                      displayAsBuyer 
                         ? 'bg-primary/20 text-primary' 
                         : 'bg-destructive/20 text-destructive'
                     }`}>
-                      {order.isBuyer ? 'BUY' : 'SELL'}
+                      {displayAsBuyer ? 'BUY' : 'SELL'}
                     </span>
                     <span className="text-sm font-bold text-foreground">{tradingPair}</span>
+                    {order.isLPTrade && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400">
+                        LP
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 text-[10px] text-muted-foreground whitespace-nowrap">
                     <Clock className="w-3 h-3 flex-shrink-0" />
