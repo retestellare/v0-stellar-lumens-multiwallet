@@ -1,9 +1,10 @@
 'use client';
 
+import React from 'react';
 import { Header } from '@/components/header';
 import { useWallet } from '@/lib/wallet-context';
 import { Button } from '@/components/ui/button';
-import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations, getAccountTrades, getXLMUSDStats } from '@/lib/stellar-utils';
+import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations, getAccountTrades, getXLMUSDStats, hasTrustline, addTrustline } from '@/lib/stellar-utils';
 import { TradingPairHeader } from '@/components/trading-pair-header';
 import { OrderBook } from '@/components/order-book';
 import { TradeHistory } from '@/components/trade-history';
@@ -27,7 +28,7 @@ type TabType = 'history' | 'my-orders' | 'charts';
 type TokenModalType = 'selling' | 'buying' | null;
 
 export default function ExchangePage() {
-  const { wallets, activeWalletId } = useWallet();
+  const { wallets, activeWalletId, updateBalances } = useWallet();
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('history');
   
@@ -117,6 +118,23 @@ export default function ExchangePage() {
       }
     }
   }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
+
+  // Reset password state when wallet changes (use ref to track previous wallet)
+  const prevWalletIdRef = React.useRef(activeWalletId);
+  useEffect(() => {
+    if (prevWalletIdRef.current !== activeWalletId && activeWalletId && mounted) {
+      // Clear password-related state when wallet changes
+      setIsPasswordUnlocked(false);
+      setDecryptedSecret(null);
+      setPassword('');
+      setPendingOrder(null);
+      setTxResult(null);
+      
+      // Refresh balances for the new wallet
+      updateBalances(activeWalletId);
+    }
+    prevWalletIdRef.current = activeWalletId;
+  }, [activeWalletId, mounted, updateBalances]);
 
   // Fetch order book
   useEffect(() => {
@@ -273,7 +291,26 @@ export default function ExchangePage() {
         const tradesData = await getAccountTrades(wallet.publicKey, 50);
         // Transform Horizon trades to component format
         const formattedOrders = tradesData.map((trade: any) => {
-          const isBuyer = trade.base_is_seller === false;
+          // Determine if the current user was the buyer or seller of the BASE asset
+          // base_is_seller: true means base_account was SELLING the base asset
+          // If our wallet is base_account and base_is_seller=true: we SOLD base (received counter)
+          // If our wallet is base_account and base_is_seller=false: we BOUGHT base (paid counter)
+          // If our wallet is counter_account: opposite of above
+          const isBaseAccount = trade.base_account === wallet.publicKey;
+          let isBuyer: boolean;
+          
+          if (isBaseAccount) {
+            // We are the base account
+            // base_is_seller=true means we sold base asset
+            // base_is_seller=false means we bought base asset
+            isBuyer = !trade.base_is_seller;
+          } else {
+            // We are the counter account
+            // If base sold base, we (counter) bought base
+            // If base bought base, we (counter) sold base
+            isBuyer = trade.base_is_seller;
+          }
+          
           const price = trade.price?.n && trade.price?.d 
             ? (parseFloat(trade.price.n) / parseFloat(trade.price.d)).toFixed(7)
             : '0';
@@ -404,6 +441,36 @@ export default function ExchangePage() {
     setTxResult(null);
     
     try {
+      // Check trustline for the asset we're buying/receiving
+      const assetToCheck = order.type === 'buy' 
+        ? { code: buyingAsset, issuer: buyingIssuer }
+        : { code: buyingAsset, issuer: buyingIssuer }; // When selling, we receive the buying asset
+      
+      if (assetToCheck.code !== 'XLM' && assetToCheck.issuer && activeWallet?.balances) {
+        const hasTrust = hasTrustline(activeWallet.balances, assetToCheck.code, assetToCheck.issuer);
+        
+        if (!hasTrust) {
+          // Auto-add trustline
+          setTxResult({ success: false, message: `Adding trustline for ${assetToCheck.code}...` });
+          const trustResult = await addTrustline(secret, assetToCheck.code, assetToCheck.issuer);
+          
+          if (!trustResult.success) {
+            setTxResult({ success: false, message: `Failed to add trustline: ${trustResult.error}` });
+            setIsSubmitting(false);
+            return;
+          }
+          
+          // Refresh balances after adding trustline
+          if (activeWalletId) {
+            await updateBalances(activeWalletId);
+          }
+          
+          setTxResult({ success: true, message: `Trustline added for ${assetToCheck.code}. Submitting order...` });
+          // Small delay to let the UI update
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+      
       let result;
       if (order.type === 'buy') {
         result = await submitManageBuyOffer(
@@ -438,6 +505,10 @@ export default function ExchangePage() {
         }
         const data = await getOrderBook(sellingAsset, sellingIssuer, buyingAsset, buyingIssuer);
         setOrderBook(data);
+        // Refresh balances after order
+        if (activeWalletId) {
+          await updateBalances(activeWalletId);
+        }
       } else {
         setTxResult({ success: false, message: result.error || 'Order failed' });
       }

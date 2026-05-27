@@ -19,6 +19,20 @@ interface FilledOrdersProps {
   loading: boolean;
 }
 
+// Smart number formatting based on magnitude
+function formatSmartNumber(value: number, maxDecimals = 7): string {
+  if (isNaN(value) || value === 0) return '0';
+  const absVal = Math.abs(value);
+  
+  if (absVal >= 1000000) return (value / 1000000).toFixed(2) + 'M';
+  if (absVal >= 10000) return (value / 1000).toFixed(1) + 'K';
+  if (absVal >= 1000) return value.toFixed(0);
+  if (absVal >= 100) return value.toFixed(2);
+  if (absVal >= 1) return value.toFixed(4);
+  if (absVal >= 0.01) return value.toFixed(6);
+  return value.toFixed(maxDecimals);
+}
+
 export function FilledOrders({ orders, loading }: FilledOrdersProps) {
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
@@ -42,21 +56,19 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
   return (
     <div className="glow-border rounded-lg overflow-hidden">
       {/* Header */}
-      <div className="p-4 sm:p-5 border-b border-border bg-background/50">
+      <div className="p-4 border-b border-border bg-background/50">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-green-500/20">
-              <CheckCircle2 className="w-5 h-5 text-green-500" />
+          <div className="flex items-center gap-2">
+            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-green-500/20">
+              <CheckCircle2 className="w-4 h-4 text-green-500" />
             </div>
             <div>
-              <h3 className="text-lg sm:text-xl font-bold text-foreground">Trade History</h3>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                Your completed trades on the Stellar DEX
-              </p>
+              <h3 className="text-base font-bold text-foreground">Trade History</h3>
+              <p className="text-xs text-muted-foreground">Completed trades</p>
             </div>
           </div>
           <div className="text-right">
-            <p className="text-2xl font-bold text-foreground">{orders.length}</p>
+            <p className="text-xl font-bold text-foreground">{orders.length}</p>
             <p className="text-xs text-muted-foreground">trades</p>
           </div>
         </div>
@@ -64,9 +76,8 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
 
       {orders.length === 0 ? (
         <div className="p-8 text-center text-muted-foreground">
-          <CheckCircle2 className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p className="text-lg">No completed trades yet</p>
-          <p className="text-sm mt-1">Your trade history will appear here</p>
+          <CheckCircle2 className="w-10 h-10 mx-auto mb-2 opacity-30" />
+          <p className="text-sm">No completed trades yet</p>
         </div>
       ) : (
         <div className="divide-y divide-border/30 max-h-[600px] overflow-y-auto">
@@ -90,58 +101,61 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
             return (
               <div
                 key={order.id}
-                className={`p-4 sm:p-5 ${
+                className={`p-3 sm:p-4 ${
                   order.isBuyer ? 'border-l-4 border-l-primary' : 'border-l-4 border-l-destructive'
                 } hover:bg-muted/30 transition-colors`}
               >
                 {/* Header Row: Trading Pair + Badge + Time */}
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className={`text-xs font-bold px-2.5 py-1 rounded ${
+                <div className="flex items-start justify-between mb-2 gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
                       order.isBuyer 
                         ? 'bg-primary/20 text-primary' 
                         : 'bg-destructive/20 text-destructive'
                     }`}>
                       {order.isBuyer ? 'BUY' : 'SELL'}
                     </span>
-                    <span className="text-base sm:text-lg font-bold text-foreground">{tradingPair}</span>
+                    <span className="text-sm font-bold text-foreground">{tradingPair}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>{formatTime(order.timestamp)}</span>
+                  <div className="flex items-center gap-1 text-[10px] text-muted-foreground whitespace-nowrap">
+                    <Clock className="w-3 h-3 flex-shrink-0" />
+                    <span className="hidden sm:inline">{formatTime(order.timestamp)}</span>
+                    <span className="sm:hidden">{new Date(order.timestamp).toLocaleDateString()}</span>
                   </div>
                 </div>
                 
                 {/* Price Per Unit */}
-                <div className="mb-4 text-sm">
-                  <span className="text-muted-foreground">Price per {order.baseCode}: </span>
-                  <span className="font-mono font-semibold text-foreground">{pricePerUnit.toFixed(7)} {order.counterCode}</span>
+                <div className="mb-3 text-xs">
+                  <span className="text-muted-foreground">Price: </span>
+                  <span className="font-mono font-semibold text-foreground">
+                    {formatSmartNumber(pricePerUnit)} {order.counterCode}
+                  </span>
                 </div>
                 
-                {/* Amount Flow - What you sold/received */}
-                <div className="flex items-center justify-between gap-4 pt-3 border-t border-border/30">
+                {/* Amount Flow - Stacked on mobile */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-2 border-t border-border/30">
                   {/* You Sold */}
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 text-destructive">
-                      <ArrowUpRight className="w-5 h-5" />
-                      <span className="text-xl sm:text-2xl font-bold font-mono">
-                        -{soldAmount.toFixed(4)}
+                  <div className="flex items-center gap-2">
+                    <ArrowUpRight className="w-4 h-4 text-destructive flex-shrink-0" />
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-base sm:text-lg font-bold font-mono text-destructive">
+                        -{formatSmartNumber(soldAmount)}
                       </span>
-                      <span className="text-sm font-medium">{soldAsset}</span>
+                      <span className="text-xs font-medium text-muted-foreground">{soldAsset}</span>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1 ml-7">You paid</p>
+                    <span className="text-[10px] text-muted-foreground ml-1">Sold</span>
                   </div>
                   
                   {/* You Received */}
-                  <div className="flex-1 text-right">
-                    <div className="flex items-center justify-end gap-2 text-green-500">
-                      <ArrowDownRight className="w-5 h-5" />
-                      <span className="text-xl sm:text-2xl font-bold font-mono">
-                        +{receivedAmount.toFixed(4)}
+                  <div className="flex items-center gap-2 sm:justify-end">
+                    <ArrowDownRight className="w-4 h-4 text-green-500 flex-shrink-0" />
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-base sm:text-lg font-bold font-mono text-green-500">
+                        +{formatSmartNumber(receivedAmount)}
                       </span>
-                      <span className="text-sm font-medium">{receivedAsset}</span>
+                      <span className="text-xs font-medium text-muted-foreground">{receivedAsset}</span>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1 mr-7">You received</p>
+                    <span className="text-[10px] text-muted-foreground ml-1">Received</span>
                   </div>
                 </div>
               </div>
