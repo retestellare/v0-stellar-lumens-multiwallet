@@ -15,6 +15,66 @@ interface OrderBookProps {
   onAskClick?: (price: string, amount: string) => void;
 }
 
+// Smart number formatting based on magnitude
+function formatPrice(value: string): string {
+  const num = parseFloat(value);
+  if (isNaN(num)) return '-';
+  
+  const absNum = Math.abs(num);
+  
+  // For very large numbers (like BTC prices), show fewer decimals
+  if (absNum >= 100000) {
+    return num.toFixed(0);
+  } else if (absNum >= 10000) {
+    return num.toFixed(1);
+  } else if (absNum >= 1000) {
+    return num.toFixed(2);
+  } else if (absNum >= 100) {
+    return num.toFixed(3);
+  } else if (absNum >= 10) {
+    return num.toFixed(4);
+  } else if (absNum >= 1) {
+    return num.toFixed(5);
+  } else if (absNum >= 0.01) {
+    return num.toFixed(6);
+  } else {
+    return num.toFixed(7);
+  }
+}
+
+function formatAmount(value: string): string {
+  const num = parseFloat(value);
+  if (isNaN(num)) return '-';
+  
+  const absNum = Math.abs(num);
+  
+  if (absNum >= 1000) {
+    return num.toFixed(0);
+  } else if (absNum >= 100) {
+    return num.toFixed(1);
+  } else if (absNum >= 10) {
+    return num.toFixed(2);
+  } else if (absNum >= 1) {
+    return num.toFixed(3);
+  } else {
+    return num.toFixed(4);
+  }
+}
+
+function formatDiff(value: number): string {
+  const absNum = Math.abs(value);
+  
+  if (absNum >= 10000) {
+    return value.toFixed(0);
+  } else if (absNum >= 1000) {
+    return value.toFixed(1);
+  } else if (absNum >= 100) {
+    return value.toFixed(2);
+  } else {
+    return value.toFixed(4);
+  }
+}
+
 export function OrderBook({
   bids,
   asks,
@@ -28,13 +88,15 @@ export function OrderBook({
   onAskClick
 }: OrderBookProps) {
   // Merge orders for interleaved display
-  // Bids: highest price at top (already sorted desc from API)
-  // Asks: lowest price at top (already sorted asc from API)
   const maxRows = Math.max(bids.length, asks.length);
   const mergedOrders = Array.from({ length: maxRows }, (_, idx) => ({
     bid: bids[idx] || null,
     ask: asks[idx] || null,
   }));
+
+  const priceDiff = bestBid && bestAsk 
+    ? parseFloat(bestAsk) - parseFloat(bestBid)
+    : 0;
 
   return (
     <div className="space-y-4">
@@ -47,7 +109,7 @@ export function OrderBook({
           {bestBid && bestAsk && (
             <p className="text-xs text-muted-foreground">
               Diff: <span className="text-accent font-semibold">
-                {(parseFloat(bestAsk) - parseFloat(bestBid)).toFixed(4)} {buyingAsset}
+                {formatDiff(priceDiff)} {buyingAsset}
               </span>
             </p>
           )}
@@ -63,19 +125,19 @@ export function OrderBook({
         ) : (
           <div className="overflow-x-auto">
             {/* Column Headers */}
-            <div className="sticky top-0 bg-background/95 backdrop-blur border-b border-border grid grid-cols-4 px-2 sm:px-4 py-3 text-xs font-semibold">
-              <div className="text-left text-blue-400">Bid Amt</div>
-              <div className="text-center text-primary">Bid ({buyingAsset})</div>
-              <div className="text-center text-destructive">Ask ({buyingAsset})</div>
-              <div className="text-right text-pink-400">Ask Amt</div>
+            <div className="sticky top-0 bg-background/95 backdrop-blur border-b border-border grid grid-cols-4 gap-1 px-1 sm:px-2 py-3 text-[10px] sm:text-xs font-semibold">
+              <div className="text-left text-blue-400 truncate">Bid Amt</div>
+              <div className="text-right text-primary truncate pr-1">Bid</div>
+              <div className="text-left text-destructive truncate pl-1">Ask</div>
+              <div className="text-right text-pink-400 truncate">Ask Amt</div>
             </div>
             
             {/* Subheader showing base asset */}
-            <div className="bg-background/80 border-b border-border/50 grid grid-cols-4 px-2 sm:px-4 py-1 text-[10px] text-muted-foreground">
-              <div className="text-left">{sellingAsset}</div>
-              <div className="text-center">Price</div>
-              <div className="text-center">Price</div>
-              <div className="text-right">{sellingAsset}</div>
+            <div className="bg-background/80 border-b border-border/50 grid grid-cols-4 gap-1 px-1 sm:px-2 py-1 text-[9px] sm:text-[10px] text-muted-foreground">
+              <div className="text-left truncate">{sellingAsset}</div>
+              <div className="text-right truncate pr-1">{buyingAsset}</div>
+              <div className="text-left truncate pl-1">{buyingAsset}</div>
+              <div className="text-right truncate">{sellingAsset}</div>
             </div>
 
             {/* Order Rows */}
@@ -83,15 +145,16 @@ export function OrderBook({
               {mergedOrders.map((row, idx) => (
                 <div
                   key={idx}
-                  className="grid grid-cols-4 px-2 sm:px-4 py-2 text-sm border-b border-border/20 hover:bg-primary/5 transition-colors"
+                  className="grid grid-cols-4 gap-1 px-1 sm:px-2 py-1.5 text-[11px] sm:text-xs border-b border-border/20 hover:bg-primary/5 transition-colors"
                 >
                   {/* Bid Amount - Click to SELL */}
                   <div 
-                    className="text-left font-mono cursor-pointer hover:bg-blue-500/10 rounded px-1 -mx-1"
+                    className="text-left font-mono cursor-pointer hover:bg-blue-500/10 rounded truncate"
                     onClick={() => row.bid && onBidClick?.(row.bid.price, row.bid.amount)}
+                    title={row.bid ? row.bid.amount : undefined}
                   >
                     {row.bid ? (
-                      <span className="text-blue-400 font-medium">{parseFloat(row.bid.amount).toFixed(2)}</span>
+                      <span className="text-blue-400 font-medium">{formatAmount(row.bid.amount)}</span>
                     ) : (
                       <span className="text-muted-foreground/30">-</span>
                     )}
@@ -99,11 +162,12 @@ export function OrderBook({
 
                   {/* Bid Price */}
                   <div 
-                    className="text-center font-mono cursor-pointer hover:bg-primary/10 rounded"
+                    className="text-right font-mono cursor-pointer hover:bg-primary/10 rounded pr-1 truncate"
                     onClick={() => row.bid && onBidClick?.(row.bid.price, row.bid.amount)}
+                    title={row.bid ? row.bid.price : undefined}
                   >
                     {row.bid ? (
-                      <span className="text-primary font-semibold">{parseFloat(row.bid.price).toFixed(4)}</span>
+                      <span className="text-primary font-semibold">{formatPrice(row.bid.price)}</span>
                     ) : (
                       <span className="text-muted-foreground/30">-</span>
                     )}
@@ -111,11 +175,12 @@ export function OrderBook({
 
                   {/* Ask Price */}
                   <div 
-                    className="text-center font-mono cursor-pointer hover:bg-destructive/10 rounded"
+                    className="text-left font-mono cursor-pointer hover:bg-destructive/10 rounded pl-1 truncate"
                     onClick={() => row.ask && onAskClick?.(row.ask.price, row.ask.amount)}
+                    title={row.ask ? row.ask.price : undefined}
                   >
                     {row.ask ? (
-                      <span className="text-destructive font-semibold">{parseFloat(row.ask.price).toFixed(4)}</span>
+                      <span className="text-destructive font-semibold">{formatPrice(row.ask.price)}</span>
                     ) : (
                       <span className="text-muted-foreground/30">-</span>
                     )}
@@ -123,11 +188,12 @@ export function OrderBook({
 
                   {/* Ask Amount - Click to BUY */}
                   <div 
-                    className="text-right font-mono cursor-pointer hover:bg-pink-500/10 rounded px-1 -mx-1"
+                    className="text-right font-mono cursor-pointer hover:bg-pink-500/10 rounded truncate"
                     onClick={() => row.ask && onAskClick?.(row.ask.price, row.ask.amount)}
+                    title={row.ask ? row.ask.amount : undefined}
                   >
                     {row.ask ? (
-                      <span className="text-pink-400 font-medium">{parseFloat(row.ask.amount).toFixed(2)}</span>
+                      <span className="text-pink-400 font-medium">{formatAmount(row.ask.amount)}</span>
                     ) : (
                       <span className="text-muted-foreground/30">-</span>
                     )}
@@ -140,7 +206,7 @@ export function OrderBook({
       </div>
       
       {/* Legend */}
-      <div className="flex justify-center gap-6 text-xs text-muted-foreground">
+      <div className="flex justify-center gap-4 sm:gap-6 text-[10px] sm:text-xs text-muted-foreground">
         <span><span className="text-blue-400">Bid</span> = Buyers (click to sell)</span>
         <span><span className="text-pink-400">Ask</span> = Sellers (click to buy)</span>
       </div>
