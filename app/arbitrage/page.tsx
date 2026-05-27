@@ -207,19 +207,21 @@ export default function ArbitragePage() {
       
       // Calculate destMin with anti-loss protection
       // We require at least the original amount + minimum profit
-      const startAmount = parseFloat(opportunity.sendAmount);
-      const minProfitAmount = startAmount * (parseFloat(minProfitPercent) / 100);
-      const destMin = (startAmount + minProfitAmount).toFixed(7);
+      // CRITICAL: Use proper numeric math with 7-decimal precision for Stellar SDK
+      const startAmount = Number(opportunity.sendAmount);
+      const minProfitAmount = startAmount * (Number(minProfitPercent) / 100);
+      const sendAmountStr = startAmount.toFixed(7);
+      const destMinStr = (startAmount + minProfitAmount).toFixed(7);
       
-      addLog('info', `Anti-loss protection: minimum return ${destMin} XLM`);
+      addLog('info', `Anti-loss protection: send ${sendAmountStr} XLM, minimum return ${destMinStr} XLM`);
       
       // Execute atomic path payment: XLM -> Token -> XLM
       const result = await pathPaymentStrictSend(
         secretKey,
         'XLM', undefined, // Send XLM
-        opportunity.sendAmount,
+        sendAmountStr, // Properly formatted 7-decimal string
         'XLM', undefined, // Receive XLM (round trip)
-        destMin, // CRITICAL: Anti-loss minimum
+        destMinStr, // CRITICAL: Anti-loss minimum (7-decimal string)
         opportunity.path, // Through token
         activeWallet.publicKey // Send to self
       );

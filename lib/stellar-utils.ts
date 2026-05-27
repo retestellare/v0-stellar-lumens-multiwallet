@@ -646,6 +646,11 @@ export const pathPaymentStrictSend = async (
     // Load source account
     const account = await server.loadAccount(sourcePublicKey);
     
+    // CRITICAL: Ensure amounts are properly formatted with 7 decimal places
+    // Stellar SDK requires string amounts with exact precision
+    const sendAmountStr = Number(sendAmount).toFixed(7);
+    const destMinStr = Number(destMin).toFixed(7);
+    
     // Create send asset
     const sendAsset = sendAssetCode === 'XLM' || sendAssetCode === 'native'
       ? Asset.native()
@@ -671,10 +676,10 @@ export const pathPaymentStrictSend = async (
       .addOperation(
         Operation.pathPaymentStrictSend({
           sendAsset: sendAsset,
-          sendAmount: sendAmount,
+          sendAmount: sendAmountStr, // Properly formatted 7-decimal string
           destination: destination,
           destAsset: destAsset,
-          destMin: destMin, // CRITICAL: Anti-loss protection
+          destMin: destMinStr, // Properly formatted 7-decimal string (anti-loss)
           path: pathAssets,
         })
       )
