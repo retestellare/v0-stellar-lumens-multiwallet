@@ -10,7 +10,7 @@ import { ReceiveModal } from '@/components/receive-modal';
 import { AssetDetailModal } from '@/components/asset-detail-modal';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/lib/wallet-context';
-import { Plus, Send, ArrowRightLeft, Briefcase, Download } from 'lucide-react';
+import { Plus, Send, ArrowRightLeft, Briefcase, Download, Droplets } from 'lucide-react';
 import Link from 'next/link';
 import { AssetItem } from '@/components/asset-item';
 
@@ -86,7 +86,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                   <button 
                     onClick={() => setIsSendOpen(true)}
                     className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group"
@@ -112,6 +112,10 @@ export default function DashboardPage() {
                     <ArrowRightLeft className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
                     <p className="text-xs font-medium text-foreground">Exchange</p>
                   </button>
+                  <Link href="/pools" className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group">
+                    <Droplets className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
+                    <p className="text-xs font-medium text-foreground">Pools</p>
+                  </Link>
                 </div>
 
                 {/* Assets List */}

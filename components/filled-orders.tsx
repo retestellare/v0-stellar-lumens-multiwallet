@@ -91,10 +91,10 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
             const counterAmt = parseFloat(order.counterAmount);
             const pricePerUnit = baseAmt > 0 ? (counterAmt / baseAmt) : 0;
             
-            // VISUAL INVERSION FOR LP TRADES:
-            // If isLPTrade is true, INVERT the visual display
-            // The blockchain records from pool's perspective, so we flip it for user's view
-            const displayAsBuyer = order.isLPTrade ? !order.isBuyer : order.isBuyer;
+            // FORCE CORRECT DISPLAY - Remove double inversion
+            // For LP trades: keep isBuyer as-is (backend already correct)
+            // For non-LP trades: invert to fix the display
+            const displayAsBuyer = order.isLPTrade ? order.isBuyer : !order.isBuyer;
             
             // What you sold (-) and what you received (+)
             // If displayAsBuyer: you bought base (received base, paid counter)
