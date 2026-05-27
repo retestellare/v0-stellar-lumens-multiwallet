@@ -547,6 +547,14 @@ export const submitManageSellOffer = async (
                           result.extras?.result_codes?.transaction ||
                           result.detail ||
                           'Transaction failed';
+      return { success: false, error: errorMessage };
+    }
+  } catch (error: any) {
+    let errorMessage = error.message || 'Transaction failed';
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
     return { success: false, error: errorMessage };
   }
 };
