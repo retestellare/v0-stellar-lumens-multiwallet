@@ -46,9 +46,17 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
-        setWallets(parsed);
-        if (parsed.length > 0) {
-          setActiveWalletId(parsed[0].id || parsed[0].publicKey);
+        // Clean up balances when loading from storage to remove duplicates
+        const cleanedWallets = parsed.map((wallet: any) => {
+          if (wallet.balances && Array.isArray(wallet.balances)) {
+            const { assets, poolShares } = parseWalletBalances(wallet.balances);
+            return { ...wallet, balances: assets, poolShares: poolShares || [] };
+          }
+          return { ...wallet, poolShares: wallet.poolShares || [] };
+        });
+        setWallets(cleanedWallets);
+        if (cleanedWallets.length > 0) {
+          setActiveWalletId(cleanedWallets[0].id || cleanedWallets[0].publicKey);
         }
       } catch (error) {
         // Silent fail

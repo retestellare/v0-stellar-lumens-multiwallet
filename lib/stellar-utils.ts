@@ -133,11 +133,30 @@ export const getAccountDetails = async (publicKey: string) => {
   return response.json();
 };
 
-// Fetch account balances
+// Fetch account balances (raw, may include LP shares)
 export const getAccountBalances = async (publicKey: string) => {
   try {
     const account = await getAccountDetails(publicKey);
     return account.balances || [];
+  } catch {
+    return [];
+  }
+};
+
+// Fetch account balances, deduplicated (excludes LP shares)
+export const getAccountBalancesClean = async (publicKey: string) => {
+  try {
+    const account = await getAccountDetails(publicKey);
+    const balances = account.balances || [];
+    // Inline deduplication to avoid forward reference
+    const seen = new Set<string>();
+    return balances.filter((b: any) => {
+      if (b.asset_type === 'liquidity_pool_shares') return false;
+      const key = `${b.asset_code || 'XLM'}_${b.asset_issuer || ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   } catch {
     return [];
   }
