@@ -291,7 +291,26 @@ export default function ExchangePage() {
         const tradesData = await getAccountTrades(wallet.publicKey, 50);
         // Transform Horizon trades to component format
         const formattedOrders = tradesData.map((trade: any) => {
-          const isBuyer = trade.base_is_seller === false;
+          // Determine if the current user was the buyer or seller of the BASE asset
+          // base_is_seller: true means base_account was SELLING the base asset
+          // If our wallet is base_account and base_is_seller=true: we SOLD base (received counter)
+          // If our wallet is base_account and base_is_seller=false: we BOUGHT base (paid counter)
+          // If our wallet is counter_account: opposite of above
+          const isBaseAccount = trade.base_account === wallet.publicKey;
+          let isBuyer: boolean;
+          
+          if (isBaseAccount) {
+            // We are the base account
+            // base_is_seller=true means we sold base asset
+            // base_is_seller=false means we bought base asset
+            isBuyer = !trade.base_is_seller;
+          } else {
+            // We are the counter account
+            // If base sold base, we (counter) bought base
+            // If base bought base, we (counter) sold base
+            isBuyer = trade.base_is_seller;
+          }
+          
           const price = trade.price?.n && trade.price?.d 
             ? (parseFloat(trade.price.n) / parseFloat(trade.price.d)).toFixed(7)
             : '0';
