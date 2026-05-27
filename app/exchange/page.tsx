@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { Header } from '@/components/header';
 import { useWallet } from '@/lib/wallet-context';
 import { Button } from '@/components/ui/button';
@@ -118,9 +119,10 @@ export default function ExchangePage() {
     }
   }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
 
-  // Reset password state and refresh balances when wallet changes
+  // Reset password state when wallet changes (use ref to track previous wallet)
+  const prevWalletIdRef = React.useRef(activeWalletId);
   useEffect(() => {
-    if (activeWalletId && mounted) {
+    if (prevWalletIdRef.current !== activeWalletId && activeWalletId && mounted) {
       // Clear password-related state when wallet changes
       setIsPasswordUnlocked(false);
       setDecryptedSecret(null);
@@ -131,6 +133,7 @@ export default function ExchangePage() {
       // Refresh balances for the new wallet
       updateBalances(activeWalletId);
     }
+    prevWalletIdRef.current = activeWalletId;
   }, [activeWalletId, mounted, updateBalances]);
 
   // Fetch order book

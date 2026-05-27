@@ -137,20 +137,27 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, [wallets]);
 
   const updateBalances = useCallback(async (walletId: string) => {
-    const wallet = wallets.find(w => w.id === walletId || w.publicKey === walletId);
-    if (!wallet) return;
-
-    try {
-      const balances = await getAccountBalances(wallet.publicKey);
-      setWallets(prev =>
-        prev.map(w =>
-          (w.id === walletId || w.publicKey === walletId) ? { ...w, balances } : w
-        )
-      );
-    } catch (error) {
-      // Account may not exist yet
-    }
-  }, [wallets]);
+    // Use a functional update to avoid stale closure issues
+    setWallets(prev => {
+      const wallet = prev.find(w => w.id === walletId || w.publicKey === walletId);
+      if (!wallet) return prev;
+      
+      // Fetch balances asynchronously
+      getAccountBalances(wallet.publicKey)
+        .then(balances => {
+          setWallets(current =>
+            current.map(w =>
+              (w.id === walletId || w.publicKey === walletId) ? { ...w, balances } : w
+            )
+          );
+        })
+        .catch(() => {
+          // Account may not exist yet - keep existing balances
+        });
+      
+      return prev;
+    });
+  }, []);
 
   return (
     <WalletContext.Provider
