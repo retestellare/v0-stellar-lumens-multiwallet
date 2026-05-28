@@ -31,7 +31,6 @@ interface ArbitrageOpportunity {
   tokenCode: string;
   tokenIssuer: string;
   sendAmount: string;
-  destAmount: string; // Actual destination amount for profit calculation
   expectedReturn: string;
   profitPercent: number;
   path: Array<{ code: string; issuer?: string }>;
