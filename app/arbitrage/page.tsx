@@ -214,41 +214,126 @@ export default function ArbitragePage() {
     }
   }, [activeWallet, xlmQuota, minProfitPercent, addLog, isScanning]);
 
-  // Simulate a test opportunity for debugging
-  const simulateOpportunity = useCallback(() => {
-    const testTimestamp = new Date().toLocaleTimeString();
-    const sendAmount = Number(xlmQuota);
-    const profitPercent = 2.5;
-    const profitAmount = sendAmount * (profitPercent / 100);
-    const expectedReturn = sendAmount + profitAmount;
+  // Real blockchain-connected arbitrage scan (replaces mock simulation)
+  // Queries actual Stellar paths and calculates real spread
+  const executeRealArbitrageScan = useCallback(async () => {
+    if (!activeWallet) {
+      addLog('error', 'No wallet connected');
+      return;
+    }
     
-    // Create mock USDC opportunity with +2.5% spread
-    const mockOpportunity: ArbitrageOpportunity = {
-      id: `TEST-USDC-${Date.now()}`,
-      tokenCode: 'USDC',
-      tokenIssuer: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
-      sendAmount: sendAmount.toFixed(7),
-      destAmount: expectedReturn.toFixed(7),
-      expectedReturn: expectedReturn.toFixed(7),
-      profitPercent: profitPercent,
-      path: [{ code: 'USDC', issuer: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN' }],
-      source: 'mixed',
-      timestamp: new Date()
-    };
+    const timestamp = new Date().toLocaleTimeString();
+    const sendAmountNum = Number(xlmQuota);
+    const sendAmountStr = sendAmountNum.toFixed(7);
     
-    // Insert mock opportunity into state
-    setOpportunities(prev => [mockOpportunity, ...prev]);
+    if (isNaN(sendAmountNum) || sendAmountNum <= 0) {
+      addLog('error', `[${timestamp}] Invalid XLM quota amount`);
+      return;
+    }
     
-    // Generate warning log with full calculation details
-    addLog(
-      'warning',
-      `[${testTimestamp}] [TEST] USDC Arbitrage Detected (+${profitPercent.toFixed(2)}%) - Attempting to send atomic transaction...`
-    );
-    addLog(
-      'info',
-      `[${testTimestamp}] [TEST] Calculation: Send ${sendAmount.toFixed(7)} XLM -> Receive ${expectedReturn.toFixed(7)} XLM | Profit: ${profitAmount.toFixed(7)} XLM`
-    );
-  }, [xlmQuota, addLog]);
+    addLog('info', `[${timestamp}] Starting REAL arbitrage scan for ${sendAmountStr} XLM...`);
+    
+    // Minimum profit threshold (0.35% to cover fees and slippage)
+    const MIN_PROFIT_THRESHOLD = 0.35;
+    
+    try {
+      // USDC as intermediate asset for XLM -> USDC -> XLM round trip
+      const usdcIssuer = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN';
+      
+      // Step 1: Query XLM -> USDC paths
+      const pathsToUSDC = await findStrictSendPaths(
+        'XLM', undefined,
+        'USDC', usdcIssuer,
+        sendAmountStr
+      );
+      
+      if (pathsToUSDC.length === 0) {
+        addLog('warning', `[${timestamp}] No XLM -> USDC paths available`);
+        return;
+      }
+      
+      // Get the best USDC amount we'd receive
+      const bestToUSDC = pathsToUSDC[0];
+      const usdcAmount = bestToUSDC.destination_amount;
+      
+      addLog('info', `[${timestamp}] Path found: ${sendAmountStr} XLM -> ${Number(usdcAmount).toFixed(7)} USDC`);
+      
+      // Step 2: Query USDC -> XLM paths (completing the round trip)
+      const pathsBackToXLM = await findStrictSendPaths(
+        'USDC', usdcIssuer,
+        'XLM', undefined,
+        usdcAmount
+      );
+      
+      if (pathsBackToXLM.length === 0) {
+        addLog('warning', `[${timestamp}] No USDC -> XLM return paths available`);
+        return;
+      }
+      
+      // Get the best XLM amount we'd receive back
+      const bestBackToXLM = pathsBackToXLM[0];
+      const estimatedReturnNum = Number(bestBackToXLM.destination_amount);
+      
+      // Step 3: Calculate real spread
+      const profitAmount = estimatedReturnNum - sendAmountNum;
+      const profitPercent = (profitAmount / sendAmountNum) * 100;
+      
+      // Log the real prices found
+      addLog(
+        'info',
+        `[${timestamp}] XLM/USDC Round Trip -> Send: ${sendAmountStr} XLM | Return: ${estimatedReturnNum.toFixed(7)} XLM | Spread: ${profitPercent.toFixed(3)}%`
+      );
+      
+      // Check if profit exceeds minimum threshold
+      if (profitPercent < MIN_PROFIT_THRESHOLD) {
+        addLog(
+          'info',
+          `[${timestamp}] Spread (${profitPercent.toFixed(3)}%) below minimum threshold (${MIN_PROFIT_THRESHOLD}%) - No action taken`
+        );
+        return;
+      }
+      
+      // Step 4: Profitable opportunity found - register in UI
+      const realOpportunity: ArbitrageOpportunity = {
+        id: `REAL-USDC-${Date.now()}`,
+        tokenCode: 'USDC',
+        tokenIssuer: usdcIssuer,
+        sendAmount: sendAmountStr,
+        destAmount: estimatedReturnNum.toFixed(7),
+        expectedReturn: estimatedReturnNum.toFixed(7),
+        profitPercent: Number(profitPercent.toFixed(2)),
+        path: [{ code: 'USDC', issuer: usdcIssuer }],
+        source: 'mixed',
+        timestamp: new Date()
+      };
+      
+      setOpportunities(prev => [realOpportunity, ...prev]);
+      
+      addLog(
+        'success',
+        `[${timestamp}] ARBITRAGE DETECTED! Spread: +${profitPercent.toFixed(2)}% | Estimated profit: ${profitAmount.toFixed(7)} XLM`
+      );
+      
+      // Step 5: Prepare transaction details (for manual execution)
+      // Calculate destMin with slippage tolerance (0.1%)
+      const slippageTolerance = 0.001;
+      const destMinNum = sendAmountNum * (1 + (MIN_PROFIT_THRESHOLD / 100)) * (1 - slippageTolerance);
+      const destMinStr = destMinNum.toFixed(7);
+      
+      addLog(
+        'warning',
+        `[${timestamp}] Transaction ready: PathPaymentStrictSend | Send: ${sendAmountStr} XLM | DestMin: ${destMinStr} XLM | Path: [USDC]`
+      );
+      addLog(
+        'info',
+        `[${timestamp}] Click "Execute" on the opportunity card to send atomic transaction to blockchain`
+      );
+      
+    } catch (error: any) {
+      const errorMsg = error?.response?.data?.extras?.result_codes?.operations?.[0] || error.message || 'Unknown error';
+      addLog('error', `[${timestamp}] Scan failed: ${errorMsg}`);
+    }
+  }, [activeWallet, xlmQuota, addLog]);
   
   // Execute arbitrage
   const executeArbitrage = useCallback(async (opportunity: ArbitrageOpportunity) => {
@@ -577,11 +662,11 @@ export default function ArbitragePage() {
           </button>
           
           <button
-            onClick={simulateOpportunity}
+            onClick={executeRealArbitrageScan}
             className="py-3 px-4 rounded-lg font-medium flex items-center justify-center gap-2 bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 transition-colors"
           >
             <Zap className="w-4 h-4" />
-            Simulate Opportunity (Test)
+            Real Arbitrage Scan (USDC)
           </button>
         </div>
         
