@@ -31,6 +31,7 @@ interface ArbitrageOpportunity {
   tokenCode: string;
   tokenIssuer: string;
   sendAmount: string;
+  destAmount: string; // Actual destination amount for profit calculation
   expectedReturn: string;
   profitPercent: number;
   path: Array<{ code: string; issuer?: string }>;
@@ -212,6 +213,42 @@ export default function ArbitragePage() {
       setIsScanning(false);
     }
   }, [activeWallet, xlmQuota, minProfitPercent, addLog, isScanning]);
+
+  // Simulate a test opportunity for debugging
+  const simulateOpportunity = useCallback(() => {
+    const testTimestamp = new Date().toLocaleTimeString();
+    const sendAmount = Number(xlmQuota);
+    const profitPercent = 2.5;
+    const profitAmount = sendAmount * (profitPercent / 100);
+    const expectedReturn = sendAmount + profitAmount;
+    
+    // Create mock USDC opportunity with +2.5% spread
+    const mockOpportunity: ArbitrageOpportunity = {
+      id: `TEST-USDC-${Date.now()}`,
+      tokenCode: 'USDC',
+      tokenIssuer: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
+      sendAmount: sendAmount.toFixed(7),
+      destAmount: expectedReturn.toFixed(7),
+      expectedReturn: expectedReturn.toFixed(7),
+      profitPercent: profitPercent,
+      path: [{ code: 'USDC', issuer: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN' }],
+      source: 'mixed',
+      timestamp: new Date()
+    };
+    
+    // Insert mock opportunity into state
+    setOpportunities(prev => [mockOpportunity, ...prev]);
+    
+    // Generate warning log with full calculation details
+    addLog(
+      'warning',
+      `[${testTimestamp}] [TEST] USDC Arbitrage Detected (+${profitPercent.toFixed(2)}%) - Attempting to send atomic transaction...`
+    );
+    addLog(
+      'info',
+      `[${testTimestamp}] [TEST] Calculation: Send ${sendAmount.toFixed(7)} XLM -> Receive ${expectedReturn.toFixed(7)} XLM | Profit: ${profitAmount.toFixed(7)} XLM`
+    );
+  }, [xlmQuota, addLog]);
   
   // Execute arbitrage
   const executeArbitrage = useCallback(async (opportunity: ArbitrageOpportunity) => {
@@ -537,6 +574,14 @@ export default function ArbitragePage() {
           >
             <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin' : ''}`} />
             Scan Now
+          </button>
+          
+          <button
+            onClick={simulateOpportunity}
+            className="py-3 px-4 rounded-lg font-medium flex items-center justify-center gap-2 bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 transition-colors"
+          >
+            <Zap className="w-4 h-4" />
+            Simulate Opportunity (Test)
           </button>
         </div>
         
