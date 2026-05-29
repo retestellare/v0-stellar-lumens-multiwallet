@@ -636,7 +636,7 @@ export const pathPaymentStrictSend = async (
   destMin: string,
   path: Array<{ code: string; issuer?: string }>,
   destPublicKey?: string
-): Promise<{ success: boolean; hash?: string; destAmount?: string; error?: string }> => {
+): Promise<{ success: boolean; hash?: string; destAmount?: string; feeCharged?: string; error?: string }> => {
   try {
     const server = new Horizon.Server(HORIZON_URL);
     const keypair = Keypair.fromSecret(secretKey);
@@ -668,9 +668,23 @@ export const pathPaymentStrictSend = async (
         : new Asset(p.code, p.issuer!)
     );
     
-    // Build pathPaymentStrictSend transaction
+    // Load LIVE network fees based on current congestion
+    // Use the mode (most common) fee charged, fall back to BASE_FEE
+    let dynamicFee = BASE_FEE;
+    try {
+      const feeStats = await server.feeStats();
+      // p70 of recent charged fees gives a good chance of inclusion without overpaying
+      const suggested = feeStats.fee_charged?.p70 || feeStats.last_ledger_base_fee;
+      if (suggested && Number(suggested) > Number(BASE_FEE)) {
+        dynamicFee = String(suggested);
+      }
+    } catch {
+      // If feeStats fails, keep BASE_FEE as a safe fallback
+    }
+    
+    // Build pathPaymentStrictSend transaction with live network fee
     const transaction = new TransactionBuilder(account, {
-      fee: BASE_FEE,
+      fee: dynamicFee,
       networkPassphrase: NETWORK_PASSPHRASE,
     })
       .addOperation(
@@ -698,7 +712,7 @@ export const pathPaymentStrictSend = async (
       // For now, we return success and let the UI refresh balances
     } catch {}
     
-    return { success: true, hash: result.hash, destAmount };
+    return { success: true, hash: result.hash, destAmount, feeCharged: dynamicFee };
   } catch (error: any) {
     let errorMessage = error.message || 'Path payment failed';
     if (error.response?.data?.extras?.result_codes) {
