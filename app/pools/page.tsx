@@ -63,6 +63,12 @@ export default function PoolsPage() {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [password, setPassword] = useState('');
   const [pendingAction, setPendingAction] = useState<'deposit' | 'withdraw' | null>(null);
+  
+  // Pool reserves for auto-calculation
+  const [poolReserves, setPoolReserves] = useState<{ reserveA: number; reserveB: number } | null>(null);
+  const [reservesLoading, setReservesLoading] = useState(false);
+  const [reservesError, setReservesError] = useState<string | null>(null);
+  const [editingField, setEditingField] = useState<'amountA' | 'amountB' | null>(null);
 
   const activeWallet = wallets.find(w => w.id === activeWalletId);
 
@@ -143,7 +149,92 @@ export default function PoolsPage() {
     }
   }, [mounted, activeWallet, fetchPoolShares]);
 
-  // Handle deposit
+  // Fetch pool reserves when deposit modal opens
+  useEffect(() => {
+    const fetchReserves = async () => {
+      if (activeModal !== 'deposit' || !selectedPool) {
+        setPoolReserves(null);
+        setReservesError(null);
+        return;
+      }
+
+      setReservesLoading(true);
+      setReservesError(null);
+      
+      try {
+        const details = await getLiquidityPoolDetails(selectedPool.liquidity_pool_id);
+        
+        if (!details.reserves || details.reserves.length < 2) {
+          setReservesError('Unable to fetch pool reserves');
+          setPoolReserves(null);
+          return;
+        }
+
+        const reserveA = parseFloat(details.reserves[0].amount);
+        const reserveB = parseFloat(details.reserves[1].amount);
+
+        if (reserveA === 0 || reserveB === 0) {
+          setReservesError('Pool has zero reserves - manual entry required');
+          setPoolReserves(null);
+        } else {
+          setPoolReserves({ reserveA, reserveB });
+        }
+      } catch (error) {
+        console.error('[v0] Error fetching pool reserves:', error);
+        setReservesError('Failed to fetch pool reserves');
+        setPoolReserves(null);
+      } finally {
+        setReservesLoading(false);
+      }
+    };
+
+    fetchReserves();
+  }, [activeModal, selectedPool]);
+
+  // Auto-calculate amountB when amountA changes
+  useEffect(() => {
+    if (editingField !== 'amountA' || !poolReserves || !amountA) {
+      return;
+    }
+
+    const userAmount = parseFloat(amountA);
+    if (isNaN(userAmount) || userAmount <= 0) {
+      setAmountB('');
+      return;
+    }
+
+    // Calculate: amountB = amountA × (reserveB / reserveA)
+    const ratio = poolReserves.reserveB / poolReserves.reserveA;
+    const calculatedB = (userAmount * ratio).toFixed(7);
+    setAmountB(calculatedB);
+  }, [amountA, poolReserves, editingField]);
+
+  // Auto-calculate amountA when amountB changes
+  useEffect(() => {
+    if (editingField !== 'amountB' || !poolReserves || !amountB) {
+      return;
+    }
+
+    const userAmount = parseFloat(amountB);
+    if (isNaN(userAmount) || userAmount <= 0) {
+      setAmountA('');
+      return;
+    }
+
+    // Calculate: amountA = amountB × (reserveA / reserveB)
+    const ratio = poolReserves.reserveA / poolReserves.reserveB;
+    const calculatedA = (userAmount * ratio).toFixed(7);
+    setAmountA(calculatedA);
+  }, [amountB, poolReserves, editingField]);
+
+  // Reset form when modal closes or pool changes
+  useEffect(() => {
+    if (activeModal !== 'deposit') {
+      setAmountA('');
+      setAmountB('');
+      setEditingField(null);
+    }
+  }, [activeModal]);
   const handleDeposit = async () => {
     if (!selectedPool || !amountA || !amountB) return;
     setPendingAction('deposit');
@@ -451,28 +542,86 @@ export default function PoolsPage() {
               {selectedPool.assetA?.code || '?'} / {selectedPool.assetB?.code || '?'} Pool
             </p>
             
+            {/* Pool Reserves Info */}
+            {reservesLoading && (
+              <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded flex items-center gap-2">
+                <Loader2 className="w-4 h-4 text-blue-500 animate-spin flex-shrink-0" />
+                <p className="text-xs text-blue-400">Fetching pool reserves...</p>
+              </div>
+            )}
+            
+            {reservesError && (
+              <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-yellow-500 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-yellow-400">{reservesError}</p>
+              </div>
+            )}
+            
+            {poolReserves && !reservesError && (
+              <div className="mb-4 p-3 bg-background/50 rounded border border-border/50">
+                <p className="text-xs text-muted-foreground mb-2">Reserve Ratio</p>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs font-mono">
+                    <span className="text-foreground font-bold">{poolReserves.reserveA.toFixed(2)}</span>
+                    <span className="text-muted-foreground"> {selectedPool.assetA?.code}</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground">/</div>
+                  <div className="text-xs font-mono">
+                    <span className="text-foreground font-bold">{poolReserves.reserveB.toFixed(2)}</span>
+                    <span className="text-muted-foreground"> {selectedPool.assetB?.code}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <div className="space-y-4">
               <div>
-                <label className="text-sm text-muted-foreground mb-1 block">
-                  Amount {selectedPool.assetA?.code || 'A'}
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-sm text-muted-foreground">
+                    Amount {selectedPool.assetA?.code || 'A'}
+                  </label>
+                  {editingField === 'amountA' && poolReserves && !reservesError && (
+                    <span className="text-xs text-primary">Editing</span>
+                  )}
+                  {editingField === 'amountB' && poolReserves && !reservesError && amountA && (
+                    <span className="text-xs text-muted-foreground">Auto</span>
+                  )}
+                </div>
                 <Input
                   type="number"
                   placeholder="0.00"
                   value={amountA}
-                  onChange={(e) => setAmountA(e.target.value)}
+                  onChange={(e) => {
+                    setAmountA(e.target.value);
+                    setEditingField('amountA');
+                  }}
+                  onBlur={() => setEditingField(null)}
+                  disabled={reservesLoading}
                 />
               </div>
               
               <div>
-                <label className="text-sm text-muted-foreground mb-1 block">
-                  Amount {selectedPool.assetB?.code || 'B'}
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-sm text-muted-foreground">
+                    Amount {selectedPool.assetB?.code || 'B'}
+                  </label>
+                  {editingField === 'amountB' && poolReserves && !reservesError && (
+                    <span className="text-xs text-primary">Editing</span>
+                  )}
+                  {editingField === 'amountA' && poolReserves && !reservesError && amountB && (
+                    <span className="text-xs text-muted-foreground">Auto</span>
+                  )}
+                </div>
                 <Input
                   type="number"
                   placeholder="0.00"
                   value={amountB}
-                  onChange={(e) => setAmountB(e.target.value)}
+                  onChange={(e) => {
+                    setAmountB(e.target.value);
+                    setEditingField('amountB');
+                  }}
+                  onBlur={() => setEditingField(null)}
+                  disabled={reservesLoading}
                 />
               </div>
               
