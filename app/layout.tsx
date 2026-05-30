@@ -9,6 +9,7 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'),
   title: 'Stellar Lumens Multiwallet',
   description: 'Non-custodial Stellar multiwallet with DEX and portfolio tracking',
   generator: 'v0.app',
@@ -29,11 +30,37 @@ export const metadata: Metadata = {
     ],
     apple: '/apple-icon.png',
   },
+  openGraph: {
+    title: 'Stellar Lumens Multiwallet',
+    description: 'Non-custodial Stellar multiwallet with DEX and portfolio tracking',
+    url: '/',
+    type: 'website',
+    images: [
+      {
+        url: '/wallet-logo.png',
+        width: 512,
+        height: 512,
+        alt: 'Stellar Lumens Multiwallet Logo',
+      },
+    ],
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Stellar Lumens Multiwallet',
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  manifest: '/manifest.webmanifest',
 }
 
 export const viewport = {
   themeColor: '#0a0e27',
   userScalable: false,
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
 }
 
 export default function RootLayout({
