@@ -34,6 +34,12 @@ function formatSmartNumber(value: number, maxDecimals = 7): string {
   return value.toFixed(maxDecimals);
 }
 
+// Helper function to determine if an asset is a primary/quote asset
+function isPrimaryAsset(assetCode: string): boolean {
+  const primaryAssets = ['XLM', 'USD', 'USDC', 'USDT', 'EUR', 'GBP', 'JPY'];
+  return primaryAssets.includes(assetCode.toUpperCase());
+}
+
 export function FilledOrders({ orders, loading }: FilledOrdersProps) {
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
@@ -83,43 +89,56 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
       ) : (
         <div className="divide-y divide-border/30 max-h-[600px] overflow-y-auto">
           {orders.map((order) => {
-            // Trading pair
-            const tradingPair = `${order.baseCode} / ${order.counterCode}`;
-            
-            // Calculate price per base unit
             const baseAmt = parseFloat(order.baseAmount);
             const counterAmt = parseFloat(order.counterAmount);
-            const pricePerUnit = baseAmt > 0 ? (counterAmt / baseAmt) : 0;
             
-            // FORCE CORRECT DISPLAY - Remove double inversion
-            // For LP trades: keep isBuyer as-is (backend already correct)
-            // For non-LP trades: invert to fix the display
-            const displayAsBuyer = order.isLPTrade ? order.isBuyer : !order.isBuyer;
+            // Determine normalization: primary asset should always be quote (denominator)
+            const basePrimary = isPrimaryAsset(order.baseCode);
+            const counterPrimary = isPrimaryAsset(order.counterCode);
             
-            // What you sold (-) and what you received (+)
-            // If displayAsBuyer: you bought base (received base, paid counter)
-            // If seller: you sold base (paid base, received counter)
-            const soldAmount = displayAsBuyer ? counterAmt : baseAmt;
-            const soldAsset = displayAsBuyer ? order.counterCode : order.baseCode;
-            const receivedAmount = displayAsBuyer ? baseAmt : counterAmt;
-            const receivedAsset = displayAsBuyer ? order.baseCode : order.counterCode;
+            // If base is primary and counter is secondary, or both/neither are primary, keep as-is
+            // If counter is primary and base is secondary, swap for display
+            const shouldSwap = counterPrimary && !basePrimary;
+            
+            // Normalized values for consistent display
+            const displayBaseCode = shouldSwap ? order.counterCode : order.baseCode;
+            const displayCounterCode = shouldSwap ? order.baseCode : order.counterCode;
+            const displayBaseAmount = shouldSwap ? counterAmt : baseAmt;
+            const displayCounterAmount = shouldSwap ? baseAmt : counterAmt;
+            
+            // Trading pair display (normalized: base / quote)
+            const tradingPair = `${displayBaseCode} / ${displayCounterCode}`;
+            
+            // Price calculation: Price = Quote / Base
+            const displayPrice = displayBaseAmount > 0 ? (displayCounterAmount / displayBaseAmount) : 0;
+            
+            // Determine if user was a buyer based on NORMALIZED view
+            // In normalized view: if user bought base (received more base than paid), it's a BUY
+            // If shouldSwap, we need to invert the isBuyer logic
+            const userWasBuyer = shouldSwap ? !order.isBuyer : order.isBuyer;
+            
+            // What was sold and received (in normalized terms)
+            const soldAsset = userWasBuyer ? displayCounterCode : displayBaseCode;
+            const soldAmount = userWasBuyer ? displayCounterAmount : displayBaseAmount;
+            const receivedAsset = userWasBuyer ? displayBaseCode : displayCounterCode;
+            const receivedAmount = userWasBuyer ? displayBaseAmount : displayCounterAmount;
             
             return (
               <div
                 key={order.id}
                 className={`p-3 sm:p-4 ${
-                  displayAsBuyer ? 'border-l-4 border-l-primary' : 'border-l-4 border-l-destructive'
+                  userWasBuyer ? 'border-l-4 border-l-primary' : 'border-l-4 border-l-destructive'
                 } hover:bg-muted/30 transition-colors`}
               >
                 {/* Header Row: Trading Pair + Badge + Time */}
                 <div className="flex items-start justify-between mb-2 gap-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                      displayAsBuyer 
+                      userWasBuyer 
                         ? 'bg-primary/20 text-primary' 
                         : 'bg-destructive/20 text-destructive'
                     }`}>
-                      {displayAsBuyer ? 'BUY' : 'SELL'}
+                      {userWasBuyer ? 'BUY' : 'SELL'}
                     </span>
                     <span className="text-sm font-bold text-foreground">{tradingPair}</span>
                     {order.isLPTrade && (
@@ -135,11 +154,11 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
                   </div>
                 </div>
                 
-                {/* Price Per Unit */}
+                {/* Price Per Unit (normalized: quote per base) */}
                 <div className="mb-3 text-xs">
                   <span className="text-muted-foreground">Price: </span>
                   <span className="font-mono font-semibold text-foreground">
-                    {formatSmartNumber(pricePerUnit)} {order.counterCode}
+                    {formatSmartNumber(displayPrice)} {displayCounterCode}/{displayBaseCode}
                   </span>
                 </div>
                 
