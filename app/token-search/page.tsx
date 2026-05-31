@@ -13,36 +13,14 @@ import { TokenMetadata } from '@/types/token';
 
 const HORIZON_URL = 'https://horizon.stellar.org';
 
-// Known tokens metadata - same as token-selector-modal for consistency
-const KNOWN_TOKEN_METADATA: Record<string, { name: string; domain: string; image: string }> = {
-  'XLM_': { name: 'Stellar Lumens', domain: 'stellar.org', image: 'https://assets.coingecko.com/coins/images/100/small/Stellar_symbol_black_RGB.png' },
-  'USDC_GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN': { name: 'USD Coin', domain: 'circle.com', image: 'https://assets.coingecko.com/coins/images/6319/small/usdc.png' },
-  'EURC_GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2': { name: 'Euro Coin', domain: 'circle.com', image: 'https://assets.coingecko.com/coins/images/26045/small/euro-coin.png' },
-  'yXLM_GARDNV3Q7YGT4AKSDF25LT32YSCCW4EV22Y2TV3I2PU2MMXJTEDL5T55': { name: 'Yield XLM', domain: 'ultrastellar.com', image: 'https://ultrastellar.com/static/images/icons/yXLM.png' },
-  'AQUA_GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA': { name: 'Aquarius', domain: 'aqua.network', image: 'https://aqua.network/assets/img/aqua-logo.png' },
-  'BTC_GDPJALI4AZKUU2W426U5WKMAT6CN3AJRPIIRYR2YM54TL2GDWO5O2MZM': { name: 'Bitcoin', domain: 'ultrastellar.com', image: 'https://assets.coingecko.com/coins/images/1/small/bitcoin.png' },
-  'ETH_GDPJALI4AZKUU2W426U5WKMAT6CN3AJRPIIRYR2YM54TL2GDWO5O2MZM': { name: 'Ethereum', domain: 'ultrastellar.com', image: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png' },
-  'SHX_GDSTRSHXHGJ7ZIVRBXEYE5Q74XUVCUSEZ6GKPNAC4ZISIJEJNLBPA4FT': { name: 'Stronghold SHX', domain: 'stronghold.co', image: 'https://assets.coingecko.com/coins/images/31254/small/SHX.png' },
-  'USD_GDUKMGUGDZQK6YHYA5Z6AY2G4XDSZPSZ3SW5UN3ARVMO6QSRDWP5YLEX': { name: 'AnchorUSD', domain: 'anchorusd.com', image: 'https://assets.coingecko.com/coins/images/325/small/Tether.png' },
-  'VELO_GDM4RQUQQUVSKQA7S6EM7XBZP3FCGH4Q7CL6TABQ7B2BEJ5ERARM2M5M': { name: 'Velo', domain: 'velo.org', image: 'https://assets.coingecko.com/coins/images/12722/small/velo.png' },
-  'RIO_GBNLJIYH34UWO5YZFA3A3HD3N76R6DOI33N4JONUOHEEYZYCAYTEJ5AK': { name: 'Realio', domain: 'realio.fund', image: 'https://assets.coingecko.com/coins/images/12206/small/realio.png' },
-  'ARST_GCSAZVWXZKWS4XS223M5F54H2B6XPIBER2JJ4CA4DDXPLGMIVLRMR2': { name: 'ARS Token', domain: 'anclap.com', image: 'https://anclap.com/assets/img/arst-logo.png' },
-  'BRLT_GCHH4UPC43VEMDOZ2OYSEFWPVNBVPZQLSUF3USKX6CJXJ6JKF3AIYBRLT': { name: 'BRL Token', domain: 'ntokens.com', image: 'https://ntokens.com/assets/brlt-logo.png' },
-  'DOGET_GDOEVDDBU6OBWKL7VHDAOKD77UP4DKHQYKOKJJT5PR3WRDBTX35HUEUX': { name: 'Doge Token', domain: 'doget.org', image: 'https://doget.org/assets/doget-logo.png' },
-  'yUSDC_GDGTVWSM4MGS4T7Z6W4RPWOCHE2I6RDFCIFZG5YCHF3QHFKWVWDCCV': { name: 'Yield USDC', domain: 'ultrastellar.com', image: 'https://ultrastellar.com/static/images/icons/yUSDC.png' },
-  'FIDR_GBZQNUAGO4DZFWOHJ3PVXZKZ2LTSOVAMCTVM46OEMWNWTED4DFS3NAYH': { name: 'FIDR', domain: 'fidr.io', image: '' },
-  'LSP_GAB7STHVD5BDH3EEYXPI3OM7PCS4V443PYB5FNT6CFGJVPDLMKDM24WK': { name: 'Lumenswap', domain: 'lumenswap.io', image: '' },
-};
+// Known tokens metadata is now centralized in stellar-utils.ts
+// Tokens here will have images fetched dynamically via getIssuerTokenIcon()
 
 function enrichTokenWithMetadata(code: string, issuer: string | undefined): { name?: string; domain?: string; image?: string; verified?: boolean } {
-  const key = `${code}_${issuer || ''}`;
-  if (KNOWN_TOKEN_METADATA[key]) {
-    return { ...KNOWN_TOKEN_METADATA[key], verified: true };
-  }
   const picks = getTokenPicks();
   const match = picks.find(p => p.code === code && p.issuer === (issuer || ''));
   if (match) {
-    return { name: match.name, domain: match.domain, image: match.image, verified: match.verified };
+    return { name: match.name, domain: match.domain, image: match.image || '', verified: match.verified };
   }
   return {};
 }
@@ -152,7 +130,8 @@ function TokenCard({ token, isFav, onToggleFavorite }: { token: Token; isFav: bo
   const [domain, setDomain] = useState<string | undefined>(token.domain);
 
   useEffect(() => {
-    if (!token.image && !imageError && token.issuer) {
+    // Fetch image if not provided or is empty string
+    if ((!token.image || token.image === '') && !imageError && token.issuer) {
       let cancelled = false;
       getIssuerTokenIcon(token.code, token.issuer).then((url) => {
         if (!cancelled && url) setIconUrl(url);
