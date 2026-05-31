@@ -11,7 +11,8 @@ import {
   depositToLiquidityPool, 
   withdrawFromLiquidityPool,
   decryptSecret,
-  getAccountBalances
+  getAccountBalances,
+  getIssuerTokenIcon
 } from '@/lib/stellar-utils';
 import { 
   ArrowLeft, 
@@ -28,6 +29,45 @@ import {
   ExternalLink
 } from 'lucide-react';
 import Link from 'next/link';
+
+// Token icon component with fallback
+function TokenIcon({ code, issuer, className = "w-8 h-8" }: { code: string; issuer?: string; className?: string }) {
+  const [iconUrl, setIconUrl] = useState<string | null>(null);
+  const [imageError, setImageError] = useState(false);
+  
+  useEffect(() => {
+    let cancelled = false;
+    
+    const fetchIcon = async () => {
+      if (code === 'XLM') {
+        setIconUrl('https://assets.coingecko.com/coins/images/100/small/Stellar_symbol_black_RGB.png');
+        return;
+      }
+      const url = await getIssuerTokenIcon(code, issuer || '');
+      if (!cancelled && url) {
+        setIconUrl(url);
+      }
+    };
+    
+    fetchIcon();
+    return () => { cancelled = true; };
+  }, [code, issuer]);
+  
+  return (
+    <div className={`${className} rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold border-2 border-background overflow-hidden`}>
+      {iconUrl && !imageError ? (
+        <img 
+          src={iconUrl} 
+          alt={code} 
+          className="w-full h-full object-cover"
+          onError={() => setImageError(true)}
+        />
+      ) : (
+        <span>{code?.slice(0, 2) || '??'}</span>
+      )}
+    </div>
+  );
+}
 
 interface PoolShare {
   liquidity_pool_id: string;
@@ -358,6 +398,12 @@ export default function PoolsPage() {
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </Button>
+            <Link href="/pools/create">
+              <Button className="bg-primary text-primary-foreground hover:bg-primary/90 gap-1">
+                <Plus className="w-4 h-4" />
+                Create Pool
+              </Button>
+            </Link>
             <WalletSelectorDropdown />
           </div>
         </div>
@@ -442,12 +488,16 @@ export default function PoolsPage() {
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
                           <div className="flex -space-x-2">
-                            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold border-2 border-background">
-                              {pool.assetA?.code?.slice(0, 2) || '??'}
-                            </div>
-                            <div className="w-8 h-8 rounded-full bg-cyan-500/20 flex items-center justify-center text-xs font-bold border-2 border-background">
-                              {pool.assetB?.code?.slice(0, 2) || '??'}
-                            </div>
+                            <TokenIcon 
+                              code={pool.assetA?.code || '??'} 
+                              issuer={pool.assetA?.issuer}
+                              className="w-8 h-8"
+                            />
+                            <TokenIcon 
+                              code={pool.assetB?.code || '??'} 
+                              issuer={pool.assetB?.issuer}
+                              className="w-8 h-8"
+                            />
                           </div>
                           <div>
                             <p className="font-semibold">
