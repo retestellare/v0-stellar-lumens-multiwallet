@@ -1,15 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback, useTransition, Suspense } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { Header } from '@/components/header';
 import { WalletCard } from '@/components/wallet-card';
 import { AssetDetailModal } from '@/components/asset-detail-modal';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/lib/wallet-context';
-import { Plus, Send, ArrowRightLeft, Briefcase, Download, Droplets, Search } from 'lucide-react';
-import Link from 'next/link';
+import { Plus, Send, ArrowRightLeft, Download, Droplets, Search } from 'lucide-react';
 import { AssetItem } from '@/components/asset-item';
 
 // Lazy load heavy modals for better initial page performance
@@ -24,21 +23,12 @@ const ReceiveModal = dynamic(() => import('@/components/receive-modal').then(mod
 });
 
 export default function DashboardPage() {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
   const { wallets, activeWalletId, setActiveWallet, removeWallet, updateBalances } = useWallet();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSendOpen, setIsSendOpen] = useState(false);
   const [isReceiveOpen, setIsReceiveOpen] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<{ code: string; issuer?: string; balance: string; domain?: string; image?: string; name?: string } | null>(null);
   const [mounted, setMounted] = useState(false);
-
-  // Memoize callback to prevent re-renders on every state change
-  const handleExchangeClick = useCallback(() => {
-    startTransition(() => {
-      router.push('/exchange');
-    });
-  }, [router]);
 
   const handleSendClick = useCallback(() => {
     setIsSendOpen(true);
@@ -48,17 +38,8 @@ export default function DashboardPage() {
     setIsReceiveOpen(true);
   }, []);
 
-  const handlePoolsClick = useCallback(() => {
-    // Link component handles navigation, but we can use startTransition for consistency
-    startTransition(() => {
-      router.push('/pools');
-    });
-  }, [router]);
-
   const handleWalletSelect = useCallback((id: string) => {
-    startTransition(() => {
-      setActiveWallet(id);
-    });
+    setActiveWallet(id);
   }, [setActiveWallet]);
 
   const handleAddWallet = useCallback(() => {
@@ -193,7 +174,10 @@ export default function DashboardPage() {
                   </button>
                   
                   {/* Search */}
-                  <Link href="/token-search" className="group relative overflow-hidden rounded-lg p-2 bg-card border border-primary/30 hover:border-primary/60 transition-all hover:shadow-md hover:shadow-primary/20">
+                  <Link 
+                    href="/token-search" 
+                    className="group relative overflow-hidden rounded-lg p-2 bg-card border border-primary/30 hover:border-primary/60 transition-all hover:shadow-md hover:shadow-primary/20"
+                  >
                     <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                     <div className="relative z-10 flex flex-col items-center gap-1">
                       <Search className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
@@ -202,30 +186,28 @@ export default function DashboardPage() {
                   </Link>
                   
                   {/* Exchange */}
-                  <button 
-                    onClick={handleExchangeClick}
-                    disabled={isPending}
-                    className="group relative overflow-hidden rounded-lg p-2 bg-card border border-primary/30 hover:border-primary/60 disabled:opacity-50 transition-all hover:shadow-md hover:shadow-primary/20"
+                  <Link 
+                    href="/exchange"
+                    className="group relative overflow-hidden rounded-lg p-2 bg-card border border-primary/30 hover:border-primary/60 transition-all hover:shadow-md hover:shadow-primary/20"
                   >
                     <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                     <div className="relative z-10 flex flex-col items-center gap-1">
                       <ArrowRightLeft className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
                       <p className="text-xs font-medium text-foreground">Exchange</p>
                     </div>
-                  </button>
+                  </Link>
                   
                   {/* Pools */}
-                  <button 
-                    onClick={handlePoolsClick}
-                    disabled={isPending}
-                    className="group relative overflow-hidden rounded-lg p-2 bg-card border border-primary/30 hover:border-primary/60 disabled:opacity-50 transition-all hover:shadow-md hover:shadow-primary/20"
+                  <Link 
+                    href="/pools"
+                    className="group relative overflow-hidden rounded-lg p-2 bg-card border border-primary/30 hover:border-primary/60 transition-all hover:shadow-md hover:shadow-primary/20"
                   >
                     <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                     <div className="relative z-10 flex flex-col items-center gap-1">
                       <Droplets className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
                       <p className="text-xs font-medium text-foreground">Pools</p>
                     </div>
-                  </button>
+                  </Link>
                 </div>
 
                 {/* Assets List */}
