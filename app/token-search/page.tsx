@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Header } from '@/components/header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -154,12 +155,15 @@ function TokenCard({ token, isFav, onToggleFavorite }: { token: Token; isFav: bo
   }, [token.domain, token.issuer]);
 
   const displayDomain = domain || token.domain || (token.issuer ? token.issuer.substring(0, 12) + '...' : 'Native');
+  
+  const handleImageError = useCallback(() => setImageError(true), []);
+  const handleFavorite = useCallback(() => onToggleFavorite(), [onToggleFavorite]);
 
   return (
     <div className="flex items-start gap-4 p-4 border border-border/50 rounded-lg hover:border-primary/50 bg-background/30 hover:bg-primary/10 transition-all">
       <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-lg font-bold overflow-hidden flex-shrink-0">
         {iconUrl && !imageError ? (
-          <img src={iconUrl} alt={token.code} className="w-full h-full object-cover" onError={() => setImageError(true)} />
+          <img src={iconUrl} alt={token.code} className="w-full h-full object-cover" onError={handleImageError} />
         ) : (
           <span>{token.code.charAt(0)}</span>
         )}
@@ -172,7 +176,7 @@ function TokenCard({ token, isFav, onToggleFavorite }: { token: Token; isFav: bo
         {token.name && <p className="text-sm text-muted-foreground truncate">{token.name}</p>}
         <p className="text-xs text-muted-foreground/70 truncate">{displayDomain}</p>
       </div>
-      <button onClick={onToggleFavorite} className="text-muted-foreground hover:text-primary transition-colors flex-shrink-0">
+      <button onClick={handleFavorite} className="text-muted-foreground hover:text-primary transition-colors flex-shrink-0">
         <Star className="w-5 h-5" fill={isFav ? 'currentColor' : 'none'} />
       </button>
     </div>
@@ -181,6 +185,7 @@ function TokenCard({ token, isFav, onToggleFavorite }: { token: Token; isFav: bo
 
 export default function TokenSearchPage() {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Token[]>([]);
   const [loading, setLoading] = useState(false);
@@ -205,21 +210,23 @@ export default function TokenSearchPage() {
 
   useEffect(() => {
     if (!searchQuery || searchQuery.length < 2) {
-      setSearchResults([]);
+      startTransition(() => setSearchResults([]));
       return;
     }
 
     setLoading(true);
     const timer = setTimeout(async () => {
       const results = await searchHorizonTokens(searchQuery);
-      setSearchResults(results);
-      setLoading(false);
+      startTransition(() => {
+        setSearchResults(results);
+        setLoading(false);
+      });
     }, 500);
 
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const handleToggleFavorite = (token: Token) => {
+  const handleToggleFavorite = useCallback((token: Token) => {
     const metadata: TokenMetadata = {
       code: token.code,
       issuer: token.issuer || '',
@@ -230,16 +237,24 @@ export default function TokenSearchPage() {
     };
     const isFav = toggleFavoriteToken(metadata);
     const key = `${token.code}_${token.issuer}`;
-    setFavorites((prev) => {
-      const updated = new Set(prev);
-      if (isFav) {
-        updated.add(key);
-      } else {
-        updated.delete(key);
-      }
-      return updated;
+    startTransition(() => {
+      setFavorites((prev) => {
+        const updated = new Set(prev);
+        if (isFav) {
+          updated.add(key);
+        } else {
+          updated.delete(key);
+        }
+        return updated;
+      });
     });
-  };
+  }, []);
+
+  const handleBack = useCallback(() => {
+    startTransition(() => {
+      router.back();
+    });
+  }, [router]);
 
   const displayTokens = searchQuery.length >= 2 ? searchResults : [];
   const showRecommended = searchQuery.length < 2;
@@ -248,14 +263,20 @@ export default function TokenSearchPage() {
     <main className="min-h-screen bg-background">
       <Header />
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Back Button */}
-        <button
-          onClick={() => router.back()}
-          className="flex items-center gap-2 text-primary hover:text-primary/80 transition-colors mb-8"
+        {/* Back Button - Fixed with Link fallback and useTransition */}
+        <Link 
+          href="/"
+          className="inline-flex items-center gap-2 text-primary hover:text-primary/80 transition-colors mb-8"
+          onClick={(e) => {
+            if (!isPending) {
+              e.preventDefault();
+              handleBack();
+            }
+          }}
         >
           <ArrowLeft className="w-5 h-5" />
           Back
-        </button>
+        </Link>
 
         {/* Title */}
         <h1 className="text-3xl font-bold text-foreground mb-8">Search Tokens</h1>
