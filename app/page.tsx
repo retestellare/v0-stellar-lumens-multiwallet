@@ -138,65 +138,107 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="space-y-8">
-            {/* Active Wallet Summary */}
+            {/* Active Wallet Summary - Premium Card */}
             {activeWallet && (
-              <div className="glow-border p-6 rounded-lg space-y-4">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h2 className="text-sm font-medium text-muted-foreground">Active Wallet</h2>
-                    <p className="text-2xl font-bold text-primary mt-1">{activeWallet.name}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm text-muted-foreground">Total Balance</p>
-                    <p className="text-3xl font-bold text-foreground mt-1">
-                      {(activeWallet.balances.find((b: any) => b.asset_type === 'native')?.balance || '0')} XLM
-                    </p>
+              <div className="space-y-6">
+                {/* Balance Display Card */}
+                <div className="relative overflow-hidden rounded-2xl p-8 bg-gradient-to-br from-card to-card/50 border border-primary/20 shadow-2xl">
+                  {/* Decorative background elements */}
+                  <div className="absolute top-0 right-0 w-96 h-96 bg-primary/5 rounded-full blur-3xl -z-10"></div>
+                  <div className="absolute bottom-0 left-0 w-64 h-64 bg-accent/5 rounded-full blur-3xl -z-10"></div>
+                  
+                  <div className="relative z-10 flex flex-col md:flex-row md:items-end md:justify-between gap-6">
+                    {/* Left Side - Wallet Info */}
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Active Wallet</p>
+                      <h1 className="text-4xl md:text-5xl font-bold text-foreground">{activeWallet.name}</h1>
+                    </div>
+                    
+                    {/* Right Side - Balance */}
+                    <div className="text-right space-y-2">
+                      <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Total Balance</p>
+                      <div className="flex items-baseline justify-end gap-1">
+                        <p className="text-5xl md:text-6xl font-bold text-primary">
+                          {(activeWallet.balances.find((b: any) => b.asset_type === 'native')?.balance || '0').split('.')[0]}
+                        </p>
+                        <p className="text-2xl text-muted-foreground">
+                          .{(activeWallet.balances.find((b: any) => b.asset_type === 'native')?.balance || '0').split('.')[1] || '00'}
+                        </p>
+                      </div>
+                      <p className="text-lg font-medium text-foreground">XLM</p>
+                      <p className="text-sm text-muted-foreground">≈ $12.45 USD</p>
+                    </div>
                   </div>
                 </div>
 
+                {/* Quick Action Grid - 2x2 + Full Width */}
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  {/* Send */}
                   <button 
                     onClick={handleSendClick}
-                    className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group"
+                    className="group relative overflow-hidden rounded-xl p-4 bg-card border border-primary/30 hover:border-primary/60 transition-all hover:shadow-lg hover:shadow-primary/20"
                   >
-                    <Send className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
-                    <p className="text-xs font-medium text-foreground">Send</p>
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <div className="relative z-10 flex flex-col items-center gap-2">
+                      <Send className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
+                      <p className="text-sm font-semibold text-foreground">Send</p>
+                    </div>
                   </button>
+                  
+                  {/* Receive */}
                   <button 
                     onClick={handleReceiveClick}
-                    className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group"
+                    className="group relative overflow-hidden rounded-xl p-4 bg-card border border-primary/30 hover:border-primary/60 transition-all hover:shadow-lg hover:shadow-primary/20"
                   >
-                    <Download className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
-                    <p className="text-xs font-medium text-foreground">Receive</p>
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <div className="relative z-10 flex flex-col items-center gap-2">
+                      <Download className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
+                      <p className="text-sm font-semibold text-foreground">Receive</p>
+                    </div>
                   </button>
-                  <Link href="/token-search" className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group">
-                    <Search className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
-                    <p className="text-xs font-medium text-foreground">Search</p>
+                  
+                  {/* Search */}
+                  <Link href="/token-search" className="group relative overflow-hidden rounded-xl p-4 bg-card border border-primary/30 hover:border-primary/60 transition-all hover:shadow-lg hover:shadow-primary/20">
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <div className="relative z-10 flex flex-col items-center gap-2">
+                      <Search className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
+                      <p className="text-sm font-semibold text-foreground">Search</p>
+                    </div>
                   </Link>
+                  
+                  {/* Exchange */}
                   <button 
                     onClick={handleExchangeClick}
                     disabled={isPending}
-                    className="glow-border p-3 rounded-lg hover:bg-primary/10 disabled:opacity-50 transition-colors text-center group"
+                    className="group relative overflow-hidden rounded-xl p-4 bg-card border border-primary/30 hover:border-primary/60 disabled:opacity-50 transition-all hover:shadow-lg hover:shadow-primary/20"
                   >
-                    <ArrowRightLeft className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
-                    <p className="text-xs font-medium text-foreground">Exchange</p>
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <div className="relative z-10 flex flex-col items-center gap-2">
+                      <ArrowRightLeft className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
+                      <p className="text-sm font-semibold text-foreground">Exchange</p>
+                    </div>
                   </button>
+                  
+                  {/* Pools */}
                   <button 
                     onClick={handlePoolsClick}
                     disabled={isPending}
-                    className="glow-border p-3 rounded-lg hover:bg-primary/10 disabled:opacity-50 transition-colors text-center group"
+                    className="group relative overflow-hidden rounded-xl p-4 bg-card border border-primary/30 hover:border-primary/60 disabled:opacity-50 transition-all hover:shadow-lg hover:shadow-primary/20"
                   >
-                    <Droplets className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
-                    <p className="text-xs font-medium text-foreground">Pools</p>
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <div className="relative z-10 flex flex-col items-center gap-2">
+                      <Droplets className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
+                      <p className="text-sm font-semibold text-foreground">Pools</p>
+                    </div>
                   </button>
                 </div>
 
                 {/* Assets List */}
-                <div className="space-y-2">
-                  <h3 className="text-sm font-medium text-muted-foreground">Assets</h3>
-                  <div className="grid gap-2 max-h-48 overflow-y-auto">
+                <div className="space-y-3">
+                  <h3 className="text-lg font-semibold text-foreground">Your Assets</h3>
+                  <div className="grid gap-2 max-h-64 overflow-y-auto rounded-xl bg-card/50 border border-primary/10 p-3">
                     {activeWallet.balances.length === 0 ? (
-                      <p className="text-xs text-muted-foreground text-center py-4">No assets yet. Fund your wallet to get started.</p>
+                      <p className="text-sm text-muted-foreground text-center py-6">No assets yet. Fund your wallet to get started.</p>
                     ) : (
                       activeWallet.balances.map((balance: any, idx: number) => (
                         <AssetItem
@@ -204,7 +246,7 @@ export default function DashboardPage() {
                           code={balance.asset_code || 'XLM'}
                           issuer={balance.asset_issuer || ''}
                           balance={balance.balance}
-                          onClick={() => setSelectedAsset({
+                          onClick={() => handleSelectAsset({
                             code: balance.asset_code || 'XLM',
                             issuer: balance.asset_issuer,
                             balance: balance.balance,
@@ -217,17 +259,18 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* Wallets Grid */}
+            {/* Wallets Grid Section */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-foreground">Your Wallets</h3>
+                <div>
+                  <h2 className="text-2xl font-bold text-foreground">Your Wallets</h2>
+                  <p className="text-sm text-muted-foreground mt-1">{wallets.length} wallet{wallets.length !== 1 ? 's' : ''} available</p>
+                </div>
                 <Button
                   onClick={handleAddWallet}
-                  variant="outline"
-                  size="sm"
-                  className="border-primary/50 text-primary hover:bg-primary/10 gap-2"
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 border border-primary/50 gap-2 font-semibold rounded-xl h-11"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-5 h-5" />
                   Add Wallet
                 </Button>
               </div>
