@@ -10,7 +10,7 @@ import { ReceiveModal } from '@/components/receive-modal';
 import { AssetDetailModal } from '@/components/asset-detail-modal';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/lib/wallet-context';
-import { Plus, Send, ArrowRightLeft, Briefcase, Download, Droplets } from 'lucide-react';
+import { Plus, Send, ArrowRightLeft, Briefcase, Download, Droplets, Search } from 'lucide-react';
 import Link from 'next/link';
 import { AssetItem } from '@/components/asset-item';
 
@@ -101,9 +101,9 @@ export default function DashboardPage() {
                     <Download className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
                     <p className="text-xs font-medium text-foreground">Receive</p>
                   </button>
-                  <Link href="/portfolio" className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group">
-                    <Briefcase className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
-                    <p className="text-xs font-medium text-foreground">Portfolio</p>
+                  <Link href="/token-search" className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group">
+                    <Search className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
+                    <p className="text-xs font-medium text-foreground">Search</p>
                   </Link>
                   <button 
                     onClick={handleExchangeClick}
