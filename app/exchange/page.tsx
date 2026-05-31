@@ -71,6 +71,7 @@ export default function ExchangePage() {
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [chartData, setChartData] = useState<any[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
+  const [chartTimeRange, setChartTimeRange] = useState<'1h' | '4h' | '1d' | '1w' | '1m'>('1h');
   const [filledOrders, setFilledOrders] = useState<any[]>([]);
   const [filledLoading, setFilledLoading] = useState(false);
   
@@ -273,11 +274,41 @@ export default function ExchangePage() {
     const fetchChartData = async () => {
       setChartLoading(true);
       try {
+        // Configure resolution and limit based on time range
+        let resolution: number;
+        let limit: number;
+
+        switch (chartTimeRange) {
+          case '1h':
+            resolution = 300000; // 5-minute candles
+            limit = 12; // 12 * 5min = 1 hour
+            break;
+          case '4h':
+            resolution = 900000; // 15-minute candles
+            limit = 16; // 16 * 15min = 4 hours
+            break;
+          case '1d':
+            resolution = 3600000; // 1-hour candles
+            limit = 24; // 24 * 1h = 1 day
+            break;
+          case '1w':
+            resolution = 86400000; // 1-day candles
+            limit = 7; // 7 * 1d = 1 week
+            break;
+          case '1m':
+            resolution = 604800000; // 1-week candles
+            limit = 4; // 4 * 1w = ~1 month
+            break;
+          default:
+            resolution = 3600000;
+            limit = 24;
+        }
+
         const aggregations = await getTradeAggregations(
           sellingAsset, sellingIssuer,
           buyingAsset, buyingIssuer,
-          3600000, // 1 hour resolution
-          48 // 48 hours of data
+          resolution,
+          limit
         );
         setChartData(aggregations);
       } catch {
@@ -290,7 +321,7 @@ export default function ExchangePage() {
     if (mounted) {
       fetchChartData();
     }
-  }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
+  }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted, chartTimeRange]);
 
   // Fetch user's filled orders (trade history) - also clears on wallet change
   useEffect(() => {
@@ -822,6 +853,8 @@ export default function ExchangePage() {
                 loading={chartLoading}
                 sellingAsset={sellingAsset}
                 buyingAsset={buyingAsset}
+                timeRange={chartTimeRange}
+                onTimeRangeChange={setChartTimeRange}
               />
             )}
           </div>

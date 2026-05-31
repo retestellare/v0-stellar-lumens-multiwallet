@@ -1,7 +1,8 @@
 'use client';
 
-import React from 'react';
-import { CheckCircle2, ArrowUpRight, ArrowDownRight, Clock } from 'lucide-react';
+import React, { useState } from 'react';
+import { CheckCircle2, ArrowUpRight, ArrowDownRight, Clock, RotateCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface FilledOrder {
   id: string;
@@ -41,6 +42,18 @@ function isPrimaryAsset(assetCode: string): boolean {
 }
 
 export function FilledOrders({ orders, loading }: FilledOrdersProps) {
+  const [reversedOrderIds, setReversedOrderIds] = useState<Set<string>>(new Set());
+
+  const toggleReversed = (orderId: string) => {
+    const newSet = new Set(reversedOrderIds);
+    if (newSet.has(orderId)) {
+      newSet.delete(orderId);
+    } else {
+      newSet.add(orderId);
+    }
+    setReversedOrderIds(newSet);
+  };
+
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
     return date.toLocaleString('en-US', {
@@ -123,6 +136,15 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
             const receivedAsset = userWasBuyer ? displayBaseCode : displayCounterCode;
             const receivedAmount = userWasBuyer ? displayBaseAmount : displayCounterAmount;
             
+            // Calculate display values based on reversed state
+            const isReversed = reversedOrderIds.has(order.id);
+            
+            // Reversed view: flip the pair and invert the price
+            const finalDisplayBaseCode = isReversed ? displayCounterCode : displayBaseCode;
+            const finalDisplayCounterCode = isReversed ? displayBaseCode : displayCounterCode;
+            const finalDisplayPrice = isReversed && displayPrice > 0 ? (1 / displayPrice) : displayPrice;
+            const finalTradingPair = `${finalDisplayBaseCode} / ${finalDisplayCounterCode}`;
+            
             return (
               <div
                 key={order.id}
@@ -140,7 +162,7 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
                     }`}>
                       {userWasBuyer ? 'BUY' : 'SELL'}
                     </span>
-                    <span className="text-sm font-bold text-foreground">{tradingPair}</span>
+                    <span className="text-sm font-bold text-foreground">{finalTradingPair}</span>
                     {order.isLPTrade && (
                       <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400">
                         LP
@@ -154,12 +176,23 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
                   </div>
                 </div>
                 
-                {/* Price Per Unit (normalized: quote per base) */}
-                <div className="mb-3 text-xs">
-                  <span className="text-muted-foreground">Price: </span>
-                  <span className="font-mono font-semibold text-foreground">
-                    {formatSmartNumber(displayPrice)} {displayCounterCode}/{displayBaseCode}
-                  </span>
+                {/* Price Per Unit with Reverse View Button */}
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div className="text-xs">
+                    <span className="text-muted-foreground">Price: </span>
+                    <span className="font-mono font-semibold text-foreground">
+                      {formatSmartNumber(finalDisplayPrice)} {finalDisplayCounterCode}/{finalDisplayBaseCode}
+                    </span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => toggleReversed(order.id)}
+                    className="h-6 w-6 p-0 rounded-full hover:bg-primary/20 text-primary flex-shrink-0"
+                    title="Reverse view"
+                  >
+                    <RotateCw className="w-3.5 h-3.5" />
+                  </Button>
                 </div>
                 
                 {/* Amount Flow - Stacked on mobile */}
