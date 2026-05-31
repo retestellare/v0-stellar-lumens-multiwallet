@@ -13,10 +13,25 @@ import { TokenMetadata } from '@/types/token';
 
 const HORIZON_URL = 'https://horizon.stellar.org';
 
-// Known tokens metadata
+// Known tokens metadata - same as token-selector-modal for consistency
 const KNOWN_TOKEN_METADATA: Record<string, { name: string; domain: string; image: string }> = {
   'XLM_': { name: 'Stellar Lumens', domain: 'stellar.org', image: 'https://assets.coingecko.com/coins/images/100/small/Stellar_symbol_black_RGB.png' },
   'USDC_GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN': { name: 'USD Coin', domain: 'circle.com', image: 'https://assets.coingecko.com/coins/images/6319/small/usdc.png' },
+  'EURC_GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2': { name: 'Euro Coin', domain: 'circle.com', image: 'https://assets.coingecko.com/coins/images/26045/small/euro-coin.png' },
+  'yXLM_GARDNV3Q7YGT4AKSDF25LT32YSCCW4EV22Y2TV3I2PU2MMXJTEDL5T55': { name: 'Yield XLM', domain: 'ultrastellar.com', image: 'https://ultrastellar.com/static/images/icons/yXLM.png' },
+  'AQUA_GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA': { name: 'Aquarius', domain: 'aqua.network', image: 'https://aqua.network/assets/img/aqua-logo.png' },
+  'BTC_GDPJALI4AZKUU2W426U5WKMAT6CN3AJRPIIRYR2YM54TL2GDWO5O2MZM': { name: 'Bitcoin', domain: 'ultrastellar.com', image: 'https://assets.coingecko.com/coins/images/1/small/bitcoin.png' },
+  'ETH_GDPJALI4AZKUU2W426U5WKMAT6CN3AJRPIIRYR2YM54TL2GDWO5O2MZM': { name: 'Ethereum', domain: 'ultrastellar.com', image: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png' },
+  'SHX_GDSTRSHXHGJ7ZIVRBXEYE5Q74XUVCUSEZ6GKPNAC4ZISIJEJNLBPA4FT': { name: 'Stronghold SHX', domain: 'stronghold.co', image: 'https://assets.coingecko.com/coins/images/31254/small/SHX.png' },
+  'USD_GDUKMGUGDZQK6YHYA5Z6AY2G4XDSZPSZ3SW5UN3ARVMO6QSRDWP5YLEX': { name: 'AnchorUSD', domain: 'anchorusd.com', image: 'https://assets.coingecko.com/coins/images/325/small/Tether.png' },
+  'VELO_GDM4RQUQQUVSKQA7S6EM7XBZP3FCGH4Q7CL6TABQ7B2BEJ5ERARM2M5M': { name: 'Velo', domain: 'velo.org', image: 'https://assets.coingecko.com/coins/images/12722/small/velo.png' },
+  'RIO_GBNLJIYH34UWO5YZFA3A3HD3N76R6DOI33N4JONUOHEEYZYCAYTEJ5AK': { name: 'Realio', domain: 'realio.fund', image: 'https://assets.coingecko.com/coins/images/12206/small/realio.png' },
+  'ARST_GCSAZVWXZKWS4XS223M5F54H2B6XPIBER2JJ4CA4DDXPLGMIVLRMR2': { name: 'ARS Token', domain: 'anclap.com', image: 'https://anclap.com/assets/img/arst-logo.png' },
+  'BRLT_GCHH4UPC43VEMDOZ2OYSEFWPVNBVPZQLSUF3USKX6CJXJ6JKF3AIYBRLT': { name: 'BRL Token', domain: 'ntokens.com', image: 'https://ntokens.com/assets/brlt-logo.png' },
+  'DOGET_GDOEVDDBU6OBWKL7VHDAOKD77UP4DKHQYKOKJJT5PR3WRDBTX35HUEUX': { name: 'Doge Token', domain: 'doget.org', image: 'https://doget.org/assets/doget-logo.png' },
+  'yUSDC_GDGTVWSM4MGS4T7Z6W4RPWOCHE2I6RDFCIFZG5YCHF3QHFKWVWDCCV': { name: 'Yield USDC', domain: 'ultrastellar.com', image: 'https://ultrastellar.com/static/images/icons/yUSDC.png' },
+  'FIDR_GBZQNUAGO4DZFWOHJ3PVXZKZ2LTSOVAMCTVM46OEMWNWTED4DFS3NAYH': { name: 'FIDR', domain: 'fidr.io', image: '' },
+  'LSP_GAB7STHVD5BDH3EEYXPI3OM7PCS4V443PYB5FNT6CFGJVPDLMKDM24WK': { name: 'Lumenswap', domain: 'lumenswap.io', image: '' },
 };
 
 function enrichTokenWithMetadata(code: string, issuer: string | undefined): { name?: string; domain?: string; image?: string; verified?: boolean } {
@@ -266,24 +281,44 @@ export default function TokenSearchPage() {
         {/* Title */}
         <h1 className="text-3xl font-bold text-foreground mb-8">Search Tokens</h1>
 
-        {/* Search Box */}
-        <div className="glow-border p-6 rounded-lg mb-8 space-y-4">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-            <Input
-              placeholder="Search by token name, domain, or issuer address"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              autoFocus
-              className="bg-input border-border text-foreground pl-12 pr-10 py-3 text-lg"
-            />
-            {loading && <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-primary animate-spin" />}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <span className="text-xs text-muted-foreground">Search by:</span>
-            <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Token name (e.g., Bitcoin)</span>
-            <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Domain (e.g., circle.com)</span>
-            <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Issuer (e.g., GA5ZS...)</span>
+        {/* Search Box - Enhanced Graphics */}
+        <div className="relative -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pt-6 pb-8 mb-12 bg-gradient-to-b from-primary/20 via-primary/10 to-transparent rounded-b-3xl border-b-2 border-primary/30">
+          {/* Animated background elements */}
+          <div className="absolute top-2 right-8 w-48 h-48 bg-primary/8 rounded-full blur-3xl -z-10 opacity-60"></div>
+          <div className="absolute -bottom-10 left-12 w-40 h-40 bg-primary/5 rounded-full blur-2xl -z-10"></div>
+          
+          <div className="space-y-5 relative z-10">
+            {/* Search Input with enhanced styling */}
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-primary" />
+              <Input
+                placeholder="Search by token name, domain, or issuer address"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                autoFocus
+                className="bg-background/60 border-2 border-primary/50 text-foreground placeholder:text-muted-foreground/60 pl-12 pr-12 py-4 text-base font-medium rounded-xl focus:border-primary focus:bg-background focus:ring-2 focus:ring-primary/20 transition-all duration-200"
+              />
+              {loading && <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-primary animate-spin" />}
+            </div>
+            
+            {/* Modern Search Methods Cards */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-primary/80 uppercase tracking-widest pl-1">Search methods:</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="group px-3.5 py-2.5 rounded-lg bg-primary/15 border border-primary/40 hover:bg-primary/20 hover:border-primary/60 transition-all duration-200 cursor-default">
+                  <p className="text-xs font-semibold text-primary/90 group-hover:text-primary">🔤 Token name</p>
+                  <p className="text-xs text-primary/70 group-hover:text-primary/80 mt-0.5">e.g., Bitcoin</p>
+                </div>
+                <div className="group px-3.5 py-2.5 rounded-lg bg-primary/15 border border-primary/40 hover:bg-primary/20 hover:border-primary/60 transition-all duration-200 cursor-default">
+                  <p className="text-xs font-semibold text-primary/90 group-hover:text-primary">🌐 Domain</p>
+                  <p className="text-xs text-primary/70 group-hover:text-primary/80 mt-0.5">e.g., circle.com</p>
+                </div>
+                <div className="group px-3.5 py-2.5 rounded-lg bg-primary/15 border border-primary/40 hover:bg-primary/20 hover:border-primary/60 transition-all duration-200 cursor-default">
+                  <p className="text-xs font-semibold text-primary/90 group-hover:text-primary">🔑 Issuer</p>
+                  <p className="text-xs text-primary/70 group-hover:text-primary/80 mt-0.5">e.g., GA5ZS...</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -318,9 +353,9 @@ export default function TokenSearchPage() {
           </div>
         ) : (
           <div className="space-y-8">
-            {/* Curated by LOBSTR */}
+            {/* Recommended by Orion */}
             <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-foreground">Curated by LOBSTR</h2>
+              <h2 className="text-lg font-semibold text-foreground">Recommended by Orion</h2>
               <div className="grid gap-3">
                 {recommendedTokens.map((token) => {
                   const isFav = favorites.has(`${token.code}_${token.issuer}`);
