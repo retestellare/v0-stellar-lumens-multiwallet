@@ -6,9 +6,9 @@ import Link from 'next/link';
 import { Header } from '@/components/header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, ArrowLeft, Loader2, Star } from 'lucide-react';
+import { Search, ArrowLeft, Loader2, Star, X, Copy, Check, ExternalLink, Trash2 } from 'lucide-react';
 import { getTokenPicks } from '@/lib/token-service';
-import { getIssuerTokenIcon } from '@/lib/stellar-utils';
+import { getIssuerTokenIcon, fetchTokenMetadataFromToml } from '@/lib/stellar-utils';
 import { getFavoriteTokens, toggleFavoriteToken } from '@/lib/token-storage';
 import { TokenMetadata } from '@/types/token';
 
@@ -125,7 +125,7 @@ async function searchHorizonTokens(query: string): Promise<Token[]> {
   }
 }
 
-function TokenCard({ token, isFav, onToggleFavorite }: { token: Token; isFav: boolean; onToggleFavorite: () => void }) {
+function TokenCard({ token, isFav, onToggleFavorite, onSelect }: { token: Token; isFav: boolean; onToggleFavorite: () => void; onSelect: () => void }) {
   const [iconUrl, setIconUrl] = useState<string | null>(token.image || null);
   const [imageError, setImageError] = useState(false);
   const [domain, setDomain] = useState<string | undefined>(token.domain);
@@ -160,7 +160,7 @@ function TokenCard({ token, isFav, onToggleFavorite }: { token: Token; isFav: bo
   const handleFavorite = useCallback(() => onToggleFavorite(), [onToggleFavorite]);
 
   return (
-    <div className="flex items-start gap-4 p-4 border border-border/50 rounded-lg hover:border-primary/50 bg-background/30 hover:bg-primary/10 transition-all">
+    <button onClick={onSelect} className="w-full text-left flex items-start gap-4 p-4 border border-primary/30 rounded-lg hover:border-primary/60 bg-card hover:bg-card/80 transition-all">
       <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-lg font-bold overflow-hidden flex-shrink-0">
         {iconUrl && !imageError ? (
           <img src={iconUrl} alt={token.code} className="w-full h-full object-cover" onError={handleImageError} />
@@ -176,10 +176,16 @@ function TokenCard({ token, isFav, onToggleFavorite }: { token: Token; isFav: bo
         {token.name && <p className="text-sm text-muted-foreground truncate">{token.name}</p>}
         <p className="text-xs text-muted-foreground/70 truncate">{displayDomain}</p>
       </div>
-      <button onClick={handleFavorite} className="text-muted-foreground hover:text-primary transition-colors flex-shrink-0">
+      <button 
+        onClick={(e) => {
+          e.stopPropagation();
+          handleFavorite();
+        }} 
+        className="text-muted-foreground hover:text-primary transition-colors flex-shrink-0"
+      >
         <Star className="w-5 h-5" fill={isFav ? 'currentColor' : 'none'} />
       </button>
-    </div>
+    </button>
   );
 }
 
@@ -190,6 +196,11 @@ export default function TokenSearchPage() {
   const [searchResults, setSearchResults] = useState<Token[]>([]);
   const [loading, setLoading] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [selectedToken, setSelectedToken] = useState<Token | null>(null);
+  const [tokenDetails, setTokenDetails] = useState<any>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'about' | 'receive' | 'send'>('about');
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   const recommendedTokens = useMemo(() => {
     return getTokenPicks().map((t) => ({
@@ -255,6 +266,45 @@ export default function TokenSearchPage() {
       router.back();
     });
   }, [router]);
+
+  const handleSelectToken = useCallback((token: Token) => {
+    setSelectedToken(token);
+    setDetailLoading(true);
+    setActiveTab('about');
+    if (token.issuer) {
+      fetchTokenMetadataFromToml(token.issuer)
+        .then(data => {
+          setTokenDetails(data);
+        })
+        .finally(() => setDetailLoading(false));
+    } else {
+      // Native XLM
+      setTokenDetails({
+        name: 'Stellar Lumens',
+        desc: 'XLM is the native asset of the Stellar network.',
+        orgName: 'Stellar Development Foundation',
+        orgUrl: 'https://stellar.org',
+      });
+      setDetailLoading(false);
+    }
+  }, []);
+
+  const handleCloseDetail = useCallback(() => {
+    setSelectedToken(null);
+    setTokenDetails(null);
+  }, []);
+
+  const copyToClipboard = (text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const openStellarExpert = () => {
+    if (selectedToken?.issuer) {
+      window.open(`https://stellar.expert/explorer/public/asset/${selectedToken.code}-${selectedToken.issuer}`, '_blank');
+    }
+  };
 
   const displayTokens = searchQuery.length >= 2 ? searchResults : [];
   const showRecommended = searchQuery.length < 2;
@@ -345,6 +395,7 @@ export default function TokenSearchPage() {
                       token={token}
                       isFav={isFav}
                       onToggleFavorite={() => handleToggleFavorite(token)}
+                      onSelect={() => handleSelectToken(token)}
                     />
                   );
                 })}
@@ -365,6 +416,7 @@ export default function TokenSearchPage() {
                       token={token}
                       isFav={isFav}
                       onToggleFavorite={() => handleToggleFavorite(token)}
+                      onSelect={() => handleSelectToken(token)}
                     />
                   );
                 })}
@@ -383,9 +435,183 @@ export default function TokenSearchPage() {
                       token={token}
                       isFav={isFav}
                       onToggleFavorite={() => handleToggleFavorite(token)}
+                      onSelect={() => handleSelectToken(token)}
                     />
                   );
                 })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Token Detail Modal */}
+        {selectedToken && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-card border border-primary/30 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+              {/* Header */}
+              <div className="sticky top-0 bg-card border-b border-primary/20 p-4 flex items-start justify-between">
+                <div className="flex items-start gap-3 flex-1">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center flex-shrink-0 text-lg font-bold">
+                    {selectedToken.code.charAt(0)}
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="font-bold text-foreground">{selectedToken.code}</h2>
+                    <p className="text-xs text-muted-foreground truncate">{selectedToken.issuer || 'Native'}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleCloseDetail}
+                  className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Tabs */}
+              <div className="border-b border-primary/20 flex">
+                {(['about', 'receive', 'send'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                      activeTab === tab
+                        ? 'text-primary border-b-2 border-primary -mb-[2px]'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  </button>
+                ))}
+              </div>
+
+              {/* Content */}
+              <div className="p-4 space-y-4">
+                {activeTab === 'about' && (
+                  <div className="space-y-4">
+                    {detailLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="w-5 h-5 text-primary animate-spin mr-2" />
+                        <p className="text-sm text-muted-foreground">Loading token details...</p>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Remove Asset Button */}
+                        <button className="w-full bg-destructive/20 hover:bg-destructive/30 text-destructive border border-destructive/30 py-2 px-4 rounded-lg font-medium text-sm transition-colors">
+                          Remove Asset
+                        </button>
+
+                        {/* Token Details */}
+                        {tokenDetails && (
+                          <div className="space-y-3">
+                            {tokenDetails.name && (
+                              <div className="flex items-center justify-between py-2 border-b border-border/50">
+                                <span className="text-sm text-muted-foreground">Asset Name</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-foreground">{tokenDetails.name}</span>
+                                  <button
+                                    onClick={() => copyToClipboard(tokenDetails.name, 'name')}
+                                    className="text-muted-foreground hover:text-primary"
+                                  >
+                                    {copiedField === 'name' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                            {selectedToken.issuer && (
+                              <div className="flex items-center justify-between py-2 border-b border-border/50">
+                                <span className="text-sm text-muted-foreground">Asset Issuer</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-foreground truncate">{selectedToken.issuer.substring(0, 16)}...</span>
+                                  <button
+                                    onClick={() => copyToClipboard(selectedToken.issuer || '', 'issuer')}
+                                    className="text-muted-foreground hover:text-primary"
+                                  >
+                                    {copiedField === 'issuer' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                            {tokenDetails.orgUrl && (
+                              <div className="flex items-center justify-between py-2 border-b border-border/50">
+                                <span className="text-sm text-muted-foreground">Asset Website</span>
+                                <button
+                                  onClick={() => window.open(tokenDetails.orgUrl, '_blank')}
+                                  className="text-primary hover:text-primary/80 flex items-center gap-1"
+                                >
+                                  <span className="text-sm truncate max-w-xs">{tokenDetails.orgUrl.replace(/https?:\/\//, '')}</span>
+                                  <ExternalLink className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
+                            {tokenDetails.orgName && (
+                              <div className="flex items-center justify-between py-2 border-b border-border/50">
+                                <span className="text-sm text-muted-foreground">Organization</span>
+                                <span className="text-sm font-medium text-foreground">{tokenDetails.orgName}</span>
+                              </div>
+                            )}
+                            {tokenDetails.orgEmail && (
+                              <div className="flex items-center justify-between py-2 border-b border-border/50">
+                                <span className="text-sm text-muted-foreground">Organization Email</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-foreground">{tokenDetails.orgEmail}</span>
+                                  <button
+                                    onClick={() => copyToClipboard(tokenDetails.orgEmail, 'email')}
+                                    className="text-muted-foreground hover:text-primary"
+                                  >
+                                    {copiedField === 'email' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                            {tokenDetails.orgTwitter && (
+                              <div className="flex items-center justify-between py-2 border-b border-border/50">
+                                <span className="text-sm text-muted-foreground">Twitter</span>
+                                <button
+                                  onClick={() => window.open(`https://twitter.com/${tokenDetails.orgTwitter}`, '_blank')}
+                                  className="text-primary hover:text-primary/80 flex items-center gap-1"
+                                >
+                                  <span className="text-sm">{tokenDetails.orgTwitter}</span>
+                                  <ExternalLink className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
+                            {tokenDetails.orgAddress && (
+                              <div className="flex items-center justify-between py-2 border-b border-border/50">
+                                <span className="text-sm text-muted-foreground">Organization Address</span>
+                                <span className="text-sm font-medium text-foreground text-right">{tokenDetails.orgAddress}</span>
+                              </div>
+                            )}
+                            {tokenDetails.conditions && (
+                              <div className="flex items-center justify-between py-2 border-b border-border/50">
+                                <span className="text-sm text-muted-foreground">Asset Redemption</span>
+                                <span className="text-sm font-medium text-foreground text-right">{tokenDetails.conditions}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* View on Stellar Expert */}
+                        <button
+                          onClick={openStellarExpert}
+                          className="w-full mt-4 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 py-2 px-4 rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-2"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                          View on Stellar Expert
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+                {activeTab === 'receive' && (
+                  <div className="text-center py-6">
+                    <p className="text-muted-foreground">Receive functionality coming soon</p>
+                  </div>
+                )}
+                {activeTab === 'send' && (
+                  <div className="text-center py-6">
+                    <p className="text-muted-foreground">Send functionality coming soon</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
