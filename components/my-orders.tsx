@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { X, ArrowDownRight, ArrowUpRight, TrendingUp, TrendingDown } from 'lucide-react';
+import { X, ArrowDownRight, ArrowUpRight, TrendingUp, TrendingDown, RotateCw } from 'lucide-react';
 
 interface ActiveOrder {
   id: string;
@@ -32,6 +32,18 @@ const truncateIssuer = (issuer: string) => {
 };
 
 export function MyOrders({ orders, loading, onCancelOrder }: MyOrdersProps) {
+  const [reversedOrderIds, setReversedOrderIds] = useState<Set<string>>(new Set());
+
+  const toggleReversed = (orderId: string) => {
+    const newSet = new Set(reversedOrderIds);
+    if (newSet.has(orderId)) {
+      newSet.delete(orderId);
+    } else {
+      newSet.add(orderId);
+    }
+    setReversedOrderIds(newSet);
+  };
+
   return (
     <div className="glow-border rounded-lg overflow-hidden">
       {/* Header */}
@@ -70,6 +82,7 @@ export function MyOrders({ orders, loading, onCancelOrder }: MyOrdersProps) {
             const isBuy = order.type === 'buy';
             const price = parseFloat(order.price);
             const amount = parseFloat(order.amount);
+            const isReversed = reversedOrderIds.has(order.id);
             
             // Calculate what you give and what you receive
             // For a SELL: you give sellingCode, you receive buyingCode
@@ -81,7 +94,24 @@ export function MyOrders({ orders, loading, onCancelOrder }: MyOrdersProps) {
             const youReceiveAsset = order.buyingCode;
             
             // Trading pair display
-            const tradingPair = `${order.sellingCode} / ${order.buyingCode}`;
+            let tradingPair = `${order.sellingCode} / ${order.buyingCode}`;
+            let displayPrice = price;
+            let priceText = `Price per ${order.sellingCode}: `;
+            let displayYouGiveAmount = youGiveAmount;
+            let displayYouGiveAsset = youGiveAsset;
+            let displayYouReceiveAmount = youReceiveAmount;
+            let displayYouReceiveAsset = youReceiveAsset;
+            
+            // Apply reversed view if toggled
+            if (isReversed && displayPrice > 0) {
+              tradingPair = `${order.buyingCode} / ${order.sellingCode}`;
+              displayPrice = 1 / price;
+              priceText = `Price per ${order.buyingCode}: `;
+              displayYouGiveAmount = youReceiveAmount;
+              displayYouGiveAsset = youReceiveAsset;
+              displayYouReceiveAmount = youGiveAmount;
+              displayYouReceiveAsset = youGiveAsset;
+            }
             
             const remaining = amount - parseFloat(order.filled);
             const progress = (parseFloat(order.filled) / amount * 100);
@@ -119,9 +149,20 @@ export function MyOrders({ orders, loading, onCancelOrder }: MyOrdersProps) {
                 </p>
                 
                 {/* Price Per Unit */}
-                <div className="mb-4 text-sm">
-                  <span className="text-muted-foreground">Price per {order.sellingCode}: </span>
-                  <span className="font-mono font-semibold text-foreground">{price.toFixed(7)} {order.buyingCode}</span>
+                <div className="mb-4 text-sm flex items-center justify-between gap-2">
+                  <div>
+                    <span className="text-muted-foreground">{priceText}</span>
+                    <span className="font-mono font-semibold text-foreground">{displayPrice.toFixed(7)} {isReversed ? order.sellingCode : order.buyingCode}</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => toggleReversed(order.id)}
+                    className="h-6 w-6 p-0 rounded-full hover:bg-primary/20 text-primary flex-shrink-0"
+                    title="Reverse view"
+                  >
+                    <RotateCw className="w-3.5 h-3.5" />
+                  </Button>
                 </div>
                 
                 {/* Amount Flow - What you give/receive */}
@@ -131,9 +172,9 @@ export function MyOrders({ orders, loading, onCancelOrder }: MyOrdersProps) {
                     <div className="flex items-center gap-2 text-destructive">
                       <ArrowUpRight className="w-4 h-4" />
                       <span className="text-xl sm:text-2xl font-bold font-mono">
-                        -{youGiveAmount.toFixed(4)}
+                        -{displayYouGiveAmount.toFixed(4)}
                       </span>
-                      <span className="text-sm font-medium">{youGiveAsset}</span>
+                      <span className="text-sm font-medium">{displayYouGiveAsset}</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1 ml-6">You sell</p>
                   </div>
@@ -143,9 +184,9 @@ export function MyOrders({ orders, loading, onCancelOrder }: MyOrdersProps) {
                     <div className="flex items-center justify-end gap-2 text-green-500">
                       <ArrowDownRight className="w-4 h-4" />
                       <span className="text-xl sm:text-2xl font-bold font-mono">
-                        +{youReceiveAmount.toFixed(4)}
+                        +{displayYouReceiveAmount.toFixed(4)}
                       </span>
-                      <span className="text-sm font-medium">{youReceiveAsset}</span>
+                      <span className="text-sm font-medium">{displayYouReceiveAsset}</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1 mr-6">You receive</p>
                   </div>
@@ -155,7 +196,7 @@ export function MyOrders({ orders, loading, onCancelOrder }: MyOrdersProps) {
                 <div className="pt-3 border-t border-border/30 space-y-2">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">
-                      Remaining: <span className="font-mono font-medium text-foreground">{remaining.toFixed(4)}</span> {order.sellingCode}
+                      Remaining: <span className="font-mono font-medium text-foreground">{(isReversed ? displayYouReceiveAmount : remaining).toFixed(4)}</span> {isReversed ? displayYouReceiveAsset : order.sellingCode}
                     </span>
                     <span className={`font-bold ${progress > 0 ? 'text-green-500' : 'text-muted-foreground'}`}>
                       {progress.toFixed(0)}% filled
