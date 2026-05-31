@@ -137,72 +137,67 @@ export default function DashboardPage() {
             </div>
           </div>
         ) : (
-          <div className="space-y-8">
-            {/* Active Wallet Summary - Premium Card */}
+          <div className="space-y-4">
+            {/* Active Wallet Summary - Compact Premium Card */}
             {activeWallet && (
-              <div className="space-y-6">
-                {/* Balance Display Card */}
-                <div className="relative overflow-hidden rounded-2xl p-8 bg-gradient-to-br from-card to-card/50 border border-primary/20 shadow-2xl">
-                  {/* Decorative background elements */}
-                  <div className="absolute top-0 right-0 w-96 h-96 bg-primary/5 rounded-full blur-3xl -z-10"></div>
-                  <div className="absolute bottom-0 left-0 w-64 h-64 bg-accent/5 rounded-full blur-3xl -z-10"></div>
-                  
-                  <div className="relative z-10 flex flex-col md:flex-row md:items-end md:justify-between gap-6">
+              <div className="space-y-3">
+                {/* Balance Display Card - Compact */}
+                <div className="relative overflow-hidden rounded-xl p-4 bg-gradient-to-br from-card to-card/50 border border-primary/20">
+                  <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     {/* Left Side - Wallet Info */}
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Active Wallet</p>
-                      <h1 className="text-4xl md:text-5xl font-bold text-foreground">{activeWallet.name}</h1>
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Active Wallet</p>
+                      <h1 className="text-lg font-bold text-foreground">{activeWallet.name}</h1>
                     </div>
                     
                     {/* Right Side - Balance */}
-                    <div className="text-right space-y-2">
-                      <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Total Balance</p>
-                      <div className="flex items-baseline justify-end gap-1">
-                        <p className="text-5xl md:text-6xl font-bold text-primary">
+                    <div className="text-right space-y-0.5">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Balance</p>
+                      <div className="flex items-baseline justify-end gap-0.5">
+                        <p className="text-2xl font-bold text-primary">
                           {(activeWallet.balances.find((b: any) => b.asset_type === 'native')?.balance || '0').split('.')[0]}
                         </p>
-                        <p className="text-2xl text-muted-foreground">
+                        <p className="text-xs text-muted-foreground">
                           .{(activeWallet.balances.find((b: any) => b.asset_type === 'native')?.balance || '0').split('.')[1] || '00'}
                         </p>
+                        <p className="text-xs font-medium text-muted-foreground ml-1">XLM</p>
                       </div>
-                      <p className="text-lg font-medium text-foreground">XLM</p>
-                      <p className="text-sm text-muted-foreground">≈ $12.45 USD</p>
                     </div>
                   </div>
                 </div>
 
-                {/* Quick Action Grid - 2x2 + Full Width */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {/* Quick Action Grid - Compact */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
                   {/* Send */}
                   <button 
                     onClick={handleSendClick}
-                    className="group relative overflow-hidden rounded-xl p-4 bg-card border border-primary/30 hover:border-primary/60 transition-all hover:shadow-lg hover:shadow-primary/20"
+                    className="group relative overflow-hidden rounded-lg p-2 bg-card border border-primary/30 hover:border-primary/60 transition-all hover:shadow-md hover:shadow-primary/20"
                   >
                     <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    <div className="relative z-10 flex flex-col items-center gap-2">
-                      <Send className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
-                      <p className="text-sm font-semibold text-foreground">Send</p>
+                    <div className="relative z-10 flex flex-col items-center gap-1">
+                      <Send className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
+                      <p className="text-xs font-medium text-foreground">Send</p>
                     </div>
                   </button>
                   
                   {/* Receive */}
                   <button 
                     onClick={handleReceiveClick}
-                    className="group relative overflow-hidden rounded-xl p-4 bg-card border border-primary/30 hover:border-primary/60 transition-all hover:shadow-lg hover:shadow-primary/20"
+                    className="group relative overflow-hidden rounded-lg p-2 bg-card border border-primary/30 hover:border-primary/60 transition-all hover:shadow-md hover:shadow-primary/20"
                   >
                     <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    <div className="relative z-10 flex flex-col items-center gap-2">
-                      <Download className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
-                      <p className="text-sm font-semibold text-foreground">Receive</p>
+                    <div className="relative z-10 flex flex-col items-center gap-1">
+                      <Download className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
+                      <p className="text-xs font-medium text-foreground">Receive</p>
                     </div>
                   </button>
                   
                   {/* Search */}
-                  <Link href="/token-search" className="group relative overflow-hidden rounded-xl p-4 bg-card border border-primary/30 hover:border-primary/60 transition-all hover:shadow-lg hover:shadow-primary/20">
+                  <Link href="/token-search" className="group relative overflow-hidden rounded-lg p-2 bg-card border border-primary/30 hover:border-primary/60 transition-all hover:shadow-md hover:shadow-primary/20">
                     <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    <div className="relative z-10 flex flex-col items-center gap-2">
-                      <Search className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
-                      <p className="text-sm font-semibold text-foreground">Search</p>
+                    <div className="relative z-10 flex flex-col items-center gap-1">
+                      <Search className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
+                      <p className="text-xs font-medium text-foreground">Search</p>
                     </div>
                   </Link>
                   
@@ -210,12 +205,12 @@ export default function DashboardPage() {
                   <button 
                     onClick={handleExchangeClick}
                     disabled={isPending}
-                    className="group relative overflow-hidden rounded-xl p-4 bg-card border border-primary/30 hover:border-primary/60 disabled:opacity-50 transition-all hover:shadow-lg hover:shadow-primary/20"
+                    className="group relative overflow-hidden rounded-lg p-2 bg-card border border-primary/30 hover:border-primary/60 disabled:opacity-50 transition-all hover:shadow-md hover:shadow-primary/20"
                   >
                     <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    <div className="relative z-10 flex flex-col items-center gap-2">
-                      <ArrowRightLeft className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
-                      <p className="text-sm font-semibold text-foreground">Exchange</p>
+                    <div className="relative z-10 flex flex-col items-center gap-1">
+                      <ArrowRightLeft className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
+                      <p className="text-xs font-medium text-foreground">Exchange</p>
                     </div>
                   </button>
                   
@@ -223,22 +218,22 @@ export default function DashboardPage() {
                   <button 
                     onClick={handlePoolsClick}
                     disabled={isPending}
-                    className="group relative overflow-hidden rounded-xl p-4 bg-card border border-primary/30 hover:border-primary/60 disabled:opacity-50 transition-all hover:shadow-lg hover:shadow-primary/20"
+                    className="group relative overflow-hidden rounded-lg p-2 bg-card border border-primary/30 hover:border-primary/60 disabled:opacity-50 transition-all hover:shadow-md hover:shadow-primary/20"
                   >
                     <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    <div className="relative z-10 flex flex-col items-center gap-2">
-                      <Droplets className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
-                      <p className="text-sm font-semibold text-foreground">Pools</p>
+                    <div className="relative z-10 flex flex-col items-center gap-1">
+                      <Droplets className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
+                      <p className="text-xs font-medium text-foreground">Pools</p>
                     </div>
                   </button>
                 </div>
 
                 {/* Assets List */}
-                <div className="space-y-3">
-                  <h3 className="text-lg font-semibold text-foreground">Your Assets</h3>
-                  <div className="grid gap-2 max-h-64 overflow-y-auto rounded-xl bg-card/50 border border-primary/10 p-3">
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold text-foreground">Your Assets</h3>
+                  <div className="grid gap-2 max-h-56 overflow-y-auto rounded-lg bg-card/50 border border-primary/10 p-2">
                     {activeWallet.balances.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-6">No assets yet. Fund your wallet to get started.</p>
+                      <p className="text-xs text-muted-foreground text-center py-4">No assets yet. Fund your wallet to get started.</p>
                     ) : (
                       activeWallet.balances.map((balance: any, idx: number) => (
                         <AssetItem
@@ -259,23 +254,23 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* Wallets Grid Section */}
-            <div className="space-y-4">
+            {/* Wallets Grid Section - Compact */}
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-2xl font-bold text-foreground">Your Wallets</h2>
-                  <p className="text-sm text-muted-foreground mt-1">{wallets.length} wallet{wallets.length !== 1 ? 's' : ''} available</p>
+                  <h2 className="text-sm font-bold text-foreground">Your Wallets</h2>
+                  <p className="text-xs text-muted-foreground">{wallets.length} wallet{wallets.length !== 1 ? 's' : ''}</p>
                 </div>
                 <Button
                   onClick={handleAddWallet}
-                  className="bg-primary text-primary-foreground hover:bg-primary/90 border border-primary/50 gap-2 font-semibold rounded-xl h-11"
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 border border-primary/50 gap-1 font-semibold rounded-lg h-8 text-xs px-3"
                 >
-                  <Plus className="w-5 h-5" />
-                  Add Wallet
+                  <Plus className="w-4 h-4" />
+                  Add
                 </Button>
               </div>
               
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-2">
                 {wallets.map((wallet) => (
                   <WalletCard
                     key={wallet.id}
