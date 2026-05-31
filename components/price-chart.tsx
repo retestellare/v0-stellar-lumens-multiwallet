@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Loader2, TrendingUp, TrendingDown, Eye, EyeOff } from 'lucide-react';
+import { Loader2, BarChart3, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface ChartDataPoint {
@@ -25,6 +25,17 @@ interface PriceChartProps {
   onTimeRangeChange?: (range: '1h' | '4h' | '1d' | '1w' | '1m') => void;
 }
 
+// Utility function to format large numbers
+const formatNumber = (num: number): string => {
+  if (num >= 1_000_000) {
+    return (num / 1_000_000).toFixed(1) + 'M';
+  }
+  if (num >= 1_000) {
+    return (num / 1_000).toFixed(1) + 'K';
+  }
+  return Math.round(num).toString();
+};
+
 export function PriceChart({ 
   data, 
   loading, 
@@ -36,6 +47,7 @@ export function PriceChart({
   const [showMA20, setShowMA20] = useState(false);
   const [showMA50, setShowMA50] = useState(false);
   const [showBB, setShowBB] = useState(false);
+  const [chartType, setChartType] = useState<'area' | 'candlestick'>('area');
 
   if (loading) {
     return (
@@ -123,6 +135,26 @@ export function PriceChart({
     return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
   }).join(' ');
 
+  // Generate candlestick data
+  const candleSticks = data.map((d, i) => {
+    const open = parseFloat(d.open);
+    const high = parseFloat(d.high);
+    const low = parseFloat(d.low);
+    const close = parseFloat(d.close);
+    
+    const x = (i / (data.length - 1)) * 100;
+    const candleWidth = Math.max(1.5, 100 / (data.length + 2));
+    
+    const y_high = ((chartMax - high) / chartRange) * height;
+    const y_low = ((chartMax - low) / chartRange) * height;
+    const y_open = ((chartMax - open) / chartRange) * height;
+    const y_close = ((chartMax - close) / chartRange) * height;
+    
+    const isUp = close >= open;
+    
+    return { x, candleWidth, y_high, y_low, y_open, y_close, isUp };
+  });
+
   // MA20 path
   const ma20Path = ma20
     .map((val, i) => {
@@ -207,8 +239,32 @@ export function PriceChart({
         ))}
       </div>
 
-      {/* Analysis Tools Toggles */}
+      {/* Analysis Tools and Chart Type */}
       <div className="flex flex-wrap gap-2">
+        {/* Chart Type Toggle */}
+        <Button
+          variant={chartType === 'area' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setChartType('area')}
+          className="text-xs h-7 px-3"
+          title="Area chart"
+        >
+          Area
+        </Button>
+        <Button
+          variant={chartType === 'candlestick' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setChartType('candlestick')}
+          className="text-xs h-7 px-3"
+          title="Candlestick chart"
+        >
+          <BarChart3 className="w-3.5 h-3.5" />
+        </Button>
+
+        {/* Divider */}
+        <div className="w-px bg-border/30"></div>
+
+        {/* Analysis Tools */}
         <Button
           variant={showMA20 ? 'default' : 'outline'}
           size="sm"
@@ -298,42 +354,95 @@ export function PriceChart({
             />
           )}
 
-          {/* MA20 line */}
+          {/* MA20 line with enhanced visibility */}
           {showMA20 && ma20Path && (
-            <path
-              d={ma20Path}
-              fill="none"
-              stroke="#f59e0b"
-              strokeWidth="0.4"
-              vectorEffect="non-scaling-stroke"
-            />
+            <>
+              <path
+                d={ma20Path}
+                fill="none"
+                stroke="#f59e0b"
+                strokeWidth="0.6"
+                vectorEffect="non-scaling-stroke"
+                opacity="1"
+              />
+              <path
+                d={ma20Path}
+                fill="none"
+                stroke="#f59e0b"
+                strokeWidth="0.2"
+                vectorEffect="non-scaling-stroke"
+                opacity="0.3"
+              />
+            </>
           )}
 
-          {/* MA50 line */}
+          {/* MA50 line with enhanced visibility */}
           {showMA50 && ma50Path && (
-            <path
-              d={ma50Path}
-              fill="none"
-              stroke="#8b5cf6"
-              strokeWidth="0.4"
-              vectorEffect="non-scaling-stroke"
-            />
+            <>
+              <path
+                d={ma50Path}
+                fill="none"
+                stroke="#8b5cf6"
+                strokeWidth="0.6"
+                vectorEffect="non-scaling-stroke"
+                opacity="1"
+              />
+              <path
+                d={ma50Path}
+                fill="none"
+                stroke="#8b5cf6"
+                strokeWidth="0.2"
+                vectorEffect="non-scaling-stroke"
+                opacity="0.3"
+              />
+            </>
           )}
 
-          {/* Area fill */}
-          <path
-            d={areaPath}
-            fill="url(#chartGradient)"
-          />
+          {/* Candlestick Chart */}
+          {chartType === 'candlestick' && (
+            <>
+              {candleSticks.map((candle, i) => (
+                <g key={i}>
+                  {/* Wick (high-low line) */}
+                  <line
+                    x1={candle.x}
+                    y1={candle.y_high}
+                    x2={candle.x}
+                    y2={candle.y_low}
+                    stroke={candle.isUp ? '#10b981' : '#ef4444'}
+                    strokeWidth="0.2"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  {/* Body (open-close) */}
+                  <rect
+                    x={candle.x - candle.candleWidth / 2}
+                    y={Math.min(candle.y_open, candle.y_close)}
+                    width={candle.candleWidth}
+                    height={Math.abs(candle.y_close - candle.y_open) || 1}
+                    fill={candle.isUp ? '#10b981' : '#ef4444'}
+                    opacity="0.8"
+                  />
+                </g>
+              ))}
+            </>
+          )}
 
-          {/* Line */}
-          <path
-            d={linePath}
-            fill="none"
-            stroke={isPositive ? '#10b981' : '#ef4444'}
-            strokeWidth="0.5"
-            vectorEffect="non-scaling-stroke"
-          />
+          {/* Area Chart */}
+          {chartType === 'area' && (
+            <>
+              <path
+                d={areaPath}
+                fill="url(#chartGradient)"
+              />
+              <path
+                d={linePath}
+                fill="none"
+                stroke={isPositive ? '#10b981' : '#ef4444'}
+                strokeWidth="0.5"
+                vectorEffect="non-scaling-stroke"
+              />
+            </>
+          )}
         </svg>
 
         {/* Y-axis labels */}
@@ -381,12 +490,12 @@ export function PriceChart({
         </div>
         <div>
           <p className="text-xs text-muted-foreground">Volume</p>
-          <p className="font-medium text-foreground">{totalVolume.toFixed(2)}</p>
+          <p className="font-medium text-foreground">{formatNumber(totalVolume)}</p>
         </div>
         <div>
           <p className="text-xs text-muted-foreground">Trades</p>
           <p className="font-medium text-foreground">
-            {data.reduce((sum, d) => sum + (d.trade_count || 0), 0)}
+            {formatNumber(data.reduce((sum, d) => sum + (d.trade_count || 0), 0))}
           </p>
         </div>
       </div>
