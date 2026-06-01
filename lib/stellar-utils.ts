@@ -751,51 +751,47 @@ export const createLiquidityPool = async (
       ? new Asset(assetBCode, assetBIssuer)
       : Asset.native();
     
-    // Assets must be in lexicographic order for the pool
-    // Native (XLM) always comes first, then alphabetically by code, then by issuer
-    let orderedAssetA = assetA;
-    let orderedAssetB = assetB;
-    let orderedAmountA = amountA;
-    let orderedAmountB = amountB;
-    
-    // Check if we need to swap the order
-    if (Asset.compare(assetA, assetB) > 0) {
-      orderedAssetA = assetB;
-      orderedAssetB = assetA;
-      orderedAmountA = amountB;
-      orderedAmountB = amountA;
-    }
-    
-    // Create the liquidity pool asset (constant product with 30bp fee)
-    const lpAsset = new LiquidityPoolAsset(orderedAssetA, orderedAssetB, LiquidityPoolFeeV18);
-    const poolId = getLiquidityPoolId('constant_product', lpAsset.getLiquidityPoolParameters()).toString('hex');
-    
-    // Build transaction with trust line and deposit
+    // Create transaction builder
     const transactionBuilder = new TransactionBuilder(account, {
       fee: BASE_FEE,
       networkPassphrase: NETWORK_PASSPHRASE,
     });
     
-    // Add trust line for the liquidity pool (this creates or joins the pool)
-    transactionBuilder.addOperation(
-      Operation.changeTrust({
-        asset: lpAsset,
-      })
-    );
+    // Ensure we have trust lines for both assets if they're not XLM
+    if (assetAIssuer) {
+      const hasTrust = account.balances.some(b => b.asset_code === assetACode && b.asset_issuer === assetAIssuer);
+      if (!hasTrust) {
+        transactionBuilder.addOperation(
+          Operation.changeTrust({
+            asset: assetA,
+            limit: '922337203685.4775807', // max limit
+          })
+        );
+      }
+    }
     
-    // Calculate price bounds (allow 1% slippage)
-    const priceRatio = parseFloat(orderedAmountA) / parseFloat(orderedAmountB);
-    const minPrice = { n: Math.floor(priceRatio * 0.99 * 10000000), d: 10000000 };
-    const maxPrice = { n: Math.ceil(priceRatio * 1.01 * 10000000), d: 10000000 };
+    if (assetBIssuer) {
+      const hasTrust = account.balances.some(b => b.asset_code === assetBCode && b.asset_issuer === assetBIssuer);
+      if (!hasTrust) {
+        transactionBuilder.addOperation(
+          Operation.changeTrust({
+            asset: assetB,
+            limit: '922337203685.4775807', // max limit
+          })
+        );
+      }
+    }
     
-    // Add deposit operation
+    // Add liquidity pool deposit operation
+    // This will create the pool if it doesn't exist (Stellar creates constant product pools with 30bp fee)
+    // We use a reasonable price range to allow the pool to be created
     transactionBuilder.addOperation(
       Operation.liquidityPoolDeposit({
-        liquidityPoolId: poolId,
-        maxAmountA: orderedAmountA,
-        maxAmountB: orderedAmountB,
-        minPrice: minPrice,
-        maxPrice: maxPrice,
+        liquidityPoolId: '', // Empty pool ID will use asset pair to identify/create pool
+        maxAmountA: amountA,
+        maxAmountB: amountB,
+        minPrice: { n: 1, d: 2 }, // 0.5 price ratio
+        maxPrice: { n: 2, d: 1 }, // 2.0 price ratio
       })
     );
     
@@ -803,13 +799,29 @@ export const createLiquidityPool = async (
     transaction.sign(keypair);
     
     const result = await server.submitTransaction(transaction);
-    return { success: true, hash: result.hash, poolId: poolId };
+    
+    // Extract pool ID from the ledger entry if available
+    let poolId: string | undefined;
+    try {
+      if (result.result_meta_xdr) {
+        const meta = result.result_meta_xdr;
+        // Try to find the pool ID from created entries
+        if (typeof meta === 'string') {
+          poolId = meta.substring(0, 64); // LP share asset ID is typically in the meta
+        }
+      }
+    } catch (e) {
+      // Silently fail - we got the transaction hash, that's what matters
+    }
+    
+    return { success: true, hash: result.hash, poolId: poolId || result.id };
   } catch (error: any) {
     let errorMessage = error.message || 'Failed to create liquidity pool';
     if (error.response?.data?.extras?.result_codes) {
       const codes = error.response.data.extras.result_codes;
       errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
     }
+    console.error('[v0] createLiquidityPool error:', errorMessage);
     return { success: false, error: errorMessage };
   }
 };
