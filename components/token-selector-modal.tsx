@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { X, Star } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Search, X, Star, Loader2 } from 'lucide-react';
 import { TokenMetadata } from '@/types/token';
+import { getTokenPicks } from '@/lib/token-service';
 import { getIssuerTokenIcon } from '@/lib/stellar-utils';
 import {
   getFavoriteTokens,
@@ -173,8 +175,23 @@ export function TokenSelectorModal({
   walletBalances,
   type,
 }: TokenSelectorModalProps) {
+  const [activeTab, setActiveTab] = useState<'wallet' | 'picks' | 'favorites'>('wallet');
+  const [searchQuery, setSearchQuery] = useState('');
   const [displayTokens, setDisplayTokens] = useState<Token[]>([]);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [isSearching, setIsSearching] = useState(false);
+
+  // Create a set of wallet asset keys for quick lookup
+  const walletAssetKeys = useMemo(() => {
+    const keys = new Set<string>();
+    walletBalances.forEach((b) => {
+      if (b.asset_type === 'liquidity_pool_shares') return;
+      const code = b.asset_code || 'XLM';
+      const issuer = b.asset_issuer || '';
+      keys.add(`${code}_${issuer}`);
+    });
+    return keys;
+  }, [walletBalances]);
 
   // Memoize wallet tokens with enriched metadata and deduplication
   const walletTokens = useMemo(() => {
@@ -207,19 +224,80 @@ export function TokenSelectorModal({
     return Array.from(tokenMap.values());
   }, [walletBalances]);
 
+  // Get curated picks - FILTERED to only show tokens in wallet
+  const tokenPicks = useMemo(() => {
+    const picks = getTokenPicks();
+    return picks
+      .filter((t) => walletAssetKeys.has(`${t.code}_${t.issuer || ''}`))
+      .map((t) => ({
+        code: t.code,
+        issuer: t.issuer,
+        name: t.name,
+        domain: t.domain,
+        image: t.image,
+        verified: t.verified,
+        source: 'picks' as const,
+      }));
+  }, [walletAssetKeys]);
+
   // Update favorites when modal opens
   useEffect(() => {
     if (isOpen) {
       const favs = getFavoriteTokens();
       const favSet = new Set(favs.map((t) => `${t.code}_${t.issuer}`));
       setFavorites(favSet);
+      setSearchQuery('');
     }
   }, [isOpen]);
 
-  // Update display tokens to show wallet tokens only
+  // Handle search - FILTER wallet tokens only (no external search)
   useEffect(() => {
-    setDisplayTokens(walletTokens);
-  }, [walletTokens]);
+    if (searchQuery.length >= 2) {
+      setIsSearching(true);
+      // Simulate brief loading then filter wallet tokens
+      const timer = setTimeout(() => {
+        const query = searchQuery.toUpperCase();
+        const filtered = walletTokens.filter(
+          (t) =>
+            t.code.toUpperCase().includes(query) ||
+            (t.name && t.name.toUpperCase().includes(query)) ||
+            (t.issuer && t.issuer.toUpperCase().includes(query))
+        );
+        setDisplayTokens(filtered);
+        setIsSearching(false);
+      }, 200);
+      return () => clearTimeout(timer);
+    } else {
+      setIsSearching(false);
+    }
+  }, [searchQuery, walletTokens]);
+
+  // Update display tokens based on tab (always filtered to wallet assets)
+  useEffect(() => {
+    // If searching, skip - handled by search effect
+    if (searchQuery.length >= 2) return;
+
+    if (activeTab === 'wallet') {
+      setDisplayTokens(walletTokens);
+    } else if (activeTab === 'picks') {
+      // Show only picks that are in wallet
+      setDisplayTokens(tokenPicks);
+    } else if (activeTab === 'favorites') {
+      // Show only favorites that are in wallet
+      const favs = getFavoriteTokens();
+      const filteredFavs = favs
+        .filter((t) => walletAssetKeys.has(`${t.code}_${t.issuer || ''}`))
+        .map((t) => ({
+          code: t.code,
+          issuer: t.issuer,
+          name: t.name,
+          image: t.image,
+          verified: t.verified,
+          source: 'favorites' as const,
+        }));
+      setDisplayTokens(filteredFavs);
+    }
+  }, [activeTab, searchQuery, walletTokens, tokenPicks, walletAssetKeys]);
 
   const handleTokenSelect = (token: Token) => {
     onSelect(token);
@@ -254,19 +332,16 @@ export function TokenSelectorModal({
 
   if (!isOpen) return null;
 
+  const showingSearch = searchQuery.length >= 2;
+
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end md:items-center justify-center">
       <div className="bg-card border border-primary/20 rounded-t-lg md:rounded-lg w-full md:w-full md:max-w-2xl max-h-[90vh] md:max-h-[80vh] overflow-hidden flex flex-col glow-border">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-border sticky top-0 bg-card/95 backdrop-blur-sm">
-          <div>
-            <h2 className="text-2xl font-bold text-foreground">
-              Select {type === 'selling' ? 'First' : 'Second'} Asset
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              Choose from your wallet assets
-            </p>
-          </div>
+          <h2 className="text-2xl font-bold text-foreground">
+            Select {type === 'selling' ? 'Selling' : 'Buying'} Asset
+          </h2>
           <button
             onClick={onClose}
             className="text-muted-foreground hover:text-foreground transition-colors"
@@ -275,12 +350,62 @@ export function TokenSelectorModal({
           </button>
         </div>
 
+        {/* Search */}
+        <div className="p-4 bg-background/30 border-b border-border">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search your wallet assets..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-input border-border text-foreground pl-10 pr-10"
+            />
+            {isSearching && (
+              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary animate-spin" />
+            )}
+          </div>
+        </div>
+
+        {/* Tabs - only show when not searching */}
+        {!showingSearch && (
+          <div className="flex gap-2 p-4 bg-background/50 border-b border-border">
+            {[
+              { id: 'wallet', label: 'My Assets' },
+              { id: 'picks', label: 'Our Picks' },
+              { id: 'favorites', label: 'Favorites' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`relative px-4 py-2 rounded-lg font-medium transition-all whitespace-nowrap z-10 ${
+                  activeTab === tab.id
+                    ? 'bg-primary text-primary-foreground shadow-lg'
+                    : 'bg-background/80 text-muted-foreground hover:text-foreground hover:bg-background border border-border/50'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Token Grid */}
         <div className="flex-1 overflow-y-auto p-6">
-          {displayTokens.length === 0 ? (
+          {isSearching ? (
+            <div className="flex flex-col items-center justify-center h-48 gap-3">
+              <Loader2 className="w-8 h-8 text-primary animate-spin" />
+              <p className="text-muted-foreground">Searching your wallet...</p>
+            </div>
+          ) : displayTokens.length === 0 ? (
             <div className="flex items-center justify-center h-48">
               <p className="text-muted-foreground text-center">
-                No assets in your wallet. Fund your account first.
+                {showingSearch
+                  ? 'No matching assets in your wallet.'
+                  : activeTab === 'favorites'
+                  ? 'No favorites in your wallet. Star tokens to add them here.'
+                  : activeTab === 'picks'
+                  ? 'None of our recommended tokens are in your wallet yet.'
+                  : 'No assets in your wallet. Fund your account first.'}
               </p>
             </div>
           ) : (
