@@ -349,7 +349,8 @@ export default function CreatePoolPage() {
           isOpen={true}
           onClose={() => setSelectingAsset(null)}
           onSelect={handleSelectAsset}
-          title={`Select ${selectingAsset === 'A' ? 'First' : 'Second'} Asset`}
+          walletBalances={activeWallet?.balances || []}
+          type={selectingAsset === 'A' ? 'selling' : 'buying'}
         />
       )}
 
