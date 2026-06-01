@@ -75,7 +75,7 @@ function TokenIcon({ code, issuer, className = "w-10 h-10" }: { code: string; is
 }
 
 export default function CreatePoolPage() {
-  const { wallets, activeWalletId } = useWallet();
+  const { wallets, activeWalletId, updateBalances } = useWallet();
   const activeWallet = wallets.find(w => w.id === activeWalletId);
   
   // Safe initial states - null for unselected assets
@@ -251,49 +251,78 @@ export default function CreatePoolPage() {
       const transaction = transactionBuilder.setTimeout(180).build();
       transaction.sign(keypair);
       
-      // Submit transaction
-      const result = await server.submitTransaction(transaction);
-      
-      setTxHash(result.hash);
-      setSuccessMessage('Liquidity pool created successfully!');
-      setPassword('');
-      
-    } catch (error: any) {
-      // Extract meaningful error message
-      let message = 'Failed to create liquidity pool.';
-      
-      if (error.response?.data?.extras?.result_codes) {
-        const codes = error.response.data.extras.result_codes;
-        const opCode = codes.operations?.[0] || codes.transaction;
+      // Submit transaction to the REAL Stellar network
+      let result;
+      try {
+        result = await server.submitTransaction(transaction);
+      } catch (submitError: any) {
+        // Handle submission errors specifically
+        let message = 'Transaction submission failed.';
         
-        // Translate common error codes
-        switch (opCode) {
-          case 'op_underfunded':
-            message = 'Insufficient balance. Please check you have enough of both assets.';
-            break;
-          case 'op_line_full':
-            message = 'Trust line is full. Cannot hold more of this asset.';
-            break;
-          case 'op_no_trust':
-            message = 'Trust line required. Please add a trust line for the asset first.';
-            break;
-          case 'op_low_reserve':
-            message = 'Account reserve too low. You need more XLM to cover the reserve.';
-            break;
-          case 'op_bad_price':
-            message = 'Price out of range. The market price has moved significantly.';
-            break;
-          case 'tx_bad_auth':
-            message = 'Authentication failed. Please check your password.';
-            break;
-          default:
-            message = `Transaction failed: ${opCode || error.message}`;
+        if (submitError.response?.data?.extras?.result_codes) {
+          const codes = submitError.response.data.extras.result_codes;
+          const opCode = codes.operations?.[0] || codes.transaction;
+          
+          // Translate common error codes
+          switch (opCode) {
+            case 'op_underfunded':
+              message = 'Insufficient balance. Please check you have enough of both assets.';
+              break;
+            case 'op_line_full':
+              message = 'Trust line is full. Cannot hold more of this asset.';
+              break;
+            case 'op_no_trust':
+              message = 'Trust line required. Please add a trust line for the asset first.';
+              break;
+            case 'op_low_reserve':
+              message = 'Account reserve too low. You need more XLM to cover the reserve.';
+              break;
+            case 'op_bad_price':
+              message = 'Price out of range. The market price has moved significantly.';
+              break;
+            case 'tx_bad_auth':
+              message = 'Authentication failed. Please check your password.';
+              break;
+            case 'tx_insufficient_fee':
+              message = 'Insufficient fee. Network is busy, please try again.';
+              break;
+            default:
+              message = `Transaction failed: ${opCode || submitError.message}`;
+          }
+        } else if (submitError.message) {
+          message = submitError.message;
         }
-      } else if (error.message) {
-        message = error.message;
+        
+        setErrorMessage(message);
+        setLoading(false);
+        return;
       }
       
-      setErrorMessage(message);
+      // Transaction was successful - extract the hash from the real result
+      const txHashValue = result.hash;
+      setTxHash(txHashValue);
+      setSuccessMessage(`Liquidity pool created successfully! Your LP shares have been added to your wallet.`);
+      setPassword('');
+      
+      // Reset form after success
+      setAssetA(null);
+      setAssetB(null);
+      setAmountA('');
+      setAmountB('');
+      
+      // Refresh wallet balances to show the new LP shares
+      if (activeWallet?.id) {
+        try {
+          await updateBalances(activeWallet.id);
+        } catch (refreshError) {
+          // Silently handle refresh error - the transaction succeeded
+          console.log('[v0] Balance refresh after pool creation:', refreshError);
+        }
+      }
+      
+    } catch (error: any) {
+      // Catch any unexpected errors
+      setErrorMessage(error.message || 'An unexpected error occurred.');
     } finally {
       setLoading(false);
     }
