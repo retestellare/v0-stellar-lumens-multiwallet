@@ -17,6 +17,7 @@ import {
 import { 
   ArrowLeft, 
   Droplets, 
+  Plus, 
   Minus, 
   Loader2, 
   RefreshCw,
@@ -397,6 +398,12 @@ export default function PoolsPage() {
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </Button>
+            <Link href="/pools/create">
+              <Button className="bg-primary text-primary-foreground hover:bg-primary/90 gap-1">
+                <Plus className="w-4 h-4" />
+                Create Pool
+              </Button>
+            </Link>
             <WalletSelectorDropdown />
           </div>
         </div>
