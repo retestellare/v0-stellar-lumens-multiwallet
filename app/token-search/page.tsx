@@ -6,10 +6,11 @@ import Link from 'next/link';
 import { Header } from '@/components/header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, ArrowLeft, Loader2, Star, X, Copy, Check, ExternalLink, Trash2 } from 'lucide-react';
+import { Search, ArrowLeft, Loader2, Star, X, Copy, Check, ExternalLink, Trash2, Lock } from 'lucide-react';
 import { getTokenPicks } from '@/lib/token-service';
-import { getIssuerTokenIcon, fetchTokenMetadataFromToml } from '@/lib/stellar-utils';
+import { getIssuerTokenIcon, fetchTokenMetadataFromToml, hasTrustline, addTrustline, decryptSecret, getAccountDetails } from '@/lib/stellar-utils';
 import { getFavoriteTokens, toggleFavoriteToken } from '@/lib/token-storage';
+import { useWallet } from '@/lib/wallet-context';
 import { TokenMetadata } from '@/types/token';
 
 const HORIZON_URL = 'https://horizon.stellar.org';
@@ -201,6 +202,13 @@ export default function TokenSearchPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'about' | 'receive' | 'send'>('about');
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [passwordPrompt, setPasswordPrompt] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [addingTrustline, setAddingTrustline] = useState(false);
+  const [trustlineError, setTrustlineError] = useState<string | null>(null);
+  const [hasTrustlineForToken, setHasTrustlineForToken] = useState(false);
+
+  const { activeWallet, unlockWallet } = useWallet();
 
   const recommendedTokens = useMemo(() => {
     return getTokenPicks().map((t) => ({
@@ -271,6 +279,16 @@ export default function TokenSearchPage() {
     setSelectedToken(token);
     setDetailLoading(true);
     setActiveTab('about');
+    setPasswordPrompt(false);
+    setTrustlineError(null);
+    setHasTrustlineForToken(false);
+    
+    // Check if wallet has trustline for this token
+    if (activeWallet && token.issuer) {
+      const hasLine = hasTrustline(activeWallet.balances || [], token.code, token.issuer);
+      setHasTrustlineForToken(hasLine);
+    }
+    
     if (token.issuer) {
       fetchTokenMetadataFromToml(token.issuer)
         .then(data => {
@@ -287,11 +305,14 @@ export default function TokenSearchPage() {
       });
       setDetailLoading(false);
     }
-  }, []);
+  }, [activeWallet]);
 
   const handleCloseDetail = useCallback(() => {
     setSelectedToken(null);
     setTokenDetails(null);
+    setPasswordPrompt(false);
+    setPasswordInput('');
+    setTrustlineError(null);
   }, []);
 
   const copyToClipboard = (text: string, field: string) => {
@@ -303,6 +324,39 @@ export default function TokenSearchPage() {
   const openStellarExpert = () => {
     if (selectedToken?.issuer) {
       window.open(`https://stellar.expert/explorer/public/asset/${selectedToken.code}-${selectedToken.issuer}`, '_blank');
+    }
+  };
+
+  const handleAddTrustline = async () => {
+    if (!selectedToken || !selectedToken.issuer || !activeWallet || !passwordInput) {
+      return;
+    }
+
+    setAddingTrustline(true);
+    setTrustlineError(null);
+
+    try {
+      // Unlock wallet with password
+      const secretKey = unlockWallet(activeWallet.id, passwordInput);
+      
+      // Submit add trustline operation
+      const result = await addTrustline(secretKey, selectedToken.code, selectedToken.issuer);
+      
+      if (result.success) {
+        // Update trustline status
+        setHasTrustlineForToken(true);
+        setPasswordPrompt(false);
+        setPasswordInput('');
+        
+        // Optionally show success notification
+        alert(`Trustline added successfully! Hash: ${result.hash}`);
+      } else {
+        setTrustlineError(result.error || 'Failed to add trustline');
+      }
+    } catch (error: any) {
+      setTrustlineError(error.message || 'Failed to add trustline');
+    } finally {
+      setAddingTrustline(false);
     }
   };
 
@@ -332,7 +386,7 @@ export default function TokenSearchPage() {
         <h1 className="text-3xl font-bold text-foreground mb-8">Search Tokens</h1>
 
         {/* Search Box - Enhanced Graphics */}
-        <div className="relative -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pt-6 pb-8 mb-12 bg-gradient-to-b from-primary/20 via-primary/10 to-transparent rounded-b-3xl border-b-2 border-primary/30">
+        <div className="relative -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pt-6 pb-8 mb-12 bg-gradient-to-b from-primary/20 via-primary/10 to-transparent rounded-b-3xl border-b-2 border-primar[...]
           {/* Animated background elements */}
           <div className="absolute top-2 right-8 w-48 h-48 bg-primary/8 rounded-full blur-3xl -z-10 opacity-60"></div>
           <div className="absolute -bottom-10 left-12 w-40 h-40 bg-primary/5 rounded-full blur-2xl -z-10"></div>
@@ -346,7 +400,7 @@ export default function TokenSearchPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 autoFocus
-                className="bg-background/60 border-2 border-primary/50 text-foreground placeholder:text-muted-foreground/60 pl-12 pr-12 py-4 text-base font-medium rounded-xl focus:border-primary focus:bg-background focus:ring-2 focus:ring-primary/20 transition-all duration-200"
+                className="bg-background/60 border-2 border-primary/50 text-foreground placeholder:text-muted-foreground/60 pl-12 pr-12 py-4 text-base font-medium rounded-xl focus:border-primary [...]
               />
               {loading && <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-primary animate-spin" />}
             </div>
@@ -495,10 +549,71 @@ export default function TokenSearchPage() {
                       </div>
                     ) : (
                       <>
-                        {/* Remove Asset Button */}
-                        <button className="w-full bg-destructive/20 hover:bg-destructive/30 text-destructive border border-destructive/30 py-2 px-4 rounded-lg font-medium text-sm transition-colors">
-                          Remove Asset
-                        </button>
+                        {/* Add Trustline Button or Remove Asset Button */}
+                        {hasTrustlineForToken ? (
+                          <button className="w-full bg-destructive/20 hover:bg-destructive/30 text-destructive border border-destructive/30 py-2 px-4 rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-2">
+                            <Trash2 className="w-4 h-4" />
+                            Remove Asset
+                          </button>
+                        ) : selectedToken.issuer ? (
+                          <>
+                            {passwordPrompt ? (
+                              <div className="space-y-3 p-4 bg-primary/10 border border-primary/30 rounded-lg">
+                                <p className="text-sm font-medium text-foreground">Enter your password to add trustline</p>
+                                <Input
+                                  type="password"
+                                  placeholder="Enter wallet password"
+                                  value={passwordInput}
+                                  onChange={(e) => setPasswordInput(e.target.value)}
+                                  onKeyPress={(e) => e.key === 'Enter' && handleAddTrustline()}
+                                  className="w-full"
+                                  disabled={addingTrustline}
+                                />
+                                {trustlineError && (
+                                  <p className="text-sm text-destructive">{trustlineError}</p>
+                                )}
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={handleAddTrustline}
+                                    disabled={addingTrustline || !passwordInput}
+                                    className="flex-1 bg-primary hover:bg-primary/80 text-primary-foreground py-2 px-4 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                  >
+                                    {addingTrustline ? (
+                                      <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        Processing...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Lock className="w-4 h-4" />
+                                        Confirm
+                                      </>
+                                    )}
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setPasswordPrompt(false);
+                                      setPasswordInput('');
+                                      setTrustlineError(null);
+                                    }}
+                                    disabled={addingTrustline}
+                                    className="flex-1 bg-muted hover:bg-muted/80 text-foreground py-2 px-4 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setPasswordPrompt(true)}
+                                className="w-full bg-primary hover:bg-primary/80 text-primary-foreground py-2 px-4 rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-2"
+                              >
+                                <Plus className="w-4 h-4" />
+                                Add Trustline
+                              </button>
+                            )}
+                          </>
+                        ) : null}
 
                         {/* Token Details */}
                         {tokenDetails && (
