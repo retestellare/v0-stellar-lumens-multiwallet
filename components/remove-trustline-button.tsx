@@ -2,9 +2,6 @@
 
 import React, { useState } from 'react';
 import * as StellarSdk from '@stellar/stellar-sdk';
-// Importa la funzione di decrittazione nativa del tuo progetto
-// @ts-ignore
-import { decryptSecret } from '@/lib/stellar-utils';
 
 interface RemoveTrustlineButtonProps {
   assetCode: string;
@@ -27,28 +24,38 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
       setError("Please enter your wallet password.");
       return;
     }
-      // 1. Recupera la lista dei wallet salvati da v0
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // 1. Recupera l'array dei wallet salvati da v0
       const storedWallets = localStorage.getItem('stellar_wallets');
       if (!storedWallets) throw new Error("No wallets found. Please log in.");
       
       const wallets = JSON.parse(storedWallets);
       
-      // Estrae in modo sicuro il primo wallet attivo dall'array
+      // Estrae in modo sicuro il primo elemento se è un array, altrimenti usa l'oggetto diretto
       const activeWallet = Array.isArray(wallets) ? wallets[0] : wallets; 
-      
-      if (!activeWallet || !activeWallet.publicKey || !activeWallet.encryptedSecret) {
-        throw new Error("Active wallet data is missing or invalid.");
-      }
-]; 
       
       if (!activeWallet || !activeWallet.publicKey || !activeWallet.encryptedSecret) {
         throw new Error("Active wallet data is missing.");
       }
 
-      // 2. Decripta la chiave segreta usando la password dell'utente e la funzione nativa
-      let userSecretKey: string;
+      // 2. Decripta la chiave segreta usando la password dell'utente.
+      // Sfruttiamo il decryptSecret iniettato globalmente o recuperato dalla libreria nativa.
+      let userSecretKey: string = "";
       try {
-        userSecretKey = decryptSecret(activeWallet.encryptedSecret, password);
+        // @ts-ignore
+        if (typeof window !== 'undefined' && window.decryptSecret) {
+          // @ts-ignore
+          userSecretKey = window.decryptSecret(activeWallet.encryptedSecret, password);
+        } else {
+          // Fallback dinamico se la funzione non è globale
+          const utils = require('@/lib/stellar-utils');
+          userSecretKey = utils.decryptSecret(activeWallet.encryptedSecret, password);
+        }
+
         if (!userSecretKey || !userSecretKey.startsWith('S')) {
           throw new Error("Invalid password.");
         }
@@ -66,7 +73,7 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to build transaction');
 
-      // 4. Ricostruisce la transazione e la firma sul client con la chiave decrittata
+      // 4. Ricostruisce la transazione dall'XDR e la firma sul client
       // @ts-ignore
       const NetworksPassphrase = StellarSdk.Networks?.PUBLIC || 'Public Global Stellar Network ; October 2015';
       // @ts-ignore
@@ -76,7 +83,7 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
       const keypair = StellarSdk.Keypair.fromSecret(userSecretKey);
       transaction.sign(keypair);
 
-      // 5. Invia la transazione firmata a Horizon
+      // 5. Invia la transazione firmata alla Mainnet di Horizon
       // @ts-ignore
       const HorizonServer = StellarSdk.Horizon?.Server || StellarSdk.Server;
       const server = new HorizonServer("https://stellar.org");
