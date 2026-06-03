@@ -76,25 +76,36 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
       // 4. Ricostruisce la transazione dall'XDR e la firma sul client
       // @ts-ignore
       const NetworksPassphrase = StellarSdk.Networks?.PUBLIC || 'Public Global Stellar Network ; October 2015';
+      
+      // Properly convert XDR string back to transaction object
       // @ts-ignore
-      const transaction = StellarSdk.TransactionBuilder.fromXDR(data.xdr, NetworksPassphrase);
+      const tx = StellarSdk.TransactionBuilder.fromXDR(data.xdr, NetworksPassphrase);
       
       // @ts-ignore
       const keypair = StellarSdk.Keypair.fromSecret(userSecretKey);
-      transaction.sign(keypair);
+      tx.sign(keypair);
 
       // 5. Invia la transazione firmata alla Mainnet di Horizon
       // @ts-ignore
-      const HorizonServer = StellarSdk.Horizon?.Server || StellarSdk.Server;
-      const server = new HorizonServer("https://stellar.org");
-      // @ts-ignore
-      const result = await server.submitTransaction(transaction);
-
-      alert('Trustline removed successfully!');
-      if (onSuccess) onSuccess();
-      window.location.reload(); 
+      const server = new StellarSdk.Horizon.Server("https://horizon.stellar.org");
+      
+      try {
+        // @ts-ignore
+        const result = await server.submitTransaction(tx);
+        
+        alert('Trustline removed successfully!');
+        if (onSuccess) onSuccess();
+        
+        // Wait a moment before reloading to ensure transaction is processed
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
+      } catch (submitError: any) {
+        const errorDetail = submitError.response?.data?.extras?.result_codes || submitError.message;
+        throw new Error(`Transaction submission failed: ${JSON.stringify(errorDetail)}`);
+      }
     } catch (err: any) {
-      console.error(err);
+      console.error("Remove trustline error:", err);
       setError(err.message || 'An unexpected error occurred');
     } finally {
       setIsLoading(false);
