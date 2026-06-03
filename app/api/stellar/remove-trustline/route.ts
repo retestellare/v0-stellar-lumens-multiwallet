@@ -5,19 +5,17 @@ export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
   try {
-    const { assetCode, assetIssuer, userSecretKey } = await request.json();
+    const { assetCode, assetIssuer, userPublicKey } = await request.json();
 
-    if (!assetCode || !assetIssuer || !userSecretKey) {
+    if (!assetCode || !assetIssuer || !userPublicKey) {
       return NextResponse.json(
-        { error: 'Missing required fields: assetCode, assetIssuer, or userSecretKey.' },
+        { error: 'Missing required fields: assetCode, assetIssuer, or userPublicKey.' },
         { status: 400 }
       );
     }
 
     // @ts-ignore
     const HorizonServer = StellarSdk.Horizon?.Server || StellarSdk.Server;
-    // @ts-ignore
-    const KeypairFactory = StellarSdk.Keypair;
     // @ts-ignore
     const AssetFactory = StellarSdk.Asset;
     // @ts-ignore
@@ -28,10 +26,10 @@ export async function POST(request: Request) {
     const BaseFee = StellarSdk.BASE_FEE || 100;
 
     const server = new HorizonServer("https://stellar.org"); 
-    const sourceKeypair = KeypairFactory.fromSecret(userSecretKey);
-    const account = await server.loadAccount(sourceKeypair.publicKey());
+    const account = await server.loadAccount(userPublicKey);
     const asset = new AssetFactory(assetCode, assetIssuer);
 
+    // Costruisce la transazione impostando il limite a "0"
     const transaction = new TransactionBuilderFactory(account, {
       fee: BaseFee,
       networkPassphrase: NetworksPassphrase,
@@ -46,10 +44,10 @@ export async function POST(request: Request) {
       .setTimeout(30)
       .build();
 
-    transaction.sign(sourceKeypair);
-    const result = await server.submitTransaction(transaction);
+    // Converte la transazione in stringa XDR (non firmata) da mandare al frontend
+    const xdr = transaction.toXDR();
 
-    return NextResponse.json({ success: true, hash: result.hash });
+    return NextResponse.json({ success: true, xdr });
   } catch (error: any) {
     console.error("Stellar backend error:", error);
     return NextResponse.json(
