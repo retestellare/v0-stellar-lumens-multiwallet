@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import StellarSdk from 'stellar-sdk';
+import * as StellarSdk from '@stellar/stellar-sdk';
 
 export const runtime = 'nodejs';
 
@@ -14,16 +14,30 @@ export async function POST(request: Request) {
       );
     }
 
-    const server = new StellarSdk.Horizon.Server("https://stellar.org"); 
-    const sourceKeypair = StellarSdk.Keypair.fromSecret(userSecretKey);
-    const account = await server.loadAccount(sourceKeypair.publicKey());
-    const asset = new StellarSdk.Asset(assetCode, assetIssuer);
+    // @ts-ignore
+    const HorizonServer = StellarSdk.Horizon?.Server || StellarSdk.Server;
+    // @ts-ignore
+    const KeypairFactory = StellarSdk.Keypair;
+    // @ts-ignore
+    const AssetFactory = StellarSdk.Asset;
+    // @ts-ignore
+    const TransactionBuilderFactory = StellarSdk.TransactionBuilder;
+    // @ts-ignore
+    const NetworksPassphrase = StellarSdk.Networks?.PUBLIC || 'Public Global Stellar Network ; October 2015';
+    // @ts-ignore
+    const BaseFee = StellarSdk.BASE_FEE || 100;
 
-    const transaction = new StellarSdk.TransactionBuilder(account, {
-      fee: StellarSdk.BASE_FEE,
-      networkPassphrase: StellarSdk.Networks.PUBLIC,
+    const server = new HorizonServer("https://stellar.org"); 
+    const sourceKeypair = KeypairFactory.fromSecret(userSecretKey);
+    const account = await server.loadAccount(sourceKeypair.publicKey());
+    const asset = new AssetFactory(assetCode, assetIssuer);
+
+    const transaction = new TransactionBuilderFactory(account, {
+      fee: BaseFee,
+      networkPassphrase: NetworksPassphrase,
     })
       .addOperation(
+        // @ts-ignore
         StellarSdk.Operation.changeTrust({
           asset: asset,
           limit: "0", 
