@@ -798,20 +798,22 @@ export default function TokenSearchPage() {
                             Remove Asset
                           </button>
                         {/* Pulsanti di Invio e Ricezione collegati alla dashboard */}
+{/* Pulsanti di Invio e Ricezione corretti con navigazione nativa */}
 <div className="grid grid-cols-2 gap-2 mt-4">
   <button 
-    onClick={() => router.push(`/?tab=send&asset=${token.code}`)}
+    onClick={() => window.location.href = `/?tab=send&asset=${token.code}`}
     className="w-full bg-blue-600 text-white py-2 rounded-md font-medium text-sm"
   >
     Invia {token.code}
   </button>
   <button 
-    onClick={() => router.push(`/?tab=receive&asset=${token.code}`)}
+    onClick={() => window.location.href = `/?tab=receive&asset=${token.code}`}
     className="w-full bg-gray-700 text-white py-2 rounded-md font-medium text-sm"
   >
     Ricevi {token.code}
   </button>
 </div>
+
 
                         ) : selectedToken.issuer ? (
                           <>
