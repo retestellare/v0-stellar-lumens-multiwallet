@@ -25,13 +25,13 @@ export async function POST(request: Request) {
     // @ts-ignore
     const BaseFee = StellarSdk.BASE_FEE || 100;
 
-    const server = new HorizonServer("https://stellar.org"); 
+    const server = new HorizonServer("https://horizon.stellar.org"); 
     
-    // Carica l'account reale dalla rete per recuperare il corretto numero di sequenza corrente
+    // Load the actual account from the network to get the correct current sequence number
     const account = await server.loadAccount(userPublicKey);
     const asset = new AssetFactory(assetCode, assetIssuer);
 
-    // Costruisce la transazione impostando il limite a "0" per distruggere la linea di fiducia
+    // Build the transaction setting the limit to "0" to remove the trustline
     const transaction = new TransactionBuilderFactory(account, {
       fee: BaseFee,
       networkPassphrase: NetworksPassphrase,
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
           limit: "0", 
         })
       )
-      .setTimeout(30)
+      .setTimeout(180)
       .build();
 
     const xdr = transaction.toXDR();
@@ -51,8 +51,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, xdr });
   } catch (error: any) {
     console.error("Stellar backend error:", error);
+    
+    // Provide more detailed error information
+    let errorMessage = error.message || 'Unknown error occurred';
+    if (error.response?.status === 404) {
+      errorMessage = 'Account not found on the network';
+    } else if (error.response?.data?.extras) {
+      errorMessage = JSON.stringify(error.response.data.extras);
+    }
+    
     return NextResponse.json(
-      { error: error.message || error.toString() },
+      { error: errorMessage },
       { status: 500 }
     );
   }
