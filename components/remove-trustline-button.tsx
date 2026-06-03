@@ -27,18 +27,19 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
       setError("Please enter your wallet password.");
       return;
     }
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
       // 1. Recupera la lista dei wallet salvati da v0
       const storedWallets = localStorage.getItem('stellar_wallets');
       if (!storedWallets) throw new Error("No wallets found. Please log in.");
       
       const wallets = JSON.parse(storedWallets);
-      // Prende il primo wallet attivo (o quello correntemente selezionato)
-      const activeWallet = wallets[0]; 
+      
+      // Estrae in modo sicuro il primo wallet attivo dall'array
+      const activeWallet = Array.isArray(wallets) ? wallets[0] : wallets; 
+      
+      if (!activeWallet || !activeWallet.publicKey || !activeWallet.encryptedSecret) {
+        throw new Error("Active wallet data is missing or invalid.");
+      }
+]; 
       
       if (!activeWallet || !activeWallet.publicKey || !activeWallet.encryptedSecret) {
         throw new Error("Active wallet data is missing.");
