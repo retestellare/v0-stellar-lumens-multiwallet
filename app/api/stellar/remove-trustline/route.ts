@@ -26,10 +26,12 @@ export async function POST(request: Request) {
     const BaseFee = StellarSdk.BASE_FEE || 100;
 
     const server = new HorizonServer("https://stellar.org"); 
+    
+    // Carica l'account reale dalla rete per recuperare il corretto numero di sequenza corrente
     const account = await server.loadAccount(userPublicKey);
     const asset = new AssetFactory(assetCode, assetIssuer);
 
-    // Costruisce la transazione impostando il limite a "0"
+    // Costruisce la transazione impostando il limite a "0" per distruggere la linea di fiducia
     const transaction = new TransactionBuilderFactory(account, {
       fee: BaseFee,
       networkPassphrase: NetworksPassphrase,
@@ -44,7 +46,6 @@ export async function POST(request: Request) {
       .setTimeout(30)
       .build();
 
-    // Converte la transazione in stringa XDR (non firmata) da mandare al frontend
     const xdr = transaction.toXDR();
 
     return NextResponse.json({ success: true, xdr });
