@@ -470,13 +470,13 @@ export default function TokenSearchPage() {
   const [trustlineError, setTrustlineError] = useState<string | null>(null);
   const [hasTrustlineForToken, setHasTrustlineForToken] = useState(false);
 
-  // Mock wallet context - replace with your actual context
+  // Wallet context
   const { activeWallet, unlockWallet } = useWallet();
 
   const recommendedTokens = useMemo(() => {
     return [
-      { code: 'USDC', issuer: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN', name: 'USD Coin', domain: 'circle.com', image: 'https://assets.coingecko.com/coins/images/6319/small/usdc.png', verified: true },
-      { code: 'EURC', issuer: 'GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2', name: 'Euro Coin', domain: 'circle.com', image: 'https://assets.coingecko.com/coins/images/26045/small/euro-coin.png', verified: true },
+      { code: 'USDC', issuer: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN', name: 'USD Coin', domain: 'circle.com', image: 'https://assets.coingecko.com/coins/images/6319/small/usdc.png' },
+      { code: 'EURC', issuer: 'GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2', name: 'Euro Coin', domain: 'circle.com', image: 'https://assets.coingecko.com/coins/images/26045/small/eurc.png' },
       { code: 'AQUA', issuer: 'GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA', name: 'Aquarius', domain: 'aqua.network', image: 'https://aqua.network/assets/img/aqua-logo.png', verified: true },
     ];
   }, []);
@@ -793,28 +793,26 @@ export default function TokenSearchPage() {
                     ) : (
                       <>
                         {hasTrustlineForToken ? (
-                          <button className="w-full bg-destructive/20 hover:bg-destructive/30 text-destructive border border-destructive/30 py-2 px-4 rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-2">
-                            <Trash2 className="w-4 h-4" />
-                            Remove Asset
-                          </button>
-                        {/* Pulsanti di Invio e Ricezione collegati alla dashboard */}
-{/* Pulsanti di Invio e Ricezione corretti con navigazione nativa */}
-<div className="grid grid-cols-2 gap-2 mt-4">
-  <button 
-    onClick={() => window.location.href = `/?tab=send&asset=${token.code}`}
-    className="w-full bg-blue-600 text-white py-2 rounded-md font-medium text-sm"
-  >
-    Invia {token.code}
-  </button>
-  <button 
-    onClick={() => window.location.href = `/?tab=receive&asset=${token.code}`}
-    className="w-full bg-gray-700 text-white py-2 rounded-md font-medium text-sm"
-  >
-    Ricevi {token.code}
-  </button>
-</div>
-
-
+                          <>
+                            <button className="w-full bg-destructive/20 hover:bg-destructive/30 text-destructive border border-destructive/30 py-2 px-4 rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-2">
+                              <Trash2 className="w-4 h-4" />
+                              Remove Asset
+                            </button>
+                            <div className="grid grid-cols-2 gap-2 mt-4">
+                              <button 
+                                onClick={() => window.location.href = `/?tab=send&asset=${selectedToken.code}`}
+                                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-md font-medium text-sm transition-colors"
+                              >
+                                Send {selectedToken.code}
+                              </button>
+                              <button 
+                                onClick={() => window.location.href = `/?tab=receive&asset=${selectedToken.code}`}
+                                className="w-full bg-gray-700 hover:bg-gray-800 text-white py-2 rounded-md font-medium text-sm transition-colors"
+                              >
+                                Receive {selectedToken.code}
+                              </button>
+                            </div>
+                          </>
                         ) : selectedToken.issuer ? (
                           <>
                             {passwordPrompt ? (
