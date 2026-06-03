@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { useWallet } from '@/lib/wallet-context';
 import Link from 'next/link';
 import { Header } from '@/components/header';
 import { Input } from '@/components/ui/input';
