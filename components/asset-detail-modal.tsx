@@ -5,6 +5,7 @@ import { X, Copy, Check, ExternalLink, Trash2, Send, Download } from 'lucide-rea
 import { Button } from '@/components/ui/button';
 import { fetchTokenMetadataFromToml } from '@/lib/stellar-utils';
 import Image from 'next/image';
+import { RemoveTrustlineButton } from "./remove-trustline-button";
 
 interface AssetDetailModalProps {
   isOpen: boolean;
@@ -162,18 +163,15 @@ export function AssetDetailModal({ isOpen, onClose, asset, onSend, onReceive, on
           {activeTab === 'about' && (
             <div className="space-y-1">
               {/* Remove Asset Button */}
-              {asset.issuer && onRemove && (
-                <Button 
-                  onClick={onRemove}
-                  variant="destructive"
-                  className="w-full mb-4"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Remove Asset
-                </Button>
-              )}
+               <RemoveTrustlineButton 
+                 assetCode={asset.code} 
+                  assetIssuer={asset.issuer} 
+                 balance={asset.balance || "0"} 
+                  />
 
-              {loading ? (
+
+            
+                 {loading ? (
                 <div className="py-8 text-center text-muted-foreground">
                   Loading asset information...
                 </div>
