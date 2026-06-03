@@ -470,11 +470,7 @@ export default function TokenSearchPage() {
   const [hasTrustlineForToken, setHasTrustlineForToken] = useState(false);
 
   // Mock wallet context - replace with your actual context
-  const activeWallet = { id: '1', balances: [] };
-  const unlockWallet = (walletId: string, password: string) => {
-    // Replace this with your actual wallet unlock logic
-    return '';
-  };
+  const { activeWallet, unlockWallet } = useWallet();
 
   const recommendedTokens = useMemo(() => {
     return [
