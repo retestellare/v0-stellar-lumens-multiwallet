@@ -129,16 +129,16 @@ export function OrderBook({
           <div className="overflow-x-auto">
             {/* Column Headers */}
             <div className="sticky top-0 bg-background/95 backdrop-blur border-b border-border flex px-1 sm:px-2 py-3 text-[10px] sm:text-xs font-semibold">
-              <div className="w-[22%] text-left text-blue-400 truncate">Bid Amt</div>
-              <div className="w-[28%] text-right text-primary truncate pr-2">Bid</div>
-              <div className="w-[28%] text-left text-destructive truncate pl-2">Ask</div>
-              <div className="w-[22%] text-right text-pink-400 truncate">Ask Amt</div>
+              <div className="w-[22%] text-left text-blue-400 truncate">Bid (FORGE)</div>
+              <div className="w-[28%] text-right text-primary truncate pr-2">Bid Amt (XLM)</div>
+              <div className="w-[28%] text-left text-destructive truncate pl-2">Ask (FORGE)</div>
+              <div className="w-[22%] text-right text-pink-400 truncate">Ask Amt (XLM)</div>
             </div>
             
             {/* Subheader showing base asset */}
             <div className="bg-background/80 border-b border-border/50 flex px-1 sm:px-2 py-1 text-[9px] sm:text-[10px] text-muted-foreground">
-              <div className="w-[22%] text-left truncate">{sellingAsset}</div>
-              <div className="w-[28%] text-right truncate pr-2">{buyingAsset}</div>
+              <div className="w-[22%] text-left truncate">{buyingAsset}</div>
+              <div className="w-[28%] text-right truncate pr-2">{sellingAsset}</div>
               <div className="w-[28%] text-left truncate pl-2">{buyingAsset}</div>
               <div className="w-[22%] text-right truncate">{sellingAsset}</div>
             </div>
@@ -150,54 +150,61 @@ export function OrderBook({
                   key={idx}
                   className="flex px-1 sm:px-2 py-1.5 text-[11px] sm:text-xs border-b border-border/20 hover:bg-primary/5 transition-colors"
                 >
-                  {/* Bid Amount - Click to SELL */}
-                  {/* Stellar: bid.amount = counter_asset volume (XLM), displayed directly */}
+                  {/* Bid (FORGE) - calculated from amount / price */}
+                  {/* Stellar: bid.amount is in counter_asset (XLM), so FORGE qty = amount / price */}
                   <div 
                     className="w-[22%] text-left font-mono cursor-pointer hover:bg-blue-500/10 rounded truncate"
+                    onClick={() => row.bid && onBidClick?.(row.bid.price, row.bid.amount)}
+                    title={row.bid ? `${(Number(row.bid.amount) / Number(row.bid.price)).toFixed(4)}` : undefined}
+                  >
+                    {row.bid ? (
+                      <span className="text-blue-400 font-medium">
+                        {formatAmount((Number(row.bid.amount) / Number(row.bid.price)).toString())}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground/30">-</span>
+                    )}
+                  </div>
+
+                  {/* Bid Amt (XLM) - native API value */}
+                  {/* Stellar: bid.amount is already in XLM (counter_asset) */}
+                  <div 
+                    className="w-[28%] text-right font-mono cursor-pointer hover:bg-primary/10 rounded pr-2 truncate"
                     onClick={() => row.bid && onBidClick?.(row.bid.price, row.bid.amount)}
                     title={row.bid ? row.bid.amount : undefined}
                   >
                     {row.bid ? (
-                      <span className="text-blue-400 font-medium">{formatAmount(row.bid.amount)}</span>
+                      <span className="text-primary font-semibold">{formatAmount(row.bid.amount)}</span>
                     ) : (
                       <span className="text-muted-foreground/30">-</span>
                     )}
                   </div>
 
-                  {/* Bid Price */}
-                  <div 
-                    className="w-[28%] text-right font-mono cursor-pointer hover:bg-primary/10 rounded pr-2 truncate"
-                    onClick={() => row.bid && onBidClick?.(row.bid.price, row.bid.amount)}
-                    title={row.bid ? row.bid.price : undefined}
-                  >
-                    {row.bid ? (
-                      <span className="text-primary font-semibold">{formatPrice(row.bid.price)}</span>
-                    ) : (
-                      <span className="text-muted-foreground/30">-</span>
-                    )}
-                  </div>
-
-                  {/* Ask Price */}
+                  {/* Ask (FORGE) - native API value */}
+                  {/* Stellar: ask.amount is the base_asset quantity (FORGE) */}
                   <div 
                     className="w-[28%] text-left font-mono cursor-pointer hover:bg-destructive/10 rounded pl-2 truncate"
-                    onClick={() => row.ask && onAskClick?.(row.ask.price, row.ask.amount)}
-                    title={row.ask ? row.ask.price : undefined}
-                  >
-                    {row.ask ? (
-                      <span className="text-destructive font-semibold">{formatPrice(row.ask.price)}</span>
-                    ) : (
-                      <span className="text-muted-foreground/30">-</span>
-                    )}
-                  </div>
-
-                  {/* Ask Amount - Click to BUY */}
-                  <div 
-                    className="w-[22%] text-right font-mono cursor-pointer hover:bg-pink-500/10 rounded truncate"
                     onClick={() => row.ask && onAskClick?.(row.ask.price, row.ask.amount)}
                     title={row.ask ? row.ask.amount : undefined}
                   >
                     {row.ask ? (
-                      <span className="text-pink-400 font-medium">{formatAmount(row.ask.amount)}</span>
+                      <span className="text-destructive font-semibold">{formatAmount(row.ask.amount)}</span>
+                    ) : (
+                      <span className="text-muted-foreground/30">-</span>
+                    )}
+                  </div>
+
+                  {/* Ask Amt (XLM) - calculated from amount * price */}
+                  {/* Stellar: ask.amount is in base_asset (FORGE), so XLM value = amount * price */}
+                  <div 
+                    className="w-[22%] text-right font-mono cursor-pointer hover:bg-pink-500/10 rounded truncate"
+                    onClick={() => row.ask && onAskClick?.(row.ask.price, row.ask.amount)}
+                    title={row.ask ? `${(Number(row.ask.amount) * Number(row.ask.price)).toFixed(4)}` : undefined}
+                  >
+                    {row.ask ? (
+                      <span className="text-pink-400 font-medium">
+                        {formatAmount((Number(row.ask.amount) * Number(row.ask.price)).toString())}
+                      </span>
                     ) : (
                       <span className="text-muted-foreground/30">-</span>
                     )}
