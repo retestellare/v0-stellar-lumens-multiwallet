@@ -88,6 +88,9 @@ export function OrderBook({
   onAskClick
 }: OrderBookProps) {
   // Merge orders for interleaved display
+  // NOTE: Stellar Horizon API semantics:
+  // - bids.amount = counter_asset volume (XLM), already in the correct unit for display
+  // - If calculating base_asset quantity for bids: bid.amount / bid.price
   const maxRows = Math.max(bids.length, asks.length);
   const mergedOrders = Array.from({ length: maxRows }, (_, idx) => ({
     bid: bids[idx] || null,
@@ -148,6 +151,7 @@ export function OrderBook({
                   className="flex px-1 sm:px-2 py-1.5 text-[11px] sm:text-xs border-b border-border/20 hover:bg-primary/5 transition-colors"
                 >
                   {/* Bid Amount - Click to SELL */}
+                  {/* Stellar: bid.amount = counter_asset volume (XLM), displayed directly */}
                   <div 
                     className="w-[22%] text-left font-mono cursor-pointer hover:bg-blue-500/10 rounded truncate"
                     onClick={() => row.bid && onBidClick?.(row.bid.price, row.bid.amount)}
