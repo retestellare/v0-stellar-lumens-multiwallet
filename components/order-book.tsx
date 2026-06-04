@@ -129,18 +129,18 @@ export function OrderBook({
           <div className="overflow-x-auto">
             {/* Column Headers */}
             <div className="sticky top-0 bg-background/95 backdrop-blur border-b border-border flex px-1 sm:px-2 py-3 text-[10px] sm:text-xs font-semibold">
-              <div className="w-[22%] text-left text-blue-400 truncate">Bid (FORGE)</div>
-              <div className="w-[28%] text-right text-primary truncate pr-2">Bid Amt (XLM)</div>
-              <div className="w-[28%] text-left text-destructive truncate pl-2">Ask (FORGE)</div>
-              <div className="w-[22%] text-right text-pink-400 truncate">Ask Amt (XLM)</div>
+              <div className="w-[22%] text-left text-blue-400 truncate">Bid Amt (XLM)</div>
+              <div className="w-[28%] text-right text-primary truncate pr-2">Bid (FORGE)</div>
+              <div className="w-[28%] text-left text-destructive truncate pl-2">Ask Amt (XLM)</div>
+              <div className="w-[22%] text-right text-pink-400 truncate">Ask (FORGE)</div>
             </div>
             
             {/* Subheader showing base asset */}
             <div className="bg-background/80 border-b border-border/50 flex px-1 sm:px-2 py-1 text-[9px] sm:text-[10px] text-muted-foreground">
-              <div className="w-[22%] text-left truncate">{buyingAsset}</div>
-              <div className="w-[28%] text-right truncate pr-2">{sellingAsset}</div>
-              <div className="w-[28%] text-left truncate pl-2">{buyingAsset}</div>
-              <div className="w-[22%] text-right truncate">{sellingAsset}</div>
+              <div className="w-[22%] text-left truncate">{sellingAsset}</div>
+              <div className="w-[28%] text-right truncate pr-2">{buyingAsset}</div>
+              <div className="w-[28%] text-left truncate pl-2">{sellingAsset}</div>
+              <div className="w-[22%] text-right truncate">{buyingAsset}</div>
             </div>
 
             {/* Order Rows */}
