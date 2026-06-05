@@ -15,6 +15,8 @@ export interface Wallet {
   homeDomain?: string;
 }
 
+export type PasswordSessionType = 'everytime' | 'after_hour' | 'never';
+
 export interface WalletContextType {
   wallets: Wallet[];
   activeWalletId: string | null;
@@ -27,6 +29,11 @@ export interface WalletContextType {
   updateWalletDetails: (id: string, details: { name?: string; federationName?: string; homeDomain?: string }) => void;
   updateBalances: (walletId: string) => Promise<void>;
   unlockWallet: (walletId: string, password: string) => string;
+  savePasswordSession: (walletId: string, password: string, sessionType: PasswordSessionType) => void;
+  getPasswordSession: (walletId: string) => string | null;
+  clearPasswordSession: (walletId: string) => void;
+  passwordSessionType: PasswordSessionType;
+  setPasswordSessionType: (type: PasswordSessionType) => void;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -34,6 +41,11 @@ const WalletContext = createContext<WalletContextType | undefined>(undefined);
 export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [activeWalletId, setActiveWalletId] = useState<string | null>(null);
+  
+  // Password session management - stored in RAM only
+  const [passwordSessionType, setPasswordSessionType] = useState<PasswordSessionType>('everytime');
+  const [passwordSessions, setPasswordSessions] = useState<Record<string, { password: string; timestamp: number }>>({});
+  const timeoutRefs = React.useRef<Record<string, NodeJS.Timeout>>({});
 
   // Compute active wallet
   const activeWallet = useMemo(() => {
@@ -146,6 +158,81 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, [wallets]);
 
+  // Save password to memory with session type
+  const savePasswordSession = useCallback((walletId: string, password: string, sessionType: PasswordSessionType) => {
+    // Clear any existing timeout for this wallet
+    if (timeoutRefs.current[walletId]) {
+      clearTimeout(timeoutRefs.current[walletId]);
+      delete timeoutRefs.current[walletId];
+    }
+
+    setPasswordSessions(prev => ({
+      ...prev,
+      [walletId]: {
+        password,
+        timestamp: Date.now(),
+      },
+    }));
+
+    // If after_hour, set a timeout to clear the password after 60 minutes
+    if (sessionType === 'after_hour') {
+      const timeoutId = setTimeout(() => {
+        setPasswordSessions(prev => {
+          const updated = { ...prev };
+          delete updated[walletId];
+          return updated;
+        });
+        delete timeoutRefs.current[walletId];
+      }, 60 * 60 * 1000); // 60 minutes in milliseconds
+
+      timeoutRefs.current[walletId] = timeoutId;
+    }
+  }, []);
+
+  // Retrieve password if valid based on session type
+  const getPasswordSession = useCallback((walletId: string): string | null => {
+    if (passwordSessionType === 'everytime') {
+      return null; // Always ask for password
+    }
+
+    const session = passwordSessions[walletId];
+    if (!session) return null;
+
+    if (passwordSessionType === 'after_hour') {
+      const ageInMs = Date.now() - session.timestamp;
+      const ageInMinutes = ageInMs / (60 * 1000);
+      if (ageInMinutes > 60) {
+        // Password expired, remove it
+        setPasswordSessions(prev => {
+          const updated = { ...prev };
+          delete updated[walletId];
+          return updated;
+        });
+        return null;
+      }
+      return session.password;
+    }
+
+    if (passwordSessionType === 'never') {
+      return session.password; // Return password indefinitely
+    }
+
+    return null;
+  }, [passwordSessionType, passwordSessions]);
+
+  // Clear password session for a specific wallet
+  const clearPasswordSession = useCallback((walletId: string) => {
+    if (timeoutRefs.current[walletId]) {
+      clearTimeout(timeoutRefs.current[walletId]);
+      delete timeoutRefs.current[walletId];
+    }
+    setPasswordSessions(prev => {
+      const updated = { ...prev };
+      delete updated[walletId];
+      return updated;
+    });
+  }, []);
+
   const updateBalances = useCallback(async (walletId: string) => {
     // Use a functional update to avoid stale closure issues
     setWallets(prev => {
@@ -187,6 +274,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         updateWalletDetails,
         updateBalances,
         unlockWallet,
+        savePasswordSession,
+        getPasswordSession,
+        clearPasswordSession,
+        passwordSessionType,
+        setPasswordSessionType,
       }}
     >
       {children}
