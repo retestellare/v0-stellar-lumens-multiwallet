@@ -17,11 +17,13 @@ import {
   Loader2,
   Globe,
   AlertCircle,
+  Lock,
 } from 'lucide-react';
 import { useWallet } from '@/lib/wallet-context';
 import { decryptSecret, getAccountHomeDomain, setHomeDomain, clearHomeDomain } from '@/lib/stellar-utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PasswordSessionScreen } from './settings/password-session-screen';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -30,7 +32,7 @@ interface SettingsModalProps {
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const { activeWallet, wallets, removeWallet, updateWalletDetails } = useWallet();
-  const [activeSection, setActiveSection] = useState<'main' | 'wallet' | 'security'>('main');
+  const [activeSection, setActiveSection] = useState<'main' | 'wallet' | 'security' | 'password-session'>('main');
   const [editingName, setEditingName] = useState(false);
   const [newName, setNewName] = useState('');
   
@@ -145,7 +147,13 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           <div className="flex items-center gap-2">
             {activeSection !== 'main' && (
               <button
-                onClick={() => setActiveSection('main')}
+                onClick={() => {
+                  if (activeSection === 'password-session') {
+                    setActiveSection('security');
+                  } else {
+                    setActiveSection('main');
+                  }
+                }}
                 className="p-1 rounded hover:bg-background/50"
               >
                 <ChevronRight className="w-5 h-5 rotate-180 text-muted-foreground" />
@@ -155,6 +163,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               {activeSection === 'main' && 'Settings'}
               {activeSection === 'wallet' && 'Wallet Settings'}
               {activeSection === 'security' && 'Security'}
+              {activeSection === 'password-session' && 'Security'}
             </h2>
           </div>
           <button
@@ -376,6 +385,21 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 </p>
               </div>
 
+              {/* Require Session Password */}
+              <button
+                onClick={() => setActiveSection('password-session')}
+                className="w-full flex items-center justify-between p-4 rounded-xl bg-background/30 hover:bg-background/50 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <Lock className="w-5 h-5 text-primary" />
+                  <div className="text-left">
+                    <p className="font-medium text-foreground">Require session password</p>
+                    <p className="text-xs text-muted-foreground">Configure password timeout</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-5 h-5 text-muted-foreground" />
+              </button>
+
               <SecretKeySection wallet={activeWallet} />
 
               {/* Remove Wallet */}
@@ -391,6 +415,12 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 </button>
               </div>
             </div>
+          )}
+
+          {activeSection === 'password-session' && (
+            <PasswordSessionScreen
+              onBack={() => setActiveSection('security')}
+            />
           )}
         </div>
       </div>
