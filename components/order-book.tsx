@@ -129,16 +129,16 @@ export function OrderBook({
           <div className="overflow-x-auto">
             {/* Column Headers */}
             <div className="sticky top-0 bg-background/95 backdrop-blur border-b border-border flex px-1 sm:px-2 py-3 text-[10px] sm:text-xs font-semibold">
-              <div className="w-[22%] text-left text-blue-400 truncate">Bid Amt (XLM)</div>
-              <div className="w-[28%] text-right text-primary truncate pr-2">Bid (FORGE)</div>
+              <div className="w-[28%] text-left text-primary truncate">Bid (FORGE)</div>
+              <div className="w-[22%] text-right text-blue-400 truncate pr-2">Bid Amt (XLM)</div>
               <div className="w-[28%] text-left text-destructive truncate pl-2">Ask Amt (XLM)</div>
               <div className="w-[22%] text-right text-pink-400 truncate">Ask (FORGE)</div>
             </div>
             
             {/* Subheader showing base asset */}
             <div className="bg-background/80 border-b border-border/50 flex px-1 sm:px-2 py-1 text-[9px] sm:text-[10px] text-muted-foreground">
-              <div className="w-[22%] text-left truncate">{sellingAsset}</div>
-              <div className="w-[28%] text-right truncate pr-2">{buyingAsset}</div>
+              <div className="w-[28%] text-left truncate">{buyingAsset}</div>
+              <div className="w-[22%] text-right truncate pr-2">{sellingAsset}</div>
               <div className="w-[28%] text-left truncate pl-2">{sellingAsset}</div>
               <div className="w-[22%] text-right truncate">{buyingAsset}</div>
             </div>
@@ -153,12 +153,12 @@ export function OrderBook({
                   {/* Bid (FORGE) - calculated from amount / price */}
                   {/* Stellar: bid.amount is in counter_asset (XLM), so FORGE qty = amount / price */}
                   <div 
-                    className="w-[22%] text-left font-mono cursor-pointer hover:bg-blue-500/10 rounded truncate"
+                    className="w-[28%] text-left font-mono cursor-pointer hover:bg-primary/10 rounded truncate"
                     onClick={() => row.bid && onBidClick?.(row.bid.price, row.bid.amount)}
                     title={row.bid ? `${(Number(row.bid.amount) / Number(row.bid.price)).toFixed(4)}` : undefined}
                   >
                     {row.bid ? (
-                      <span className="text-blue-400 font-medium">
+                      <span className="text-primary font-semibold">
                         {formatAmount((Number(row.bid.amount) / Number(row.bid.price)).toString())}
                       </span>
                     ) : (
@@ -169,12 +169,14 @@ export function OrderBook({
                   {/* Bid Amt (XLM) - native API value */}
                   {/* Stellar: bid.amount is already in XLM (counter_asset) */}
                   <div 
-                    className="w-[28%] text-right font-mono cursor-pointer hover:bg-primary/10 rounded pr-2 truncate"
+                    className="w-[22%] text-right font-mono cursor-pointer hover:bg-blue-500/10 rounded pr-2 truncate"
                     onClick={() => row.bid && onBidClick?.(row.bid.price, row.bid.amount)}
                     title={row.bid ? row.bid.amount : undefined}
                   >
                     {row.bid ? (
-                      <span className="text-primary font-semibold">{formatAmount(row.bid.amount)}</span>
+                      <span className="text-blue-400 font-medium">
+                        {formatAmount(row.bid.amount)}
+                      </span>
                     ) : (
                       <span className="text-muted-foreground/30">-</span>
                     )}
