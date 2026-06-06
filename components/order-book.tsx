@@ -103,19 +103,46 @@ export function OrderBook({
 
   return (
     <div className="space-y-4">
-      {/* Spread Info Header */}
-      <div className="glow-border p-3 rounded-lg">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <p className="text-xs font-medium text-muted-foreground">
-            Spread: <span className="text-primary font-semibold">{spread.toFixed(3)}%</span>
-          </p>
+      {/* Spread Info & Real-time Price Header */}
+      <div className="glow-border p-4 rounded-lg bg-gradient-to-r from-background/50 to-background/30">
+        <div className="space-y-3">
+          {/* Top Row: Real-time Prices */}
           {bestBid && bestAsk && (
-            <p className="text-xs text-muted-foreground">
-              Diff: <span className="text-accent font-semibold">
-                {formatDiff(priceDiff)} {buyingAsset}
-              </span>
-            </p>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="flex flex-col gap-1">
+                <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wide">Best Bid</p>
+                <p className="text-sm sm:text-base font-semibold text-blue-400">
+                  {formatPrice(bestBid)}
+                </p>
+              </div>
+              <div className="flex flex-col gap-1 text-center">
+                <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wide">Spread</p>
+                <p className="text-sm sm:text-base font-semibold text-primary">
+                  {spread.toFixed(3)}%
+                </p>
+              </div>
+              <div className="flex flex-col gap-1">
+                <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wide">Best Ask</p>
+                <p className="text-sm sm:text-base font-semibold text-pink-400">
+                  {formatPrice(bestAsk)}
+                </p>
+              </div>
+            </div>
           )}
+          
+          {/* Bottom Row: Spread Stats */}
+          <div className="flex items-center justify-between pt-2 border-t border-border/30">
+            <p className="text-xs font-medium text-muted-foreground">
+              Spread: <span className="text-primary font-semibold">{spread.toFixed(3)}%</span>
+            </p>
+            {bestBid && bestAsk && (
+              <p className="text-xs text-muted-foreground">
+                Diff: <span className="text-accent font-semibold">
+                  {formatDiff(priceDiff)} {buyingAsset}
+                </span>
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
