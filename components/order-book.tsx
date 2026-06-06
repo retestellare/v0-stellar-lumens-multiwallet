@@ -146,100 +146,105 @@ export function OrderBook({
         </div>
       </div>
 
-      {/* Order Book Table */}
+      {/* Order Book Table - Interstellar Style */}
       <div className="glow-border rounded-lg overflow-hidden">
         {loading ? (
           <div className="p-6 text-center text-muted-foreground">Loading order book...</div>
         ) : bids.length === 0 && asks.length === 0 ? (
           <div className="p-6 text-center text-muted-foreground">No orders available</div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="bg-background/50 p-2 space-y-2">
             {/* Column Headers */}
-            <div className="sticky top-0 bg-background/95 backdrop-blur border-b border-border flex px-1 sm:px-2 py-3 text-[10px] sm:text-xs font-semibold">
-              <div className="w-[28%] text-left text-primary truncate">Bid (FORGE)</div>
-              <div className="w-[22%] text-right text-blue-400 truncate pr-2">Bid Amt (XLM)</div>
-              <div className="w-[28%] text-left text-destructive truncate pl-2">Ask Amt (XLM)</div>
-              <div className="w-[22%] text-right text-pink-400 truncate">Ask (FORGE)</div>
-            </div>
-            
-            {/* Subheader showing base asset */}
-            <div className="bg-background/80 border-b border-border/50 flex px-1 sm:px-2 py-1 text-[9px] sm:text-[10px] text-muted-foreground">
-              <div className="w-[28%] text-left truncate">{buyingAsset}</div>
-              <div className="w-[22%] text-right truncate pr-2">{sellingAsset}</div>
-              <div className="w-[28%] text-left truncate pl-2">{sellingAsset}</div>
-              <div className="w-[22%] text-right truncate">{buyingAsset}</div>
+            <div className="grid grid-cols-4 gap-0 text-[10px] sm:text-xs font-semibold text-muted-foreground px-2 py-2 border-b border-border/30">
+              <div className="text-left">Amount ({sellingAsset})</div>
+              <div className="text-right">Bid ({buyingAsset})</div>
+              <div className="text-left">Ask ({buyingAsset})</div>
+              <div className="text-right">Amount ({sellingAsset})</div>
             </div>
 
-            {/* Order Rows */}
-            <div className="max-h-[500px] overflow-y-auto">
-              {mergedOrders.map((row, idx) => (
-                <div
-                  key={idx}
-                  className="flex px-1 sm:px-2 py-1.5 text-[11px] sm:text-xs border-b border-border/20 hover:bg-primary/5 transition-colors"
-                >
-                  {/* Bid (FORGE) - calculated from amount / price */}
-                  {/* Stellar: bid.amount is in counter_asset (XLM), so FORGE qty = amount / price */}
-                  <div 
-                    className="w-[28%] text-left font-mono cursor-pointer hover:bg-primary/10 rounded truncate"
-                    onClick={() => row.bid && onBidClick?.(row.bid.price, row.bid.amount)}
-                    title={row.bid ? `${(Number(row.bid.amount) / Number(row.bid.price)).toFixed(4)}` : undefined}
-                  >
-                    {row.bid ? (
-                      <span className="text-primary font-semibold">
-                        {formatAmount((Number(row.bid.amount) / Number(row.bid.price)).toString())}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground/30">-</span>
-                    )}
-                  </div>
+            {/* Spread Row - Center */}
+            <div className="text-center py-2 px-4 bg-background/80 rounded border border-primary/20">
+              <p className="text-xs sm:text-sm font-semibold text-primary">
+                Spread: {spread.toFixed(3)}% {priceDiff !== 0 && `• ${formatDiff(priceDiff)} ${buyingAsset}`}
+              </p>
+            </div>
 
-                  {/* Bid Amt (XLM) - native API value */}
-                  {/* Stellar: bid.amount is already in XLM (counter_asset) */}
-                  <div 
-                    className="w-[22%] text-right font-mono cursor-pointer hover:bg-blue-500/10 rounded pr-2 truncate"
-                    onClick={() => row.bid && onBidClick?.(row.bid.price, row.bid.amount)}
-                    title={row.bid ? row.bid.amount : undefined}
-                  >
-                    {row.bid ? (
-                      <span className="text-blue-400 font-medium">
-                        {formatAmount(row.bid.amount)}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground/30">-</span>
-                    )}
-                  </div>
+            {/* Order Rows - Mirrored Layout */}
+            <div className="max-h-[500px] overflow-y-auto space-y-0.5">
+              {mergedOrders.map((row, idx) => {
+                // Calculate depth bar widths (normalized to max ~50)
+                const maxDepth = 50;
+                const bidDepthWidth = row.bid ? Math.min((Number(row.bid.amount) / maxDepth) * 100, 100) : 0;
+                const askDepthWidth = row.ask ? Math.min((Number(row.ask.amount) / maxDepth) * 100, 100) : 0;
 
-                  {/* Ask (FORGE) - native API value */}
-                  {/* Stellar: ask.amount is the base_asset quantity (FORGE) */}
-                  <div 
-                    className="w-[28%] text-left font-mono cursor-pointer hover:bg-destructive/10 rounded pl-2 truncate"
-                    onClick={() => row.ask && onAskClick?.(row.ask.price, row.ask.amount)}
-                    title={row.ask ? row.ask.amount : undefined}
-                  >
-                    {row.ask ? (
-                      <span className="text-destructive font-semibold">{formatAmount(row.ask.amount)}</span>
-                    ) : (
-                      <span className="text-muted-foreground/30">-</span>
-                    )}
-                  </div>
+                return (
+                  <div key={idx} className="grid grid-cols-4 gap-0 text-[11px] sm:text-xs font-mono">
+                    {/* LEFT SIDE - BIDS (Amount on left, Price on right) */}
+                    <div 
+                      className="relative overflow-hidden"
+                      style={{
+                        background: row.bid ? `linear-gradient(to left, rgba(59, 130, 246, 0.2) ${bidDepthWidth}%, transparent ${bidDepthWidth}%)` : 'transparent'
+                      }}
+                    >
+                      <div 
+                        className="py-1.5 px-2 text-left text-gray-300 hover:bg-blue-500/10 cursor-pointer transition-colors"
+                        onClick={() => row.bid && onBidClick?.(row.bid.price, row.bid.amount)}
+                        title={row.bid ? `Price: ${row.bid.price}, Amount: ${row.bid.amount}` : undefined}
+                      >
+                        {row.bid ? formatAmount(row.bid.amount) : '-'}
+                      </div>
+                    </div>
 
-                  {/* Ask Amt (XLM) - calculated from amount * price */}
-                  {/* Stellar: ask.amount is in base_asset (FORGE), so XLM value = amount * price */}
-                  <div 
-                    className="w-[22%] text-right font-mono cursor-pointer hover:bg-pink-500/10 rounded truncate"
-                    onClick={() => row.ask && onAskClick?.(row.ask.price, row.ask.amount)}
-                    title={row.ask ? `${(Number(row.ask.amount) * Number(row.ask.price)).toFixed(4)}` : undefined}
-                  >
-                    {row.ask ? (
-                      <span className="text-pink-400 font-medium">
-                        {formatAmount((Number(row.ask.amount) * Number(row.ask.price)).toString())}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground/30">-</span>
-                    )}
+                    {/* LEFT SIDE PRICE - Bid Price (faces right toward center) */}
+                    <div 
+                      className="relative overflow-hidden"
+                      style={{
+                        background: row.bid ? `linear-gradient(to left, rgba(59, 130, 246, 0.2) ${bidDepthWidth}%, transparent ${bidDepthWidth}%)` : 'transparent'
+                      }}
+                    >
+                      <div 
+                        className="py-1.5 px-2 text-right text-blue-400 font-medium hover:bg-blue-500/10 cursor-pointer transition-colors"
+                        onClick={() => row.bid && onBidClick?.(row.bid.price, row.bid.amount)}
+                        title={row.bid ? `Price: ${row.bid.price}, Amount: ${row.bid.amount}` : undefined}
+                      >
+                        {row.bid ? formatPrice(row.bid.price) : '-'}
+                      </div>
+                    </div>
+
+                    {/* RIGHT SIDE PRICE - Ask Price (faces left toward center) */}
+                    <div 
+                      className="relative overflow-hidden"
+                      style={{
+                        background: row.ask ? `linear-gradient(to right, rgba(239, 68, 68, 0.2) ${askDepthWidth}%, transparent ${askDepthWidth}%)` : 'transparent'
+                      }}
+                    >
+                      <div 
+                        className="py-1.5 px-2 text-left text-pink-400 font-medium hover:bg-pink-500/10 cursor-pointer transition-colors"
+                        onClick={() => row.ask && onAskClick?.(row.ask.price, row.ask.amount)}
+                        title={row.ask ? `Price: ${row.ask.price}, Amount: ${row.ask.amount}` : undefined}
+                      >
+                        {row.ask ? formatPrice(row.ask.price) : '-'}
+                      </div>
+                    </div>
+
+                    {/* RIGHT SIDE - ASKS (Price on left, Amount on right) */}
+                    <div 
+                      className="relative overflow-hidden"
+                      style={{
+                        background: row.ask ? `linear-gradient(to right, rgba(239, 68, 68, 0.2) ${askDepthWidth}%, transparent ${askDepthWidth}%)` : 'transparent'
+                      }}
+                    >
+                      <div 
+                        className="py-1.5 px-2 text-right text-gray-300 hover:bg-pink-500/10 cursor-pointer transition-colors"
+                        onClick={() => row.ask && onAskClick?.(row.ask.price, row.ask.amount)}
+                        title={row.ask ? `Price: ${row.ask.price}, Amount: ${row.ask.amount}` : undefined}
+                      >
+                        {row.ask ? formatAmount(row.ask.amount) : '-'}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
