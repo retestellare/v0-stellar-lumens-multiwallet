@@ -145,6 +145,7 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
                   setError('');
                 }}
                 className="bg-input border-border text-foreground placeholder:text-muted-foreground/50"
+                autoComplete="off"
               />
             </div>
             <div>
@@ -158,6 +159,7 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
                   setError('');
                 }}
                 className="bg-input border-border text-foreground placeholder:text-muted-foreground/50"
+                autoComplete="new-password"
               />
             </div>
             <div>
@@ -171,6 +173,7 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
                   setError('');
                 }}
                 className="bg-input border-border text-foreground placeholder:text-muted-foreground/50"
+                autoComplete="new-password"
               />
             </div>
             {error && <p className="text-xs text-destructive">{error}</p>}
@@ -201,6 +204,7 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
                   setError('');
                 }}
                 className="bg-input border-border text-foreground placeholder:text-muted-foreground/50"
+                autoComplete="off"
               />
             </div>
             <div>
@@ -214,6 +218,7 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
                 }}
                 className="w-full bg-input border border-border rounded text-foreground text-xs p-2 placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50"
                 rows={3}
+                autoComplete="off"
               />
             </div>
             <div>
@@ -227,6 +232,7 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
                   setError('');
                 }}
                 className="bg-input border-border text-foreground placeholder:text-muted-foreground/50"
+                autoComplete="new-password"
               />
             </div>
             <div>
@@ -240,6 +246,7 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
                   setError('');
                 }}
                 className="bg-input border-border text-foreground placeholder:text-muted-foreground/50"
+                autoComplete="new-password"
               />
             </div>
             {error && <p className="text-xs text-destructive">{error}</p>}
