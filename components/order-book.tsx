@@ -97,6 +97,14 @@ export function OrderBook({
     ask: asks[idx] || null,
   }));
 
+  // Calculate max amounts for proportional depth visualization
+  const maxAmountBids = bids.length > 0 
+    ? Math.max(...bids.map(b => parseFloat(b.amount) || 0), 1)
+    : 1;
+  const maxAmountAsks = asks.length > 0
+    ? Math.max(...asks.map(a => parseFloat(a.amount) || 0), 1)
+    : 1;
+
   const priceDiff = bestBid && bestAsk 
     ? parseFloat(bestAsk) - parseFloat(bestBid)
     : 0;
@@ -172,20 +180,20 @@ export function OrderBook({
             {/* Order Rows - Mirrored Layout */}
             <div className="max-h-[500px] overflow-y-auto space-y-0.5">
               {mergedOrders.map((row, idx) => {
-                // Calculate depth bar widths (normalized to max ~50)
-                const maxDepth = 50;
-                const bidDepthWidth = row.bid ? Math.min((Number(row.bid.amount) / maxDepth) * 100, 100) : 0;
-                const askDepthWidth = row.ask ? Math.min((Number(row.ask.amount) / maxDepth) * 100, 100) : 0;
+                // Calculate depth percentages based on actual max amounts
+                const bidDepthWidth = row.bid ? (parseFloat(row.bid.amount) / maxAmountBids) * 100 : 0;
+                const askDepthWidth = row.ask ? (parseFloat(row.ask.amount) / maxAmountAsks) * 100 : 0;
 
                 return (
                   <div key={idx} className="grid grid-cols-4 gap-0 text-[11px] sm:text-xs font-mono">
-                    {/* LEFT SIDE - BIDS (Amount on left, Price on right) */}
+                    {/* LEFT SIDE - BIDS (Amount on left, Price on right) with gradient spanning both */}
                     <div 
-                      className="relative overflow-hidden"
+                      className="col-span-2 grid grid-cols-2"
                       style={{
                         background: row.bid ? `linear-gradient(to left, rgba(59, 130, 246, 0.2) ${bidDepthWidth}%, transparent ${bidDepthWidth}%)` : 'transparent'
                       }}
                     >
+                      {/* Bid Amount */}
                       <div 
                         className="py-1.5 px-2 text-left text-gray-300 hover:bg-blue-500/10 cursor-pointer transition-colors"
                         onClick={() => row.bid && onBidClick?.(row.bid.price, row.bid.amount)}
@@ -193,15 +201,8 @@ export function OrderBook({
                       >
                         {row.bid ? formatAmount(row.bid.amount) : '-'}
                       </div>
-                    </div>
 
-                    {/* LEFT SIDE PRICE - Bid Price (faces right toward center) */}
-                    <div 
-                      className="relative overflow-hidden"
-                      style={{
-                        background: row.bid ? `linear-gradient(to left, rgba(59, 130, 246, 0.2) ${bidDepthWidth}%, transparent ${bidDepthWidth}%)` : 'transparent'
-                      }}
-                    >
+                      {/* Bid Price */}
                       <div 
                         className="py-1.5 px-2 text-right text-blue-400 font-medium hover:bg-blue-500/10 cursor-pointer transition-colors"
                         onClick={() => row.bid && onBidClick?.(row.bid.price, row.bid.amount)}
@@ -211,13 +212,14 @@ export function OrderBook({
                       </div>
                     </div>
 
-                    {/* RIGHT SIDE PRICE - Ask Price (faces left toward center) */}
+                    {/* RIGHT SIDE - ASKS (Price on left, Amount on right) with gradient spanning both */}
                     <div 
-                      className="relative overflow-hidden"
+                      className="col-span-2 grid grid-cols-2"
                       style={{
                         background: row.ask ? `linear-gradient(to right, rgba(239, 68, 68, 0.2) ${askDepthWidth}%, transparent ${askDepthWidth}%)` : 'transparent'
                       }}
                     >
+                      {/* Ask Price */}
                       <div 
                         className="py-1.5 px-2 text-left text-pink-400 font-medium hover:bg-pink-500/10 cursor-pointer transition-colors"
                         onClick={() => row.ask && onAskClick?.(row.ask.price, row.ask.amount)}
@@ -225,15 +227,8 @@ export function OrderBook({
                       >
                         {row.ask ? formatPrice(row.ask.price) : '-'}
                       </div>
-                    </div>
 
-                    {/* RIGHT SIDE - ASKS (Price on left, Amount on right) */}
-                    <div 
-                      className="relative overflow-hidden"
-                      style={{
-                        background: row.ask ? `linear-gradient(to right, rgba(239, 68, 68, 0.2) ${askDepthWidth}%, transparent ${askDepthWidth}%)` : 'transparent'
-                      }}
-                    >
+                      {/* Ask Amount */}
                       <div 
                         className="py-1.5 px-2 text-right text-gray-300 hover:bg-pink-500/10 cursor-pointer transition-colors"
                         onClick={() => row.ask && onAskClick?.(row.ask.price, row.ask.amount)}
