@@ -47,9 +47,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [passwordSessions, setPasswordSessions] = useState<Record<string, { password: string; timestamp: number }>>({});
   const timeoutRefs = React.useRef<Record<string, NodeJS.Timeout>>({});
 
-  // Compute active wallet
+  // Compute active wallet - strictly use publicKey for identification
   const activeWallet = useMemo(() => {
-    return wallets.find(w => w.id === activeWalletId || w.publicKey === activeWalletId) || null;
+    return wallets.find(w => w.publicKey === activeWalletId) || null;
   }, [wallets, activeWalletId]);
 
   // Load wallets from localStorage on mount
@@ -68,7 +68,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         });
         setWallets(cleanedWallets);
         if (cleanedWallets.length > 0) {
-          setActiveWalletId(cleanedWallets[0].id || cleanedWallets[0].publicKey);
+          setActiveWalletId(cleanedWallets[0].publicKey);
         }
       } catch (error) {
         // Silent fail
@@ -100,7 +100,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       };
 
       setWallets(prev => [...prev, newWallet]);
-      setActiveWalletId(id);
+      setActiveWalletId(publicKey);
     } catch (error) {
       throw error;
     }
