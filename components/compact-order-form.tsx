@@ -23,50 +23,19 @@ interface CompactOrderFormProps {
   onSellClick: (price: string, amount: string) => void;
 }
 
-// Smart number formatting based on magnitude
-function formatNumber(value: number | string, maxDecimals: number = 7): string {
-  const num = typeof value === 'string' ? parseFloat(value) : value;
-  if (isNaN(num) || num === 0) return '0';
+// Intelligent number formatting based on magnitude
+const formatAmount = (num: number | string): string => {
+  const n = typeof num === 'string' ? parseFloat(num) : num;
+  if (!n || n === 0) return "0";
   
-  const absNum = Math.abs(num);
-  
-  // For very large numbers, use fewer decimals
-  if (absNum >= 100000) {
-    return num.toFixed(2);
-  } else if (absNum >= 10000) {
-    return num.toFixed(3);
-  } else if (absNum >= 1000) {
-    return num.toFixed(4);
-  } else if (absNum >= 100) {
-    return num.toFixed(5);
-  } else if (absNum >= 1) {
-    return num.toFixed(6);
-  } else {
-    return num.toFixed(maxDecimals);
+  // If the value is less than 0.01 (micro-amounts), use up to 7 decimals
+  if (n < 0.01) {
+    return n.toFixed(7).replace(/\.?0+$/, "");
   }
-}
-
-// Format for display (truncates long numbers)
-function formatDisplay(value: number | string): string {
-  const num = typeof value === 'string' ? parseFloat(value) : value;
-  if (isNaN(num) || num === 0) return '0';
   
-  const absNum = Math.abs(num);
-  
-  if (absNum >= 1000000) {
-    return (num / 1000000).toFixed(2) + 'M';
-  } else if (absNum >= 100000) {
-    return num.toFixed(0);
-  } else if (absNum >= 10000) {
-    return num.toFixed(1);
-  } else if (absNum >= 1000) {
-    return num.toFixed(2);
-  } else if (absNum >= 1) {
-    return num.toFixed(4);
-  } else {
-    return num.toFixed(7);
-  }
-}
+  // For standard amounts, use 4 decimals with trailing zeros removed
+  return n.toFixed(4).replace(/\.?0+$/, "");
+};
 
 export function CompactOrderForm({
   sellingAsset,
@@ -94,7 +63,7 @@ export function CompactOrderForm({
   useEffect(() => {
     if (buyPrice && buyAmount) {
       const total = parseFloat(buyPrice) * parseFloat(buyAmount);
-      setBuyCounterAmount(isNaN(total) ? '' : formatNumber(total));
+      setBuyCounterAmount(isNaN(total) ? '' : formatAmount(total));
     } else {
       setBuyCounterAmount('');
     }
@@ -103,7 +72,7 @@ export function CompactOrderForm({
   useEffect(() => {
     if (sellPrice && sellAmount) {
       const total = parseFloat(sellPrice) * parseFloat(sellAmount);
-      setSellCounterAmount(isNaN(total) ? '' : formatNumber(total));
+      setSellCounterAmount(isNaN(total) ? '' : formatAmount(total));
     } else {
       setSellCounterAmount('');
     }
@@ -116,7 +85,7 @@ export function CompactOrderForm({
     const counterAmt = parseFloat(value);
     if (price > 0 && !isNaN(counterAmt)) {
       // Amount of tokens = counter amount / price
-      onBuyAmountChange(formatNumber(counterAmt / price));
+      onBuyAmountChange(formatAmount(counterAmt / price));
     }
   };
 
@@ -126,7 +95,7 @@ export function CompactOrderForm({
     const counterAmt = parseFloat(value);
     if (price > 0 && !isNaN(counterAmt)) {
       // Amount of tokens = counter amount / price
-      onSellAmountChange(formatNumber(counterAmt / price));
+      onSellAmountChange(formatAmount(counterAmt / price));
     }
   };
 
@@ -140,12 +109,12 @@ export function CompactOrderForm({
     if (isNaN(price) || price <= 0) {
       price = bestBid ? parseFloat(bestBid) : 0;
       if (price > 0) {
-        onSellPriceChange(formatNumber(price));
+        onSellPriceChange(formatAmount(price));
       }
     }
     
     const amount = balance * (percentage / 100);
-    onSellAmountChange(formatNumber(amount));
+    onSellAmountChange(formatAmount(amount));
   };
 
   // For BUY: percentage of counter currency balance to spend
@@ -160,7 +129,7 @@ export function CompactOrderForm({
       price = bestAsk ? parseFloat(bestAsk) : 0;
       if (price > 0) {
         // Auto-fill price from best ask
-        onBuyPriceChange(formatNumber(price));
+        onBuyPriceChange(formatAmount(price));
       }
     }
     
@@ -171,7 +140,7 @@ export function CompactOrderForm({
     // Amount of base tokens = counter / price
     const tokenAmount = counterToSpend / price;
     
-    onBuyAmountChange(formatNumber(tokenAmount));
+    onBuyAmountChange(formatAmount(tokenAmount));
   };
 
   // Calculate totals
@@ -189,7 +158,7 @@ export function CompactOrderForm({
         <h3 className="text-xs sm:text-sm font-semibold text-primary">BUY {sellingAsset}</h3>
 
         {bestAsk && (
-          <div className="text-xs text-muted-foreground truncate">Best: {formatDisplay(bestAsk)}</div>
+          <div className="text-xs text-muted-foreground truncate">Best: {formatAmount(bestAsk)}</div>
         )}
 
         <div className="space-y-1">
@@ -229,18 +198,18 @@ export function CompactOrderForm({
           />
           <div className="text-right">
             <span className="text-[10px] text-muted-foreground">
-              Balance: {formatDisplay(buyingBalance)} {buyingAsset}
+              Balance: {formatAmount(buyingBalance)} {buyingAsset}
             </span>
           </div>
         </div>
 
-        <div className="flex gap-0.5">
+        <div className="grid grid-cols-3 gap-2 w-full">
           {[10, 50, 100].map((pct) => (
             <button
               key={pct}
               onClick={() => allocateBuyPercentage(pct)}
               disabled={parseFloat(buyingBalance) <= 0}
-              className="flex-1 px-1 py-0.5 text-xs rounded border border-primary/50 text-primary hover:bg-primary/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-2 py-1 text-xs rounded bg-background/50 text-primary ring-1 ring-primary/50 hover:ring-primary/80 hover:bg-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {pct}%
             </button>
@@ -252,7 +221,7 @@ export function CompactOrderForm({
           <div className="flex items-center justify-between text-xs">
             <span className="text-muted-foreground">Cost:</span>
             <span className="font-mono text-primary truncate max-w-[60%]">
-              {formatDisplay(buyTotal)} {buyingAsset}
+              {formatAmount(buyTotal)} {buyingAsset}
             </span>
           </div>
         </div>
@@ -271,7 +240,7 @@ export function CompactOrderForm({
         <h3 className="text-xs sm:text-sm font-semibold text-destructive">SELL {sellingAsset}</h3>
 
         {bestBid && (
-          <div className="text-xs text-muted-foreground truncate">Best: {formatDisplay(bestBid)}</div>
+          <div className="text-xs text-muted-foreground truncate">Best: {formatAmount(bestBid)}</div>
         )}
 
         <div className="space-y-1">
@@ -298,7 +267,7 @@ export function CompactOrderForm({
           />
           <div className="text-right">
             <span className="text-[10px] text-muted-foreground">
-              Balance: {formatDisplay(sellingBalance)} {sellingAsset}
+              Balance: {formatAmount(sellingBalance)} {sellingAsset}
             </span>
           </div>
         </div>
@@ -316,13 +285,13 @@ export function CompactOrderForm({
           />
         </div>
 
-        <div className="flex gap-0.5">
+        <div className="grid grid-cols-3 gap-2 w-full">
           {[10, 50, 100].map((pct) => (
             <button
               key={pct}
               onClick={() => allocateSellPercentage(pct)}
               disabled={parseFloat(sellingBalance) <= 0}
-              className="flex-1 px-1 py-0.5 text-xs rounded border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-2 py-1 text-xs rounded bg-background/50 text-destructive ring-1 ring-destructive/50 hover:ring-destructive/80 hover:bg-destructive/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {pct}%
             </button>
@@ -334,7 +303,7 @@ export function CompactOrderForm({
           <div className="flex items-center justify-between text-xs">
             <span className="text-muted-foreground">Receive:</span>
             <span className="font-mono text-destructive truncate max-w-[60%]">
-              {formatDisplay(sellTotal)} {buyingAsset}
+              {formatAmount(sellTotal)} {buyingAsset}
             </span>
           </div>
         </div>
