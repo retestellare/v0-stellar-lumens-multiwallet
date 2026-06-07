@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import * as StellarSdk from '@stellar/stellar-sdk';
-import { useWallet } from '@/lib/wallet-context';
 
 interface RemoveTrustlineButtonProps {
   assetCode: string;
@@ -12,7 +11,6 @@ interface RemoveTrustlineButtonProps {
 }
 
 export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSuccess }: RemoveTrustlineButtonProps) {
-  const { activeWallet, unlockWallet } = useWallet();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [password, setPassword] = useState('');
@@ -21,58 +19,9 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
   const isBalanceZero = parseFloat(balance) === 0;
   if (!isBalanceZero) return null;
 
-  // Show warning if wallet is not active
-  if (!activeWallet) {
-    return (
-      <div className="mt-4 w-full px-4 border-t border-gray-800 pt-4">
-        <div className="bg-red-900/20 border border-red-900 rounded-lg p-3 text-center">
-          <p className="text-red-400 text-xs">No active wallet selected</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Show warning if wallet is unfunded
-  if (activeWallet.status === 'unfunded') {
-    return (
-      <div className="mt-4 w-full px-4 border-t border-gray-800 pt-4">
-        <div className="bg-yellow-900/20 border border-yellow-900 rounded-lg p-3 text-center">
-          <p className="text-yellow-400 text-xs">{activeWallet.statusMessage || 'This wallet is not activated on the Stellar network yet'}</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Show error if wallet status is error
-  if (activeWallet.status === 'error') {
-    return (
-      <div className="mt-4 w-full px-4 border-t border-gray-800 pt-4">
-        <div className="bg-red-900/20 border border-red-900 rounded-lg p-3 text-center">
-          <p className="text-red-400 text-xs">{activeWallet.statusMessage || 'Error loading wallet'}</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Show loading state
-  if (activeWallet.status === 'loading') {
-    return (
-      <div className="mt-4 w-full px-4 border-t border-gray-800 pt-4">
-        <div className="bg-blue-900/20 border border-blue-900 rounded-lg p-3 text-center">
-          <p className="text-blue-400 text-xs">Loading wallet...</p>
-        </div>
-      </div>
-    );
-  }
-
   const handleRemove = async () => {
     if (!password) {
       setError("Please enter your wallet password.");
-      return;
-    }
-
-    if (!activeWallet || !activeWallet.publicKey) {
-      setError("Active wallet data is missing.");
       return;
     }
 
@@ -80,14 +29,41 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
     setError(null);
 
     try {
-      // Unlock wallet using context
-      const userSecretKey = unlockWallet(activeWallet.id, password);
-
-      if (!userSecretKey || !userSecretKey.startsWith('S')) {
-        throw new Error("Invalid password.");
+      // 1. Recupera l'array dei wallet salvati da v0
+      const storedWallets = localStorage.getItem('stellar_wallets');
+      if (!storedWallets) throw new Error("No wallets found. Please log in.");
+      
+      const wallets = JSON.parse(storedWallets);
+      
+      // Estrae in modo sicuro il primo elemento se è un array, altrimenti usa l'oggetto diretto
+      const activeWallet = Array.isArray(wallets) ? wallets[0] : wallets; 
+      
+      if (!activeWallet || !activeWallet.publicKey || !activeWallet.encryptedSecret) {
+        throw new Error("Active wallet data is missing.");
       }
 
-      // Request unsigned transaction from backend
+      // 2. Decripta la chiave segreta usando la password dell'utente.
+      // Sfruttiamo il decryptSecret iniettato globalmente o recuperato dalla libreria nativa.
+      let userSecretKey: string = "";
+      try {
+        // @ts-ignore
+        if (typeof window !== 'undefined' && window.decryptSecret) {
+          // @ts-ignore
+          userSecretKey = window.decryptSecret(activeWallet.encryptedSecret, password);
+        } else {
+          // Fallback dinamico se la funzione non è globale
+          const utils = require('@/lib/stellar-utils');
+          userSecretKey = utils.decryptSecret(activeWallet.encryptedSecret, password);
+        }
+
+        if (!userSecretKey || !userSecretKey.startsWith('S')) {
+          throw new Error("Invalid password.");
+        }
+      } catch (e) {
+        throw new Error("Incorrect password. Verification failed.");
+      }
+
+      // 3. Richiede la transazione XDR non firmata al backend
       const response = await fetch('/api/stellar/remove-trustline', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -97,7 +73,7 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to build transaction');
 
-      // Rebuild transaction from XDR and sign it on client
+      // 4. Ricostruisce la transazione dall'XDR e la firma sul client
       // @ts-ignore
       const NetworksPassphrase = StellarSdk.Networks?.PUBLIC || 'Public Global Stellar Network ; October 2015';
       
@@ -109,7 +85,7 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
       const keypair = StellarSdk.Keypair.fromSecret(userSecretKey);
       tx.sign(keypair);
 
-      // Submit signed transaction to Horizon Mainnet
+      // 5. Invia la transazione firmata alla Mainnet di Horizon
       // @ts-ignore
       const server = new StellarSdk.Horizon.Server("https://horizon.stellar.org");
       
@@ -156,7 +132,6 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
             placeholder="Wallet Password"
             className="w-full bg-black border border-gray-700 rounded p-1.5 text-xs text-white focus:outline-none focus:border-red-500"
             disabled={isLoading}
-            autoComplete="off"
           />
           <div className="flex gap-2 mt-1">
             <button
