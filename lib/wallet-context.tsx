@@ -148,13 +148,15 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return wallets.find(w => w.publicKey === activeWalletId) || null;
   }, [wallets, activeWalletId]);
 
-  // Persist activeWalletId to localStorage whenever it changes
+  // Persist activeWalletId and full wallet object to localStorage whenever it changes
   useEffect(() => {
-    if (activeWalletId) {
+    if (activeWalletId && activeWallet) {
       localStorage.setItem('stellar_activeWalletId', activeWalletId);
-      console.log('[v0] Saved activeWalletId to localStorage:', activeWalletId);
+      // Also save the full wallet object for faster initial restoration
+      localStorage.setItem('stellar_activeWallet', JSON.stringify(activeWallet));
+      console.log('[v0] Saved activeWallet to localStorage:', activeWallet.name);
     }
-  }, [activeWalletId]);
+  }, [activeWalletId, activeWallet]);
   useEffect(() => {
     const stored = localStorage.getItem('stellar_wallets');
     const storedActiveId = localStorage.getItem('stellar_activeWalletId');

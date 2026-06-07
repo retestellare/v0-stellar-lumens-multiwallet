@@ -23,7 +23,7 @@ const ReceiveModal = dynamic(() => import('@/components/receive-modal').then(mod
 });
 
 export default function DashboardPage() {
-  const { wallets, activeWalletId, setActiveWallet, removeWallet, updateBalances } = useWallet();
+  const { wallets, activeWallet, activeWalletId, setActiveWallet, removeWallet, updateBalances } = useWallet();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSendOpen, setIsSendOpen] = useState(false);
   const [isReceiveOpen, setIsReceiveOpen] = useState(false);
@@ -38,9 +38,18 @@ export default function DashboardPage() {
     setIsReceiveOpen(true);
   }, []);
 
-  const handleWalletSelect = useCallback((id: string) => {
-    setActiveWallet(id);
-  }, [setActiveWallet]);
+  const handleWalletSelect = useCallback((walletId: string) => {
+    console.log('[v0] Wallet selected:', walletId);
+    // Immediately set the active wallet in state and save to localStorage
+    setActiveWallet(walletId);
+    // Save the full wallet object to localStorage for immediate access on page reload
+    const wallet = wallets.find(w => w.id === walletId);
+    if (wallet) {
+      localStorage.setItem('stellar_activeWallet', JSON.stringify(wallet));
+      localStorage.setItem('stellar_activeWalletId', wallet.publicKey);
+      console.log('[v0] Saved wallet to localStorage:', wallet.name);
+    }
+  }, [setActiveWallet, wallets]);
 
   const handleAddWallet = useCallback(() => {
     setIsModalOpen(true);
@@ -94,8 +103,6 @@ export default function DashboardPage() {
   if (!mounted) {
     return null;
   }
-
-  const activeWallet = wallets.find(w => w.id === activeWalletId);
 
   return (
     <main className="min-h-screen bg-background">
@@ -257,7 +264,7 @@ export default function DashboardPage() {
                   <WalletCard
                     key={wallet.id}
                     wallet={wallet}
-                    isActive={activeWalletId === wallet.id}
+                    isActive={activeWallet?.publicKey === wallet.publicKey}
                     onSelect={() => handleWalletSelect(wallet.id)}
                     onDelete={() => removeWallet(wallet.id)}
                   />
