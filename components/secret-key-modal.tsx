@@ -138,7 +138,6 @@ export function SecretKeyModal({ isOpen, onClose }: SecretKeyModalProps) {
                   }}
                   onKeyDown={(e) => e.key === 'Enter' && handleReveal()}
                   className="pr-10"
-                  autoComplete="off"
                 />
                 <button
                   type="button"
