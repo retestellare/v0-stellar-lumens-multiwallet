@@ -9,10 +9,12 @@ export interface Wallet {
   publicKey: string;
   encryptedSecret: string;
   balances: any[];
-  poolShares: any[]; // Separate pool shares from regular balances
+  poolShares: any[];
   createdAt: Date;
   federationName?: string;
   homeDomain?: string;
+  status: 'active' | 'unfunded' | 'loading' | 'error';
+  statusMessage?: string;
 }
 
 export type PasswordSessionType = 'everytime' | 'after_hour' | 'never';
@@ -41,40 +43,174 @@ const WalletContext = createContext<WalletContextType | undefined>(undefined);
 export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [activeWalletId, setActiveWalletId] = useState<string | null>(null);
+  const [validationInProgress, setValidationInProgress] = useState<Set<string>>(new Set());
   
   // Password session management - stored in RAM only
   const [passwordSessionType, setPasswordSessionType] = useState<PasswordSessionType>('everytime');
   const [passwordSessions, setPasswordSessions] = useState<Record<string, { password: string; timestamp: number }>>({});
   const timeoutRefs = React.useRef<Record<string, NodeJS.Timeout>>({});
 
+  // Validate wallet status asynchronously - handles 404s for unfunded wallets
+  const validateWalletStatus = useCallback(async (publicKey: string, walletId: string) => {
+    // Prevent duplicate validations
+    if (validationInProgress.has(walletId)) {
+      console.log('[v0] Wallet validation already in progress:', walletId);
+      return;
+    }
+
+    setValidationInProgress(prev => new Set(prev).add(walletId));
+
+    try {
+      const response = await fetch(`https://horizon.stellar.org/accounts/${publicKey}`, {
+        method: 'GET',
+        timeout: 5000, // 5 second timeout
+      });
+
+      if (response.status === 404) {
+        // Wallet is unfunded/not activated on network
+        setWallets(prev =>
+          prev.map(w =>
+            w.publicKey === publicKey
+              ? {
+                  ...w,
+                  status: 'unfunded',
+                  statusMessage: 'This wallet is not activated on the Stellar network yet. Send XLM to activate it.',
+                  balances: [],
+                  poolShares: [],
+                }
+              : w
+          )
+        );
+        console.log('[v0] Wallet unfunded:', publicKey);
+        return;
+      }
+
+      if (!response.ok) {
+        // Other HTTP errors
+        setWallets(prev =>
+          prev.map(w =>
+            w.publicKey === publicKey
+              ? {
+                  ...w,
+                  status: 'error',
+                  statusMessage: `Network error: ${response.statusText}`,
+                }
+              : w
+          )
+        );
+        console.log('[v0] Wallet validation error:', response.statusText);
+        return;
+      }
+
+      // Successfully loaded account - it's active
+      const data = await response.json();
+      const { assets, poolShares } = parseWalletBalances(data.balances || []);
+
+      setWallets(prev =>
+        prev.map(w =>
+          w.publicKey === publicKey
+            ? {
+                ...w,
+                status: 'active',
+                statusMessage: undefined,
+                balances: assets,
+                poolShares: poolShares || [],
+              }
+            : w
+        )
+      );
+      console.log('[v0] Wallet active:', publicKey);
+    } catch (error) {
+      // Network timeout or other errors - mark as error but don't crash
+      setWallets(prev =>
+        prev.map(w =>
+          w.publicKey === publicKey
+            ? {
+                ...w,
+                status: 'error',
+                statusMessage: `Unable to load wallet: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              }
+            : w
+        )
+      );
+      console.log('[v0] Wallet validation error:', error);
+    } finally {
+      setValidationInProgress(prev => {
+        const updated = new Set(prev);
+        updated.delete(walletId);
+        return updated;
+      });
+    }
+  }, [validationInProgress]);
+
   // Compute active wallet - strictly use publicKey for identification
   const activeWallet = useMemo(() => {
     return wallets.find(w => w.publicKey === activeWalletId) || null;
   }, [wallets, activeWalletId]);
 
-  // Load wallets from localStorage on mount
+  // Persist activeWalletId to localStorage whenever it changes
+  useEffect(() => {
+    if (activeWalletId) {
+      localStorage.setItem('stellar_activeWalletId', activeWalletId);
+      console.log('[v0] Saved activeWalletId to localStorage:', activeWalletId);
+    }
+  }, [activeWalletId]);
   useEffect(() => {
     const stored = localStorage.getItem('stellar_wallets');
+    const storedActiveId = localStorage.getItem('stellar_activeWalletId');
+    
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
-        // Clean up balances when loading from storage to remove duplicates
+        // Clean up balances when loading from storage and initialize status
         const cleanedWallets = parsed.map((wallet: any) => {
           if (wallet.balances && Array.isArray(wallet.balances)) {
             const { assets, poolShares } = parseWalletBalances(wallet.balances);
-            return { ...wallet, balances: assets, poolShares: poolShares || [] };
+            return {
+              ...wallet,
+              balances: assets,
+              poolShares: poolShares || [],
+              status: wallet.status || 'loading',
+              statusMessage: wallet.statusMessage,
+            };
           }
-          return { ...wallet, poolShares: wallet.poolShares || [] };
+          return {
+            ...wallet,
+            poolShares: wallet.poolShares || [],
+            status: wallet.status || 'loading',
+            statusMessage: wallet.statusMessage,
+          };
         });
         setWallets(cleanedWallets);
-        if (cleanedWallets.length > 0) {
+        
+        // Restore activeWalletId from localStorage if it exists and is valid
+        if (storedActiveId) {
+          const walletExists = cleanedWallets.some(w => w.publicKey === storedActiveId);
+          if (walletExists) {
+            setActiveWalletId(storedActiveId);
+            console.log('[v0] Restored activeWalletId from localStorage:', storedActiveId);
+          } else {
+            // Stored ID is invalid, use first wallet
+            if (cleanedWallets.length > 0) {
+              setActiveWalletId(cleanedWallets[0].publicKey);
+            }
+          }
+        } else if (cleanedWallets.length > 0) {
+          // No stored activeWalletId, use first wallet
           setActiveWalletId(cleanedWallets[0].publicKey);
         }
+        
+        // Validate status of all wallets asynchronously
+        if (cleanedWallets.length > 0) {
+          cleanedWallets.forEach(w => {
+            validateWalletStatus(w.publicKey, w.id);
+          });
+        }
       } catch (error) {
-        // Silent fail
+        console.log('[v0] Error loading wallets from storage:', error);
       }
     }
-  }, []);
+  }, [validateWalletStatus]);
 
   // Save wallets to localStorage whenever they change
   useEffect(() => {
@@ -97,14 +233,19 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         balances: [],
         poolShares: [],
         createdAt: new Date(),
+        status: 'loading',
+        statusMessage: 'Validating wallet on network...',
       };
 
       setWallets(prev => [...prev, newWallet]);
       setActiveWalletId(publicKey);
+      
+      // Validate status asynchronously
+      validateWalletStatus(publicKey, id);
     } catch (error) {
       throw error;
     }
-  }, []);
+  }, [validateWalletStatus]);
 
   const createWallet = useCallback((name: string, password: string) => {
     try {
@@ -126,10 +267,18 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       return filtered;
     });
+    // If removing active wallet, switch to first available
     if (activeWalletId === id) {
-      setActiveWalletId(wallets.length > 1 ? wallets[0].id : null);
+      setWallets(prev => {
+        if (prev.length > 0) {
+          setActiveWalletId(prev[0].publicKey);
+        } else {
+          setActiveWalletId(null);
+        }
+        return prev;
+      });
     }
-  }, [activeWalletId, wallets]);
+  }, [activeWalletId]);
 
   const updateWalletName = useCallback((id: string, name: string) => {
     setWallets(prev =>
@@ -240,20 +389,42 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (!wallet) return prev;
       
       // Fetch balances asynchronously
-      getAccountBalances(wallet.publicKey)
-        .then(rawBalances => {
+      fetch(`https://horizon.stellar.org/accounts/${wallet.publicKey}`)
+        .then(response => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.json();
+        })
+        .then(data => {
           // Parse balances to separate regular assets from pool shares
-          const { assets, poolShares } = parseWalletBalances(rawBalances);
+          const { assets, poolShares } = parseWalletBalances(data.balances || []);
           setWallets(current =>
             current.map(w =>
               (w.id === walletId || w.publicKey === walletId) 
-                ? { ...w, balances: assets, poolShares } 
+                ? {
+                    ...w,
+                    status: 'active',
+                    balances: assets,
+                    poolShares,
+                  }
                 : w
             )
           );
         })
-        .catch(() => {
-          // Account may not exist yet - keep existing balances
+        .catch(error => {
+          // Account may not exist yet or network error - update status appropriately
+          if (error.message.includes('404')) {
+            setWallets(current =>
+              current.map(w =>
+                (w.id === walletId || w.publicKey === walletId)
+                  ? {
+                      ...w,
+                      status: 'unfunded',
+                      statusMessage: 'Wallet not funded on network',
+                    }
+                  : w
+              )
+            );
+          }
         });
       
       return prev;
