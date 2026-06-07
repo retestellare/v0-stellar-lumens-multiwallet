@@ -2,17 +2,17 @@
 
 import React, { useState } from 'react';
 import * as StellarSdk from '@stellar/stellar-sdk';
-import { useWallet } from '@/lib/wallet-context';
+import { Wallet } from '@/lib/wallet-context';
 
 interface RemoveTrustlineButtonProps {
+  activeWallet: Wallet | null;
   assetCode: string;
   assetIssuer: string;
   balance: string;
   onSuccess?: () => void;
 }
 
-export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSuccess }: RemoveTrustlineButtonProps) {
-  const { activeWallet } = useWallet();
+export function RemoveTrustlineButton({ activeWallet, assetCode, assetIssuer, balance, onSuccess }: RemoveTrustlineButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [password, setPassword] = useState('');
@@ -31,7 +31,7 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
     setError(null);
 
     try {
-      // Use the activeWallet from context to ensure we're operating on the selected wallet
+      // Validate activeWallet is provided by parent component
       if (!activeWallet || !activeWallet.publicKey || !activeWallet.encryptedSecret) {
         throw new Error("Active wallet data is missing.");
       }
