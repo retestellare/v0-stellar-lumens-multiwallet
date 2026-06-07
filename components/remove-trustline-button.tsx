@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import * as StellarSdk from '@stellar/stellar-sdk';
+import { useWallet } from '@/lib/wallet-context';
 
 interface RemoveTrustlineButtonProps {
   assetCode: string;
@@ -11,6 +12,7 @@ interface RemoveTrustlineButtonProps {
 }
 
 export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSuccess }: RemoveTrustlineButtonProps) {
+  const { activeWallet } = useWallet();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [password, setPassword] = useState('');
@@ -29,15 +31,7 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
     setError(null);
 
     try {
-      // 1. Recupera l'array dei wallet salvati da v0
-      const storedWallets = localStorage.getItem('stellar_wallets');
-      if (!storedWallets) throw new Error("No wallets found. Please log in.");
-      
-      const wallets = JSON.parse(storedWallets);
-      
-      // Estrae in modo sicuro il primo elemento se è un array, altrimenti usa l'oggetto diretto
-      const activeWallet = Array.isArray(wallets) ? wallets[0] : wallets; 
-      
+      // Use the activeWallet from context to ensure we're operating on the selected wallet
       if (!activeWallet || !activeWallet.publicKey || !activeWallet.encryptedSecret) {
         throw new Error("Active wallet data is missing.");
       }
