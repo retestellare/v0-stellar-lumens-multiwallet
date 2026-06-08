@@ -254,13 +254,22 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         </div>
       </div>
 
-      {/* Instructions */}
-      <div className="text-xs text-muted-foreground space-y-1 rounded-md bg-muted/30 p-2">
-        <p className="font-medium">⚠️ Integration Notes:</p>
-        <p>• Replace mock stream with real Stellar SDK in startStellarStream()</p>
-        <p>• Implement trading logic in the strategy section</p>
-        <p>• Add proper error handling and transaction signing</p>
-        <p>• Test on testnet before mainnet deployment</p>
+      {/* Integration Notes Box */}
+      <div className="border border-destructive/20 bg-destructive/10 rounded-md p-3 text-xs text-destructive flex flex-col gap-2">
+        <h3 className="font-semibold text-sm flex items-center gap-1">
+          ⚠️ Integration Notes:
+        </h3>
+        <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+          <li>Replace mock stream with real Stellar SDK in startStellarStream()</li>
+          <li>Implement trading logic in the strategy section</li>
+          <li>Add proper error handling and transaction signing</li>
+          <li>Test on testnet before mainnet deployment</li>
+        </ul>
+
+        {/* Under Construction Indicator */}
+        <div className="pt-2 border-t border-destructive/10 font-bold text-center tracking-wide animate-pulse">
+          Under construction 🚧
+        </div>
       </div>
     </div>
   );
