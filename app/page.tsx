@@ -8,7 +8,7 @@ import { WalletCard } from '@/components/wallet-card';
 import { AssetDetailModal } from '@/components/asset-detail-modal';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/lib/wallet-context';
-import { Plus, Send, ArrowRightLeft, Download, Droplets, Search } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { AssetItem } from '@/components/asset-item';
 
 // Lazy load heavy modals for better initial page performance
@@ -29,6 +29,10 @@ export default function DashboardPage() {
   const [isReceiveOpen, setIsReceiveOpen] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<{ code: string; issuer?: string; balance: string; domain?: string; image?: string; name?: string } | null>(null);
   const [mounted, setMounted] = useState(false);
+
+  const handleCloseReceive = useCallback(() => {
+    setIsReceiveOpen(false);
+  }, []);
 
   const handleSendClick = useCallback(() => {
     setIsSendOpen(true);
@@ -52,10 +56,6 @@ export default function DashboardPage() {
 
   const handleCloseSend = useCallback(() => {
     setIsSendOpen(false);
-  }, []);
-
-  const handleCloseReceive = useCallback(() => {
-    setIsReceiveOpen(false);
   }, []);
 
   const handleSelectAsset = useCallback((asset: { code: string; issuer?: string; balance: string }) => {
@@ -147,73 +147,10 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* Quick Action Grid - Compact */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                  {/* Send */}
-                  <button 
-                    onClick={handleSendClick}
-                    className="group relative overflow-hidden rounded-lg p-2 bg-card border border-primary/30 hover:border-primary/60 transition-all hover:shadow-md hover:shadow-primary/20"
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    <div className="relative z-10 flex flex-col items-center gap-1">
-                      <Send className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
-                      <p className="text-xs font-medium text-foreground">Send</p>
-                    </div>
-                  </button>
-                  
-                  {/* Receive */}
-                  <button 
-                    onClick={handleReceiveClick}
-                    className="group relative overflow-hidden rounded-lg p-2 bg-card border border-primary/30 hover:border-primary/60 transition-all hover:shadow-md hover:shadow-primary/20"
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    <div className="relative z-10 flex flex-col items-center gap-1">
-                      <Download className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
-                      <p className="text-xs font-medium text-foreground">Receive</p>
-                    </div>
-                  </button>
-                  
-                  {/* Search */}
-                  <Link 
-                    href="/token-search" 
-                    className="group relative overflow-hidden rounded-lg p-2 bg-card border border-primary/30 hover:border-primary/60 transition-all hover:shadow-md hover:shadow-primary/20"
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    <div className="relative z-10 flex flex-col items-center gap-1">
-                      <Search className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
-                      <p className="text-xs font-medium text-foreground">Search</p>
-                    </div>
-                  </Link>
-                  
-                  {/* Exchange */}
-                  <Link 
-                    href="/exchange"
-                    className="group relative overflow-hidden rounded-lg p-2 bg-card border border-primary/30 hover:border-primary/60 transition-all hover:shadow-md hover:shadow-primary/20"
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    <div className="relative z-10 flex flex-col items-center gap-1">
-                      <ArrowRightLeft className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
-                      <p className="text-xs font-medium text-foreground">Exchange</p>
-                    </div>
-                  </Link>
-                  
-                  {/* Pools */}
-                  <Link 
-                    href="/pools"
-                    className="group relative overflow-hidden rounded-lg p-2 bg-card border border-primary/30 hover:border-primary/60 transition-all hover:shadow-md hover:shadow-primary/20"
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    <div className="relative z-10 flex flex-col items-center gap-1">
-                      <Droplets className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
-                      <p className="text-xs font-medium text-foreground">Pools</p>
-                    </div>
-                  </Link>
-                </div>
-
-                {/* Assets List */}
+                {/* Assets List - Expanded */}
                 <div className="space-y-2">
                   <h3 className="text-sm font-semibold text-foreground">Your Assets</h3>
-                  <div className="grid gap-2 max-h-56 overflow-y-auto rounded-lg bg-card/50 border border-primary/10 p-2">
+                  <div className="grid gap-2 rounded-lg bg-card/50 border border-primary/10 p-2">
                     {activeWallet.balances.length === 0 ? (
                       <p className="text-xs text-muted-foreground text-center py-4">No assets yet. Fund your wallet to get started.</p>
                     ) : (
