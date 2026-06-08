@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 
 interface TradingBotPanelProps {
   selectedAsset?: { code: string; issuer?: string };
@@ -15,7 +14,7 @@ interface TradingBotPanelProps {
 
 export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps) {
   // Bot Configuration State
-  const [pair, setPair] = useState<string>(selectedAsset?.code || 'DBTK');
+  const [pair, setPair] = useState<string>(selectedAsset?.code || 'FORGE');
   const [budget, setBudget] = useState<string>('100');
   const [minPrice, setMinPrice] = useState<string>('0.001');
   const [maxPrice, setMaxPrice] = useState<string>('0.1');
@@ -25,12 +24,17 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   const [logs, setLogs] = useState<string[]>(['[System] Trading Bot initialized...']);
   const [priceHistory, setPriceHistory] = useState<number[]>([]);
 
+  // Add log helper function - defined first so it can be used in callbacks
+  const addLog = useCallback((message: string) => {
+    setLogs(prev => [...prev.slice(-19), message]); // Keep last 20 logs
+  }, []);
+
   // MOCK FUNCTION: Start Stellar Stream
   // TODO: Replace this with real Stellar SDK connection
-  // Example: Use SorobanRPC to subscribe to price feeds
+  // Example: Use SorobanRpc to subscribe to price feeds
   // import { SorobanRpc } from '@stellar/js-sdk';
   // const soroban = new SorobanRpc.Server('https://soroban-testnet.stellar.org');
-  const startStellarStream = useCallback(async () => {
+  const startStellarStream = useCallback(() => {
     console.log('[v0] Starting Stellar stream with pair:', pair);
     
     addLog(`[${new Date().toLocaleTimeString()}] Connecting to Stellar network...`);
@@ -40,41 +44,33 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     // TODO: Paste real Stellar SDK connection code here
     // const connection = await soroban.getEvents({...});
     
-    // Mock price stream simulation
+    // Mock price stream simulation - runs every 2 seconds
     const mockInterval = setInterval(() => {
       // Generate mock price between min and max
       const randomPrice = parseFloat(minPrice) + 
         Math.random() * (parseFloat(maxPrice) - parseFloat(minPrice));
       
       setPriceHistory(prev => [...prev.slice(-59), randomPrice]);
-      checkStrategy(randomPrice);
+      
+      // Mock strategy: Buy when price < minPrice, Sell when price > maxPrice
+      if (randomPrice < parseFloat(minPrice) * 1.05) {
+        addLog(`[${new Date().toLocaleTimeString()}] 🟢 BUY SIGNAL: Price ${randomPrice.toFixed(6)} below threshold`);
+        // TODO: Execute buy order using Stellar SDK
+        // const tx = await server.submitTransaction(buyOp);
+      } else if (randomPrice > parseFloat(maxPrice) * 0.95) {
+        addLog(`[${new Date().toLocaleTimeString()}] 🔴 SELL SIGNAL: Price ${randomPrice.toFixed(6)} above threshold`);
+        // TODO: Execute sell order using Stellar SDK
+        // const tx = await server.submitTransaction(sellOp);
+      } else {
+        addLog(`[${new Date().toLocaleTimeString()}] Price Update: ${randomPrice.toFixed(6)} (holding)`);
+      }
     }, 2000);
 
-    return mockInterval;
-  }, [pair, budget, minPrice, maxPrice]);
-
-  // MOCK FUNCTION: Check Strategy and Execute Trades
-  // TODO: Replace checkStrategy with real trading logic using Stellar SDK
-  // Example: Use SorobanContractInvocation to execute trades on AMMs
-  // import { SorobanRpc, Operation } from '@stellar/js-sdk';
-  const checkStrategy = useCallback((price: number) => {
-    console.log('[v0] Current price:', price);
+    // Store interval ID globally for cleanup
+    (window as any).__tradingBotInterval = mockInterval;
     
-    // Mock strategy: Buy when price < minPrice, Sell when price > maxPrice
-    if (price < parseFloat(minPrice) * 1.05) {
-      addLog(`[${new Date().toLocaleTimeString()}] BUY SIGNAL: Price ${price.toFixed(6)} below threshold`);
-      // TODO: Execute buy order using Stellar SDK
-      // const tx = await server.submitTransaction(buyOp);
-    } else if (price > parseFloat(maxPrice) * 0.95) {
-      addLog(`[${new Date().toLocaleTimeString()}] SELL SIGNAL: Price ${price.toFixed(6)} above threshold`);
-      // TODO: Execute sell order using Stellar SDK
-      // const tx = await server.submitTransaction(sellOp);
-    }
-  }, [minPrice, maxPrice]);
-
-  const addLog = (message: string) => {
-    setLogs(prev => [...prev.slice(-19), message]); // Keep last 20 logs
-  };
+    return mockInterval;
+  }, [pair, budget, minPrice, maxPrice, addLog]);
 
   const handleStartBot = useCallback(async () => {
     if (!pair || !budget || !minPrice || !maxPrice) {
@@ -86,27 +82,18 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     addLog(`[${new Date().toLocaleTimeString()}] BOT STARTED`);
     
     // Start the mock stream
-    const intervalId = await startStellarStream();
-    
-    // Store interval ID for cleanup
-    const handleStop = () => {
-      if (typeof intervalId === 'number') {
-        clearInterval(intervalId);
-      }
-      setIsRunning(false);
-      addLog(`[${new Date().toLocaleTimeString()}] BOT STOPPED`);
-    };
-
-    // Attach to window for cleanup on unmount
-    (window as any).__tradingBotStop = handleStop;
-  }, [pair, budget, minPrice, maxPrice, startStellarStream]);
+    startStellarStream();
+  }, [pair, budget, minPrice, maxPrice, addLog, startStellarStream]);
 
   const handleStopBot = useCallback(() => {
-    if (typeof (window as any).__tradingBotStop === 'function') {
-      (window as any).__tradingBotStop();
+    const intervalId = (window as any).__tradingBotInterval;
+    if (typeof intervalId === 'number') {
+      clearInterval(intervalId);
+      (window as any).__tradingBotInterval = null;
     }
     setIsRunning(false);
-  }, []);
+    addLog(`[${new Date().toLocaleTimeString()}] BOT STOPPED`);
+  }, [addLog]);
 
   const handleToggleBot = useCallback(() => {
     if (isRunning) {
@@ -122,7 +109,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Bot className="w-5 h-5 text-primary" />
-          <h2 className="text-lg font-bold text-foreground">Trading Bot</h2>
+          <h2 className="text-lg font-bold text-foreground">Trading Bot Configuration</h2>
         </div>
         {onClose && (
           <button 
@@ -149,8 +136,9 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
               <SelectValue placeholder="Select asset" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="DBTK">DBTK</SelectItem>
-              <SelectItem value="DOGET">DOGET</SelectItem>
+              <SelectItem value="FORGE">FORGE</SelectItem>
+              <SelectItem value="MAGC">MAGC</SelectItem>
+              <SelectItem value="METJ">METJ</SelectItem>
               <SelectItem value="USDC">USDC</SelectItem>
               <SelectItem value="BTC">BTC</SelectItem>
               <SelectItem value="ETH">ETH</SelectItem>
@@ -160,7 +148,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       </div>
 
       {/* Inputs Grid */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         {/* Budget */}
         <div className="space-y-2">
           <Label htmlFor="budget" className="text-xs font-medium">
@@ -168,7 +156,8 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
           </Label>
           <Input
             id="budget"
-            type="number"
+            type="text"
+            inputMode="numeric"
             placeholder="100"
             value={budget}
             onChange={(e) => setBudget(e.target.value)}
@@ -184,9 +173,9 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
           </Label>
           <Input
             id="min-price"
-            type="number"
+            type="text"
+            inputMode="decimal"
             placeholder="0.001"
-            step="0.0001"
             value={minPrice}
             onChange={(e) => setMinPrice(e.target.value)}
             disabled={isRunning}
@@ -201,9 +190,9 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
           </Label>
           <Input
             id="max-price"
-            type="number"
+            type="text"
+            inputMode="decimal"
             placeholder="0.1"
-            step="0.0001"
             value={maxPrice}
             onChange={(e) => setMaxPrice(e.target.value)}
             disabled={isRunning}
@@ -269,7 +258,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       <div className="text-xs text-muted-foreground space-y-1 rounded-md bg-muted/30 p-2">
         <p className="font-medium">⚠️ Integration Notes:</p>
         <p>• Replace mock stream with real Stellar SDK in startStellarStream()</p>
-        <p>• Implement trading logic in checkStrategy() function</p>
+        <p>• Implement trading logic in the strategy section</p>
         <p>• Add proper error handling and transaction signing</p>
         <p>• Test on testnet before mainnet deployment</p>
       </div>
