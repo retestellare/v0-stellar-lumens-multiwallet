@@ -16,6 +16,7 @@ import {
   ChevronRight,
   Droplets,
   Search,
+  Bot,
 } from 'lucide-react';
 import { useWallet } from '@/lib/wallet-context';
 
@@ -36,6 +37,7 @@ export function AppMenu({ isOpen, onClose, onOpenSettings }: AppMenuProps) {
     { icon: Droplets, label: 'Pools', href: '/pools' },
     { icon: TrendingUp, label: 'Portfolio', href: '/portfolio' },
     { icon: History, label: 'History', href: '/history' },
+    { icon: Bot, label: 'Trading Bot', href: '/bot' },
   ];
 
   const utilityItems = [
