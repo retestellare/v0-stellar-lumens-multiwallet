@@ -57,16 +57,16 @@ export function WalletCard({ wallet, isActive, onSelect, onDelete }: WalletCardP
           <p className="text-lg font-bold text-primary">
             {totalBalance.toFixed(2)} XLM
           </p>
-          <div className="flex items-center gap-2">
-            <code className="text-xs text-muted-foreground truncate font-mono">
-              {wallet.publicKey.substring(0, 12)}...{wallet.publicKey.substring(-6)}
+          <div className="flex items-start gap-2">
+            <code className="text-xs text-muted-foreground break-all font-mono flex-1">
+              {wallet.publicKey}
             </code>
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 handleCopy();
               }}
-              className="p-1 hover:bg-primary/20 rounded transition-colors"
+              className="p-1 hover:bg-primary/20 rounded transition-colors flex-shrink-0 mt-0.5"
               title="Copy public key"
             >
               <Copy className="w-3.5 h-3.5 text-primary" />

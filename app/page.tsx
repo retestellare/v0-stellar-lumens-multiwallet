@@ -189,7 +189,7 @@ export default function DashboardPage() {
                 </Button>
               </div>
               
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-2">
+              <div className="grid gap-2">
                 {wallets.map((wallet) => (
                   <WalletCard
                     key={wallet.id}
