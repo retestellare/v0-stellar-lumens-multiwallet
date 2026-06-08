@@ -8,8 +8,9 @@ import { WalletCard } from '@/components/wallet-card';
 import { AssetDetailModal } from '@/components/asset-detail-modal';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/lib/wallet-context';
-import { Plus, Send, ArrowRightLeft, Download, Droplets, Search } from 'lucide-react';
+import { Plus, Send, ArrowRightLeft, Download, Droplets, Search, Bot } from 'lucide-react';
 import { AssetItem } from '@/components/asset-item';
+import { TradingBotPanel } from '@/components/trading-bot-panel';
 
 // Lazy load heavy modals for better initial page performance
 const CreateWalletModal = dynamic(() => import('@/components/create-wallet-modal').then(mod => ({ default: mod.CreateWalletModal })), {
@@ -27,6 +28,7 @@ export default function DashboardPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSendOpen, setIsSendOpen] = useState(false);
   const [isReceiveOpen, setIsReceiveOpen] = useState(false);
+  const [isBotOpen, setIsBotOpen] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<{ code: string; issuer?: string; balance: string; domain?: string; image?: string; name?: string } | null>(null);
   const [mounted, setMounted] = useState(false);
 
@@ -56,6 +58,14 @@ export default function DashboardPage() {
 
   const handleCloseReceive = useCallback(() => {
     setIsReceiveOpen(false);
+  }, []);
+
+  const handleOpenBot = useCallback(() => {
+    setIsBotOpen(true);
+  }, []);
+
+  const handleCloseBot = useCallback(() => {
+    setIsBotOpen(false);
   }, []);
 
   const handleSelectAsset = useCallback((asset: { code: string; issuer?: string; balance: string }) => {
@@ -148,7 +158,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Quick Action Grid - Compact */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
                   {/* Send */}
                   <button 
                     onClick={handleSendClick}
@@ -208,6 +218,18 @@ export default function DashboardPage() {
                       <p className="text-xs font-medium text-foreground">Pools</p>
                     </div>
                   </Link>
+
+                  {/* Bot */}
+                  <button 
+                    onClick={handleOpenBot}
+                    className="group relative overflow-hidden rounded-lg p-2 bg-card border border-primary/30 hover:border-primary/60 transition-all hover:shadow-md hover:shadow-primary/20"
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <div className="relative z-10 flex flex-col items-center gap-1">
+                      <Bot className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
+                      <p className="text-xs font-medium text-foreground">Bot</p>
+                    </div>
+                  </button>
                 </div>
 
                 {/* Assets List */}
@@ -233,6 +255,14 @@ export default function DashboardPage() {
                     )}
                   </div>
                 </div>
+
+                {/* Trading Bot Panel - Shown when Bot is opened */}
+                {isBotOpen && (
+                  <TradingBotPanel 
+                    selectedAsset={selectedAsset || undefined}
+                    onClose={handleCloseBot}
+                  />
+                )}
               </div>
             )}
 
