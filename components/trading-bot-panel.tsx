@@ -1,147 +1,95 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { Bot, Play, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Horizon, Asset } from '@stellar/stellar-sdk';
 
 interface TradingBotPanelProps {
   selectedAsset?: { code: string; issuer?: string };
   onClose?: () => void;
 }
 
-// Mappa con indirizzi reali per evitare errori di compilazione
-const ASSET_ISSUERS: Record<string, string> = {
-  FORGE: 'GCO7IKW6AL67LI26S3666V46S7X2OTFU6K2O7KVTZZOZHXFMXCO6K7CO', 
-  MAGC: 'GDBA7IDH5Y7U47V33FEXU3L7Y7R5XW5R5H4Y6Z3P7Q5XW5R5H4Y6Z3P7',  
-  METJ: 'GBBBI4X7KVTZZOZHXFMXCO6K7COGCO7IKW6AL67LI26S3666V46S7X2OT',  
-  USDC: 'GA5ZSEJYB37JTY5HECQBDRAB67FFGIE67F763Z777A6AONFDNFS62ICP', 
-  BTC: 'GDPJSTFHCSIQFWVE567NWOFHI7WLSZ76COF6WNY6A3A6U76N5HU7QBTC',   
-  ETH: 'GBVOL67TMUQBGL4TZYNMY3HZ7SDFDAX6YID67FLZ67FLZ67FLZ67FETH',   
-};
-
 export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps) {
   // Bot Configuration State
   const [pair, setPair] = useState<string>(selectedAsset?.code || 'FORGE');
-  const [budget, setBudget] = useState<string>('10');
+  const [budget, setBudget] = useState<string>('100');
   const [minPrice, setMinPrice] = useState<string>('0.001');
   const [maxPrice, setMaxPrice] = useState<string>('0.1');
   const [isRunning, setIsRunning] = useState<boolean>(false);
 
-  // Stream and Metric State
-  const [logs, setLogs] = useState<string[]>(['[System] Trading Bot initialized on Stellar Mainnet...']);
-  const [priceUpdates, setPriceUpdates] = useState<number>(0);
-  const [lastPrice, setLastPrice] = useState<string>('N/A');
+  // Stream and Strategy State
+  const [logs, setLogs] = useState<string[]>(['[System] Trading Bot initialized...']);
+  const [priceHistory, setPriceHistory] = useState<number[]>([]);
 
-  // Riferimento per gestire la chiusura dello stream ed evitare loop di re-render
-  const closeStreamRef = useRef<(() => void) | null>(null);
-
-  // Scarto millesimale per scavalcare l'avversario sullo spread
-  const microUndercut = 0.0000001;
-
-  // Aggiunta log nel terminale
+  // Add log helper function - defined first so it can be used in callbacks
   const addLog = useCallback((message: string) => {
-    setLogs(prev => [...prev.slice(-19), message]);
+    setLogs(prev => [...prev.slice(-19), message]); // Keep last 20 logs
   }, []);
 
-  // Strategia competitiva di posizionamento sullo Spread (Undercutting)
-  const checkSpreadStrategy = useCallback((bids: any[], asks: any[]) => {
-    if (bids.length === 0 || asks.length === 0) return;
-
-    // Primi prezzi assoluti sul libro degli ordini (I migliori attuali)
-    const highestBid = parseFloat(bids[0].price); // Primo compratore
-    const lowestAsk = parseFloat(asks[0].price);   // Primo venditore
-
-    const minAllowed = parseFloat(minPrice);
-    const maxAllowed = parseFloat(maxPrice);
-
-    if (isNaN(minAllowed) || isNaN(maxAllowed)) return;
-
-    // Calcolo prezzo medio indicativo per la UI
-    const midPrice = (highestBid + lowestAsk) / 2;
-    setLastPrice(midPrice.toFixed(6));
-
-    // --- STRATEGIA DI ACQUISTO (Piazzarsi sopra il miglior compratore) ---
-    const targetBuyPrice = highestBid + microUndercut;
-
-    if (targetBuyPrice < lowestAsk && targetBuyPrice <= maxAllowed) {
-      addLog(`[${new Date().toLocaleTimeString()}] 🚀 SPREAD COMPRA: Mi piazzo a ${targetBuyPrice.toFixed(6)} (Sopra a ${highestBid.toFixed(6)})`);
-      // Qui andrà la chiamata SDK: inserisciOrdineSuStellar('BUY', targetBuyPrice);
-    }
-
-    // --- STRATEGIA DI VENDITA (Piazzarsi sotto il miglior venditore) ---
-    const targetSellPrice = lowestAsk - microUndercut;
-
-    if (targetSellPrice > highestBid && targetSellPrice >= minAllowed) {
-      addLog(`[${new Date().toLocaleTimeString()}] 🚀 SPREAD VENDI: Mi piazzo a ${targetSellPrice.toFixed(6)} (Sotto a ${lowestAsk.toFixed(6)})`);
-      // Qui andrà la chiamata SDK: inserisciOrdineSuStellar('SELL', targetSellPrice);
-    }
-
-  }, [minPrice, maxPrice, addLog]);
-
-  // Connessione in tempo reale all'Order Book di Stellar Mainnet
+  // MOCK FUNCTION: Start Stellar Stream
+  // TODO: Replace this with real Stellar SDK connection
+  // Example: Use SorobanRpc to subscribe to price feeds
+  // import { SorobanRpc } from '@stellar/js-sdk';
+  // const soroban = new SorobanRpc.Server('https://soroban-testnet.stellar.org');
   const startStellarStream = useCallback(() => {
-    setPriceUpdates(0);
-    addLog(`[${new Date().toLocaleTimeString()}] ⚔️ Avvio monitoraggio dinamico Order Book...`);
-
-    const server = new Horizon.Server("https://horizon.stellar.org");
-    const nativeAsset = Asset.native();
+    console.log('[v0] Starting Stellar stream with pair:', pair);
     
-    const tokenIssuer = selectedAsset?.code === pair && selectedAsset.issuer 
-      ? selectedAsset.issuer 
-      : (ASSET_ISSUERS[pair] || '');
+    addLog(`[${new Date().toLocaleTimeString()}] Connecting to Stellar network...`);
+    addLog(`[${new Date().toLocaleTimeString()}] Monitoring XLM/${pair} pair`);
+    addLog(`[${new Date().toLocaleTimeString()}] Budget: ${budget} XLM | Range: ${minPrice} - ${maxPrice}`);
 
-    if (pair !== 'XLM' && !tokenIssuer) {
-      addLog(`[${new Date().toLocaleTimeString()}] ❌ Errore: Indirizzo Issuer assente`);
-      setIsRunning(false);
-      return;
-    }
-
-    const customAsset = new Asset(pair, tokenIssuer);
-
-    try {
-      // Pulizia di emergenza se ci sono connessioni residue pendenti
-      if (closeStreamRef.current) {
-        closeStreamRef.current();
+    // TODO: Paste real Stellar SDK connection code here
+    // const connection = await soroban.getEvents({...});
+    
+    // Mock price stream simulation - runs every 2 seconds
+    const mockInterval = setInterval(() => {
+      // Generate mock price between min and max
+      const randomPrice = parseFloat(minPrice) + 
+        Math.random() * (parseFloat(maxPrice) - parseFloat(minPrice));
+      
+      setPriceHistory(prev => [...prev.slice(-59), randomPrice]);
+      
+      // Mock strategy: Buy when price < minPrice, Sell when price > maxPrice
+      if (randomPrice < parseFloat(minPrice) * 1.05) {
+        addLog(`[${new Date().toLocaleTimeString()}] 🟢 BUY SIGNAL: Price ${randomPrice.toFixed(6)} below threshold`);
+        // TODO: Execute buy order using Stellar SDK
+        // const tx = await server.submitTransaction(buyOp);
+      } else if (randomPrice > parseFloat(maxPrice) * 0.95) {
+        addLog(`[${new Date().toLocaleTimeString()}] 🔴 SELL SIGNAL: Price ${randomPrice.toFixed(6)} above threshold`);
+        // TODO: Execute sell order using Stellar SDK
+        // const tx = await server.submitTransaction(sellOp);
+      } else {
+        addLog(`[${new Date().toLocaleTimeString()}] Price Update: ${randomPrice.toFixed(6)} (holding)`);
       }
+    }, 2000);
 
-      // Ci agganciamo all'ascolto dell'Order Book anziché alla cronologia dei trade passati
-      const unsubscribe = server.orderBook(nativeAsset, customAsset)
-        .stream({
-          onmessage: (book) => {
-            setPriceUpdates(prev => prev + 1);
-            // Invia le tabelle correnti dei compratori e venditori alla strategia
-            checkSpreadStrategy(book.bids, book.asks);
-          },
-          onerror: (error) => {
-            console.error("Stellar Order Book Stream Error:", error);
-          }
-        });
+    // Store interval ID globally for cleanup
+    (window as any).__tradingBotInterval = mockInterval;
+    
+    return mockInterval;
+  }, [pair, budget, minPrice, maxPrice, addLog]);
 
-      closeStreamRef.current = unsubscribe;
-    } catch (err) {
-      addLog(`[${new Date().toLocaleTimeString()}] ❌ Connessione fallita`);
-      setIsRunning(false);
-    }
-  }, [pair, selectedAsset, addLog, checkSpreadStrategy]);
-
-  const handleStartBot = useCallback(() => {
+  const handleStartBot = useCallback(async () => {
     if (!pair || !budget || !minPrice || !maxPrice) {
-      addLog('[Error] Fill in all configuration inputs');
+      addLog('[Error] Please fill in all fields');
       return;
     }
+
     setIsRunning(true);
     addLog(`[${new Date().toLocaleTimeString()}] BOT STARTED`);
+    
+    // Start the mock stream
     startStellarStream();
   }, [pair, budget, minPrice, maxPrice, addLog, startStellarStream]);
 
   const handleStopBot = useCallback(() => {
-    if (closeStreamRef.current) {
-      closeStreamRef.current();
-      closeStreamRef.current = null;
+    const intervalId = (window as any).__tradingBotInterval;
+    if (typeof intervalId === 'number') {
+      clearInterval(intervalId);
+      (window as any).__tradingBotInterval = null;
     }
     setIsRunning(false);
     addLog(`[${new Date().toLocaleTimeString()}] BOT STOPPED`);
@@ -161,7 +109,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Bot className="w-5 h-5 text-primary" />
-          <h2 className="text-lg font-bold text-foreground">Market Maker Bot Configuration</h2>
+          <h2 className="text-lg font-bold text-foreground">Trading Bot Configuration</h2>
         </div>
         {onClose && (
           <button 
@@ -210,7 +158,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
             id="budget"
             type="text"
             inputMode="numeric"
-            placeholder="10"
+            placeholder="100"
             value={budget}
             onChange={(e) => setBudget(e.target.value)}
             disabled={isRunning}
@@ -279,7 +227,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
 
       {/* Terminal-Style Log Box */}
       <div className="space-y-1">
-        <Label className="text-xs font-medium">Live Book Tracking logs</Label>
+        <Label className="text-xs font-medium">Live Logs</Label>
         <div className="h-48 rounded-md bg-black border border-primary/40 p-3 font-mono text-xs overflow-y-auto space-y-1">
           {logs.map((log, idx) => (
             <div key={idx} className="text-green-400 whitespace-pre-wrap break-words">
@@ -301,16 +249,27 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
             </span>
           </p>
           <p className="text-xs text-muted-foreground">
-            Book Changes Caught: {priceUpdates} | Mid-Price: {lastPrice}
+            Price Updates: {priceHistory.length} | Last: {priceHistory[priceHistory.length - 1]?.toFixed(6) || 'N/A'}
           </p>
         </div>
       </div>
 
-      {/* Network Info */}
-      <div className="text-xs text-muted-foreground space-y-1 rounded-md bg-muted/30 p-2">
-        <p className="font-medium">🌍 Order Book Target:</p>
-        <p>• Live connections stream directly from native SDEX Orderbook</p>
-        <p>• Aggressive front-running tracking active without CPU freezing loops</p>
+      {/* Integration Notes Box */}
+      <div className="border border-destructive/20 bg-destructive/10 rounded-md p-3 text-xs text-destructive flex flex-col gap-2">
+        <h3 className="font-semibold text-sm flex items-center gap-1">
+          ⚠️ Integration Notes:
+        </h3>
+        <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+          <li>Replace mock stream with real Stellar SDK in startStellarStream()</li>
+          <li>Implement trading logic in the strategy section</li>
+          <li>Add proper error handling and transaction signing</li>
+          <li>Test on testnet before mainnet deployment</li>
+        </ul>
+
+        {/* Under Construction Indicator */}
+        <div className="pt-2 border-t border-destructive/10 font-bold text-center tracking-wide animate-pulse">
+          Under construction 🚧
+        </div>
       </div>
     </div>
   );
