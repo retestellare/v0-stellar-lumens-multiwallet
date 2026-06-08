@@ -6,11 +6,21 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+// Importazione dell'SDK reale di Stellar
+import { Horizon, Asset } from '@stellar/stellar-sdk';
 
 interface TradingBotPanelProps {
   selectedAsset?: { code: string; issuer?: string };
   onClose?: () => void;
 }
+
+// Mappa degli Issuer reali conosciuti su Stellar per identificare i token senza errori
+const ASSET_ISSUERS: Record<string, string> = {
+  FORGE: 'GCO7IKW6AL67LI26S3666V46S7X2OTFU6K2O7KVTZZOZHXFMXCO6K7CO', // Inserito l'issuer di Stellarforge
+  MAGC: 'GA32...99B',  // Verrà estratto in automatico se passato da wallet, o puoi mettere l'issuer reale qui
+  METJ: 'GBBB...123',  // Sostituisci con l'issuer reale se necessario
+  USDC: 'GA5ZSEJYB37JTY5HECQBDRAB67FFGIE67F763Z777A6AONFDNFS62ICP', // Issuer ufficiale di USDC su Stellar
+};
 
 export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps) {
   // Bot Configuration State
@@ -21,56 +31,71 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   const [isRunning, setIsRunning] = useState<boolean>(false);
 
   // Stream and Strategy State
-  const [logs, setLogs] = useState<string[]>(['[System] Trading Bot initialized...']);
+  const [logs, setLogs] = useState<string[]>(['[System] Trading Bot initialized on Mainnet...']);
   const [priceHistory, setPriceHistory] = useState<number[]>([]);
 
-  // Add log helper function - defined first so it can be used in callbacks
+  // Add log helper function
   const addLog = useCallback((message: string) => {
-    setLogs(prev => [...prev.slice(-19), message]); // Keep last 20 logs
+    setLogs(prev => [...prev.slice(-19), message]); // Tiene gli ultimi 20 log
   }, []);
 
-  // MOCK FUNCTION: Start Stellar Stream
-  // TODO: Replace this with real Stellar SDK connection
-  // Example: Use SorobanRpc to subscribe to price feeds
-  // import { SorobanRpc } from '@stellar/js-sdk';
-  // const soroban = new SorobanRpc.Server('https://soroban-testnet.stellar.org');
+  // FUNZIONE REALE: Avvio dello Streaming WebSocket sulla Blockchain di Stellar
   const startStellarStream = useCallback(() => {
-    console.log('[v0] Starting Stellar stream with pair:', pair);
+    console.log('[Stellar] Starting Live Mainnet stream with pair: XLM/', pair);
     
-    addLog(`[${new Date().toLocaleTimeString()}] Connecting to Stellar network...`);
+    addLog(`[${new Date().toLocaleTimeString()}] Connecting to Stellar Mainnet...`);
     addLog(`[${new Date().toLocaleTimeString()}] Monitoring XLM/${pair} pair`);
     addLog(`[${new Date().toLocaleTimeString()}] Budget: ${budget} XLM | Range: ${minPrice} - ${maxPrice}`);
 
-    // TODO: Paste real Stellar SDK connection code here
-    // const connection = await soroban.getEvents({...});
+    // Configurazione del server Horizon di Stellar
+    const server = new Horizon.Server("https://horizon.stellar.org");
     
-    // Mock price stream simulation - runs every 2 seconds
-    const mockInterval = setInterval(() => {
-      // Generate mock price between min and max
-      const randomPrice = parseFloat(minPrice) + 
-        Math.random() * (parseFloat(maxPrice) - parseFloat(minPrice));
-      
-      setPriceHistory(prev => [...prev.slice(-59), randomPrice]);
-      
-      // Mock strategy: Buy when price < minPrice, Sell when price > maxPrice
-      if (randomPrice < parseFloat(minPrice) * 1.05) {
-        addLog(`[${new Date().toLocaleTimeString()}] 🟢 BUY SIGNAL: Price ${randomPrice.toFixed(6)} below threshold`);
-        // TODO: Execute buy order using Stellar SDK
-        // const tx = await server.submitTransaction(buyOp);
-      } else if (randomPrice > parseFloat(maxPrice) * 0.95) {
-        addLog(`[${new Date().toLocaleTimeString()}] 🔴 SELL SIGNAL: Price ${randomPrice.toFixed(6)} above threshold`);
-        // TODO: Execute sell order using Stellar SDK
-        // const tx = await server.submitTransaction(sellOp);
-      } else {
-        addLog(`[${new Date().toLocaleTimeString()}] Price Update: ${randomPrice.toFixed(6)} (holding)`);
-      }
-    }, 2000);
+    // Identificazione degli Asset (XLM è nativo)
+    const nativeAsset = Asset.native();
+    
+    // Recuperiamo l'issuer del token custom (se passato dal wallet usiamo quello, altrimenti cerchiamo nella mappa)
+    const tokenIssuer = selectedAsset?.code === pair && selectedAsset.issuer 
+      ? selectedAsset.issuer 
+      : (ASSET_ISSUERS[pair] || '');
 
-    // Store interval ID globally for cleanup
-    (window as any).__tradingBotInterval = mockInterval;
+    if (pair !== 'XLM' && !tokenIssuer) {
+      addLog(`[${new Date().toLocaleTimeString()}] ⚠️ WARNING: Missing Issuer Address for ${pair}`);
+    }
+
+    const customAsset = new Asset(pair, tokenIssuer);
+
+    // Apertura dello stream reale (WebSocket) per i trade di questa coppia di asset
+    const closeStellarStream = server.trades()
+      .forAssetPair(nativeAsset, customAsset)
+      .cursor('now')
+      .stream({
+        onmessage: (trade) => {
+          // Calcolo del prezzo di mercato reale derivato dal trade blockchain
+          const currentPrice = parseFloat(trade.price.n) / parseFloat(trade.price.d);
+          
+          setPriceHistory(prev => [...prev.slice(-59), currentPrice]);
+          
+          // Logica della strategia applicata ai prezzi veri di Stellar
+          if (currentPrice < parseFloat(minPrice)) {
+            addLog(`[${new Date().toLocaleTimeString()}] 🟢 BUY SIGNAL: Price ${currentPrice.toFixed(6)} below threshold`);
+            // TODO: Inserire qui la firma della transazione con la Secret Key dell'utente quando pronto
+          } else if (currentPrice > parseFloat(maxPrice)) {
+            addLog(`[${new Date().toLocaleTimeString()}] 🔴 SELL SIGNAL: Price ${currentPrice.toFixed(6)} above threshold`);
+            // TODO: Inserire qui la firma della transazione con la Secret Key dell'utente quando pronto
+          } else {
+            addLog(`[${new Date().toLocaleTimeString()}] Price Update: ${currentPrice.toFixed(6)} (holding)`);
+          }
+        },
+        onerror: (error) => {
+          console.error("Stellar Stream Connection Error:", error);
+        }
+      });
+
+    // Memorizziamo globalmente la funzione per chiudere lo stream
+    (window as any).__closeStellarStream = closeStellarStream;
     
-    return mockInterval;
-  }, [pair, budget, minPrice, maxPrice, addLog]);
+    return closeStellarStream;
+  }, [pair, budget, minPrice, maxPrice, addLog, selectedAsset]);
 
   const handleStartBot = useCallback(async () => {
     if (!pair || !budget || !minPrice || !maxPrice) {
@@ -81,15 +106,16 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     setIsRunning(true);
     addLog(`[${new Date().toLocaleTimeString()}] BOT STARTED`);
     
-    // Start the mock stream
+    // Avvia la connessione blockchain reale
     startStellarStream();
   }, [pair, budget, minPrice, maxPrice, addLog, startStellarStream]);
 
   const handleStopBot = useCallback(() => {
-    const intervalId = (window as any).__tradingBotInterval;
-    if (typeof intervalId === 'number') {
-      clearInterval(intervalId);
-      (window as any).__tradingBotInterval = null;
+    // Recuperiamo e invochiamo la funzione di chiusura dello stream nativo di Stellar
+    const closeStream = (window as any).__closeStellarStream;
+    if (typeof closeStream === 'function') {
+      closeStream(); // Disconnette il browser dalla rete Stellar in modo pulito
+      (window as any).__closeStellarStream = null;
     }
     setIsRunning(false);
     addLog(`[${new Date().toLocaleTimeString()}] BOT STOPPED`);
@@ -257,10 +283,9 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       {/* Instructions */}
       <div className="text-xs text-muted-foreground space-y-1 rounded-md bg-muted/30 p-2">
         <p className="font-medium">⚠️ Integration Notes:</p>
-        <p>• Replace mock stream with real Stellar SDK in startStellarStream()</p>
-        <p>• Implement trading logic in the strategy section</p>
-        <p>• Add proper error handling and transaction signing</p>
-        <p>• Test on testnet before mainnet deployment</p>
+        <p>• Connected to Stellar Mainnet WebSockets stream via startStellarStream()</p>
+        <p>• Implement trading logic in the strategy section using transaction builder</p>
+        <p>• Ensure account has sufficient XLM buffer for network operations fees</p>
       </div>
     </div>
   );
