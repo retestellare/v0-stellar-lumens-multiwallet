@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { Bot, Play, Square, Copy, Check, AlertTriangle, Settings } from 'lucide-react';
+import { Bot, Play, Square, Copy, Check, AlertTriangle, Settings, Trash2 } from 'lucide-react';
 import { Keypair, Asset } from '@stellar/stellar-sdk';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -191,6 +191,23 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     }
   }, [botWallet]);
 
+  const handleResetBotWallet = useCallback(async () => {
+    if (!confirm('Are you sure you want to reset the bot wallet? This will clear the current wallet and stop the bot if running.')) {
+      return;
+    }
+
+    if (isRunning) {
+      await handleStopBot();
+    }
+
+    localStorage.removeItem('stellar_bot_wallet');
+    localStorage.removeItem('stellar_bot_secret_key');
+    localStorage.removeItem('stellar_bot_public_key');
+    setBotWallet(null);
+    setBackupConfirmed(false);
+    addLog('Bot wallet reset. Generate a new wallet to continue.');
+  }, [isRunning, addLog]);
+
   if (!botWallet || !backupConfirmed) {
     return (
       <div className="flex flex-col items-center justify-center gap-4 p-6">
@@ -233,8 +250,27 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   return (
     <div className="space-y-4 p-4">
       {/* Bot Wallet Section */}
-      <div className="border border-primary/20 rounded-lg p-4 space-y-2 bg-card/50">
-        <h3 className="text-sm font-semibold">Bot Wallet</h3>
+      <div className="border border-primary/20 rounded-lg p-4 space-y-3 bg-card/50">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Bot Wallet</h3>
+          <div className="flex items-center gap-2">
+            <span className={`text-xs font-bold px-2 py-1 rounded ${
+              isMainnet 
+                ? 'bg-destructive/20 text-destructive border border-destructive/30' 
+                : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+            }`}>
+              {isMainnet ? '🌐 MAINNET' : '🧪 TESTNET'}
+            </span>
+            <button
+              onClick={handleResetBotWallet}
+              disabled={isRunning}
+              className="p-1 hover:bg-destructive/20 rounded transition-colors disabled:opacity-50"
+              title="Reset Bot Wallet"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-destructive" />
+            </button>
+          </div>
+        </div>
         <div className="flex items-center justify-between gap-2 text-xs">
           <code className="break-all font-mono text-muted-foreground flex-1">
             {botWallet.publicKey.substring(0, 12)}...{botWallet.publicKey.substring(-6)}
@@ -303,11 +339,19 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
             <input
               type="checkbox"
               checked={isMainnet}
-              onChange={(e) => setIsMainnet(e.target.checked)}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  if (!confirm('⚠️ WARNING: You are switching to MAINNET. Real funds will be at risk. Only proceed if you have tested on TESTNET first. Continue?')) {
+                    return;
+                  }
+                }
+                setIsMainnet(e.target.checked);
+                addLog(`Network switched to ${e.target.checked ? 'MAINNET' : 'TESTNET'}`);
+              }}
               disabled={isRunning}
               className="w-4 h-4"
             />
-            <span className="text-destructive font-bold">
+            <span className={e.target.checked ? 'text-destructive font-bold' : ''}>
               ⚠️ Mainnet (real funds at risk)
             </span>
           </label>
@@ -468,15 +512,18 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
           ⚠️ Integration Notes:
         </h3>
         <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-          <li>Market Making with spread sniping is active on {isMainnet ? 'MAINNET' : 'TESTNET'}</li>
-          <li>Bot validates spread threshold and profit margin before placing orders</li>
+          <li>Market Making with spread sniping is active on {isMainnet ? '🌐 MAINNET - Real Funds' : '🧪 TESTNET - Test Environment'}</li>
+          <li>Bot validates spread threshold ({spreadThreshold}%) and profit margin ({minProfit} XLM)</li>
           <li>Orders update every {orderInterval} seconds to stay competitive</li>
           <li>All orders auto-cancel when bot is stopped</li>
           <li>Use DRY-RUN mode to test strategy before trading with real funds</li>
+          {isMainnet && <li className="text-destructive font-bold">🔴 MAINNET ACTIVE - Verify settings carefully before starting!</li>}
         </ul>
 
-        <div className="pt-2 border-t border-destructive/10 font-bold text-center tracking-wide animate-pulse">
-          Mainnet Trading Active 🚀
+        <div className={`pt-2 border-t border-destructive/10 font-bold text-center tracking-wide animate-pulse ${
+          isMainnet ? 'text-destructive' : 'text-yellow-400'
+        }`}>
+          {isMainnet ? 'Real Mainnet Trading 🚀' : 'Testnet Trading Mode 🧪'}
         </div>
       </div>
     </div>
