@@ -16,9 +16,29 @@ export function WalletCard({ wallet, isActive, onSelect, onDelete }: WalletCardP
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(wallet.publicKey);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      // Try modern Clipboard API first
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(wallet.publicKey);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } else {
+        // Fallback for restricted environments
+        const textarea = document.createElement('textarea');
+        textarea.value = wallet.publicKey;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch (err) {
+      console.error('[v0] Failed to copy to clipboard:', err);
+      setCopied(false);
+    }
   };
 
   const xlmBalance = wallet.balances.find((b: any) => b.asset_type === 'native');
@@ -57,16 +77,16 @@ export function WalletCard({ wallet, isActive, onSelect, onDelete }: WalletCardP
           <p className="text-lg font-bold text-primary">
             {totalBalance.toFixed(2)} XLM
           </p>
-          <div className="flex items-center gap-2">
-            <code className="text-xs text-muted-foreground truncate font-mono">
-              {wallet.publicKey.substring(0, 12)}...{wallet.publicKey.substring(-6)}
+          <div className="flex items-start gap-2">
+            <code className="text-xs text-muted-foreground break-all font-mono flex-1">
+              {wallet.publicKey}
             </code>
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 handleCopy();
               }}
-              className="p-1 hover:bg-primary/20 rounded transition-colors"
+              className="p-1 hover:bg-primary/20 rounded transition-colors flex-shrink-0 mt-0.5"
               title="Copy public key"
             >
               <Copy className="w-3.5 h-3.5 text-primary" />
