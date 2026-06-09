@@ -16,9 +16,29 @@ export function WalletCard({ wallet, isActive, onSelect, onDelete }: WalletCardP
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(wallet.publicKey);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      // Try modern Clipboard API first
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(wallet.publicKey);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } else {
+        // Fallback for restricted environments
+        const textarea = document.createElement('textarea');
+        textarea.value = wallet.publicKey;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch (err) {
+      console.error('[v0] Failed to copy to clipboard:', err);
+      setCopied(false);
+    }
   };
 
   const xlmBalance = wallet.balances.find((b: any) => b.asset_type === 'native');
