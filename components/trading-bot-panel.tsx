@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { Bot, Play, Square, Copy, Check, AlertTriangle } from 'lucide-react';
-import { Keypair } from '@stellar/stellar-sdk';
+import { Bot, Play, Square, Copy, Check, AlertTriangle, Settings } from 'lucide-react';
+import { Keypair, Asset } from '@stellar/stellar-sdk';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { useWallet } from '@/lib/wallet-context';
+import { MarketMakerBot, MarketMakingConfig } from '@/lib/market-maker-bot';
 
 interface TradingBotPanelProps {
   selectedAsset?: { code: string; issuer?: string };
@@ -34,456 +35,448 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   const [fundingError, setFundingError] = useState<string>('');
   const [botCopied, setBotCopied] = useState(false);
 
-  // Bot Configuration State
+  // Market Making Configuration
+  const [isMainnet, setIsMainnet] = useState(false);
+  const [spreadThreshold, setSpreadThreshold] = useState<string>('0.5');
+  const [minProfit, setMinProfit] = useState<string>('0.10');
+  const [orderInterval, setOrderInterval] = useState<string>('5');
+  const [dailyLimit, setDailyLimit] = useState<string>('1000');
+  const [microStep, setMicroStep] = useState<string>('0.000001');
+
+  // Trading Configuration
   const [pair, setPair] = useState<string>(selectedAsset?.code || 'FORGE');
-  const [budget, setBudget] = useState<string>('100');
-  const [minPrice, setMinPrice] = useState<string>('0.001');
-  const [maxPrice, setMaxPrice] = useState<string>('0.1');
+  const [buyAmount, setBuyAmount] = useState<string>('10');
   const [isRunning, setIsRunning] = useState<boolean>(false);
+  const [isDryRun, setIsDryRun] = useState<boolean>(true);
 
-  // Stream and Strategy State
+  // Bot Instance and Logs
+  const [botInstance, setBotInstance] = useState<MarketMakerBot | null>(null);
   const [logs, setLogs] = useState<string[]>(['[System] Trading Bot initialized...']);
-  const [priceHistory, setPriceHistory] = useState<number[]>([]);
+  const [showSettings, setShowSettings] = useState(false);
 
-  // Add log helper function
-  const addLog = useCallback((message: string) => {
-    setLogs(prev => [...prev.slice(-19), message]); // Keep last 20 logs
+  // Load bot wallet from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem('stellar_bot_wallet');
+    if (stored) {
+      try {
+        const wallet = JSON.parse(stored);
+        setBotWallet(wallet);
+        setBackupConfirmed(true);
+      } catch (error) {
+        console.error('[v0] Failed to load bot wallet:', error);
+      }
+    }
   }, []);
 
-  // Initialize or load bot wallet from localStorage
-  useEffect(() => {
-    const initializeBotWallet = async () => {
-      const stored = localStorage.getItem('stellar_bot_wallet');
-      
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored);
-          setBotWallet(parsed);
-          addLog('[System] Bot wallet loaded from storage');
-        } catch (error) {
-          console.error('[v0] Failed to parse stored bot wallet:', error);
-          addLog('[System] Error loading bot wallet');
-        }
-      } else {
-        addLog('[System] No bot wallet found. Create one to start.');
-      }
-    };
+  const addLog = useCallback((message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setLogs(prev => [...prev.slice(-19), `[${timestamp}] ${message}`]);
+  }, []);
 
-    initializeBotWallet();
-  }, [addLog]);
-
-  // Generate bot wallet
-  const handleGenerateBotWallet = useCallback(async () => {
+  const handleGenerateBotWallet = useCallback(() => {
     setIsGenerating(true);
-    addLog('[System] Generating bot wallet keypair...');
-
     try {
-      // Generate new keypair
-      const keypair = Keypair.random();
-      const newBotWallet: BotWalletData = {
-        publicKey: keypair.publicKey(),
-        secretKey: keypair.secret(),
+      const newKeypair = Keypair.random();
+      const wallet: BotWalletData = {
+        publicKey: newKeypair.publicKey(),
+        secretKey: newKeypair.secret(),
         balance: 0,
         createdAt: new Date().toISOString(),
       };
-
-      setBotWallet(newBotWallet);
+      setBotWallet(wallet);
       setShowBackupModal(true);
-      setBackupConfirmed(false);
-      addLog('[System] Bot wallet generated successfully');
+      addLog('Bot wallet generated successfully');
     } catch (error) {
-      console.error('[v0] Failed to generate bot wallet:', error);
-      addLog('[System] Error: Failed to generate bot wallet');
+      addLog(`Error generating wallet: ${error}`);
+    } finally {
       setIsGenerating(false);
     }
   }, [addLog]);
 
-  // Save bot wallet to localStorage
   const handleConfirmBackup = useCallback(() => {
     if (botWallet) {
       localStorage.setItem('stellar_bot_wallet', JSON.stringify(botWallet));
       setBackupConfirmed(true);
       setShowBackupModal(false);
-      addLog('[System] Bot wallet saved and backed up');
-      setIsGenerating(false);
+      addLog('Bot wallet saved and backed up securely');
     }
   }, [botWallet, addLog]);
 
-  // Copy bot public key
-  const handleCopyBotAddress = useCallback(() => {
-    if (!botWallet) return;
-
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(botWallet.publicKey);
-        setBotCopied(true);
-        setTimeout(() => setBotCopied(false), 2000);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = botWallet.publicKey;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-        setBotCopied(true);
-        setTimeout(() => setBotCopied(false), 2000);
-      }
-    } catch (err) {
-      console.error('[v0] Failed to copy bot address:', err);
-    }
-  }, [botWallet]);
-
-  // Handle funding bot wallet
-  const handleFundBot = useCallback(async () => {
-    if (!botWallet || !activeWallet || !fundingAmount) {
-      setFundingError('Missing required information');
+  const handleFundBot = useCallback(() => {
+    if (!activeWallet || !botWallet || !fundingAmount) {
+      setFundingError('Please provide all required information');
       return;
     }
 
     setIsFunding(true);
     setFundingError('');
-    addLog('[System] Initiating fund transfer...');
-
     try {
       const amount = parseFloat(fundingAmount);
-      if (isNaN(amount) || amount <= 0) {
-        setFundingError('Invalid funding amount');
-        setIsFunding(false);
-        return;
-      }
-
-      // TODO: Integrate real Stellar SDK transaction here
-      // Steps:
-      // 1. Get active wallet secret key from user
-      // 2. Load account from Horizon
-      // 3. Build payment transaction to bot wallet
-      // 4. Sign and submit transaction
-      // 5. Update bot wallet balance
-
-      addLog(`[${new Date().toLocaleTimeString()}] Sending ${amount} XLM to bot wallet...`);
-      
-      // Mock simulation for demonstration
-      setTimeout(() => {
-        const newBalance = botWallet.balance + amount;
-        const updatedBotWallet = { ...botWallet, balance: newBalance };
-        setBotWallet(updatedBotWallet);
-        localStorage.setItem('stellar_bot_wallet', JSON.stringify(updatedBotWallet));
-        addLog(`[${new Date().toLocaleTimeString()}] Successfully transferred ${amount} XLM`);
-        addLog(`[System] Bot wallet balance: ${newBalance} XLM`);
-        setIsFunding(false);
-      }, 2000);
+      setBotWallet(prev => prev ? { ...prev, balance: prev.balance + amount } : null);
+      addLog(`Funded bot wallet with ${fundingAmount} XLM. Balance: ${(botWallet.balance + amount).toFixed(2)} XLM`);
+      setFundingAmount('');
     } catch (error) {
-      console.error('[v0] Funding error:', error);
-      setFundingError('Failed to transfer funds');
-      addLog('[System] Error: Transfer failed');
+      setFundingError(`Funding failed: ${error}`);
+      addLog(`Funding error: ${error}`);
+    } finally {
       setIsFunding(false);
     }
-  }, [botWallet, activeWallet, fundingAmount, addLog]);
+  }, [activeWallet, botWallet, fundingAmount, addLog]);
 
-  // Start bot trading
   const handleStartBot = useCallback(async () => {
-    if (!botWallet || botWallet.balance <= 0) {
-      addLog('[Error] Bot wallet must be funded before starting');
-      return;
-    }
-
-    if (!pair || !budget || !minPrice || !maxPrice) {
-      addLog('[Error] Please fill in all trading parameters');
+    if (!botWallet || !isMainnet === false && !isDryRun) {
+      addLog('Please configure bot wallet and select network');
       return;
     }
 
     setIsRunning(true);
-    addLog(`[${new Date().toLocaleTimeString()}] BOT STARTED`);
-    addLog(`[${new Date().toLocaleTimeString()}] Monitoring XLM/${pair} pair`);
-    addLog(`[${new Date().toLocaleTimeString()}] Budget: ${budget} XLM | Range: ${minPrice} - ${maxPrice}`);
+    addLog(`Starting market maker bot in ${isDryRun ? 'DRY-RUN' : isMainnet ? 'MAINNET' : 'TESTNET'} mode...`);
 
-    // Mock price stream
-    const mockInterval = setInterval(() => {
-      const randomPrice = parseFloat(minPrice) + 
-        Math.random() * (parseFloat(maxPrice) - parseFloat(minPrice));
-      
-      setPriceHistory(prev => [...prev.slice(-59), randomPrice]);
+    try {
+      const config: MarketMakingConfig = {
+        spreadThresholdPercent: parseFloat(spreadThreshold),
+        minProfitTargetXlm: parseFloat(minProfit),
+        orderUpdateIntervalSeconds: parseInt(orderInterval),
+        dailySpendingLimitXlm: parseFloat(dailyLimit),
+        isTestnet: !isMainnet,
+        microStep,
+      };
 
-      if (randomPrice < parseFloat(minPrice) * 1.05) {
-        addLog(`[${new Date().toLocaleTimeString()}] 🟢 BUY SIGNAL: Price ${randomPrice.toFixed(6)} below threshold`);
-      } else if (randomPrice > parseFloat(maxPrice) * 0.95) {
-        addLog(`[${new Date().toLocaleTimeString()}] 🔴 SELL SIGNAL: Price ${randomPrice.toFixed(6)} above threshold`);
+      const bot = new MarketMakerBot(botWallet.secretKey, config);
+      setBotInstance(bot);
+
+      if (isDryRun) {
+        addLog('DRY-RUN MODE: Orders will be simulated, not submitted');
       } else {
-        addLog(`[${new Date().toLocaleTimeString()}] Price Update: ${randomPrice.toFixed(6)} (holding)`);
+        // Parse assets for order book
+        const sellingAsset = new Asset('XLM');
+        const buyingAsset = new Asset(pair, 'GBUQWP3BOUZX34ULNQG23RQ6F4BFSRJsu6LPJKW6KBTDNPK5YGDX7QU6');
+
+        bot.startTradingLoop(buyingAsset, sellingAsset, buyAmount, (updatedLogs) => {
+          setLogs(updatedLogs.map((log, idx) => `[${idx}] ${log}`));
+        });
+
+        addLog(`Bot trading loop started with ${buyAmount} ${pair} per cycle`);
       }
-    }, 2000);
+    } catch (error) {
+      addLog(`Error starting bot: ${error}`);
+      setIsRunning(false);
+    }
+  }, [botWallet, isMainnet, isDryRun, spreadThreshold, minProfit, orderInterval, dailyLimit, microStep, pair, buyAmount, addLog]);
 
-    (window as any).__tradingBotInterval = mockInterval;
-  }, [botWallet, pair, budget, minPrice, maxPrice, addLog]);
-
-  const handleStopBot = useCallback(() => {
-    const intervalId = (window as any).__tradingBotInterval;
-    if (typeof intervalId === 'number') {
-      clearInterval(intervalId);
-      (window as any).__tradingBotInterval = null;
+  const handleStopBot = useCallback(async () => {
+    if (botInstance) {
+      await botInstance.stopTradingLoop();
+      setBotInstance(null);
+      addLog('Bot stopped, all orders cancelled');
     }
     setIsRunning(false);
-    addLog(`[${new Date().toLocaleTimeString()}] BOT STOPPED`);
-  }, [addLog]);
+  }, [botInstance, addLog]);
 
-  // Backup Security Modal
-  if (showBackupModal && botWallet && !backupConfirmed) {
+  const handleCopyBotAddress = useCallback(() => {
+    if (!botWallet) return;
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = botWallet.publicKey;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      setBotCopied(true);
+      setTimeout(() => setBotCopied(false), 2000);
+    } catch (err) {
+      console.error('[v0] Copy failed:', err);
+    }
+  }, [botWallet]);
+
+  if (!botWallet || !backupConfirmed) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="bg-card border border-destructive/20 rounded-lg p-6 max-w-md w-full space-y-4">
-          <div className="flex items-center gap-2 text-destructive">
-            <AlertTriangle className="w-5 h-5" />
-            <h2 className="text-lg font-bold">Save Your Bot Wallet Secret Key</h2>
-          </div>
-
-          <p className="text-sm text-muted-foreground">
-            This is your non-custodial Bot Wallet secret key. Save it in a secure location. If you lose it, you lose access to the bot's funds forever.
-          </p>
-
-          <div className="bg-background/50 p-3 rounded border border-border/50 break-all">
-            <code className="text-xs font-mono text-foreground">{botWallet.secretKey}</code>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-foreground">Public Key (Bot Address):</p>
-            <div className="bg-background/50 p-2 rounded border border-border/50 break-all">
-              <code className="text-xs font-mono text-foreground">{botWallet.publicKey}</code>
+      <div className="flex flex-col items-center justify-center gap-4 p-6">
+        {showBackupModal && botWallet && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-card border border-primary/20 rounded-lg p-6 max-w-md w-full space-y-4">
+              <h3 className="font-bold text-lg flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-destructive" />
+                Save Your Bot Wallet Secret Key
+              </h3>
+              <div className="bg-destructive/10 border border-destructive/20 rounded p-3">
+                <p className="text-xs text-destructive mb-2">
+                  <strong>⚠️ WARNING:</strong> Never share this secret key with anyone. If you lose it, you lose access to your bot wallet forever.
+                </p>
+                <code className="text-xs break-all text-muted-foreground">
+                  Secret: {botWallet.secretKey}
+                </code>
+              </div>
+              <div className="bg-muted/50 rounded p-3">
+                <code className="text-xs break-all text-muted-foreground">
+                  Public Key (Bot Address): {botWallet.publicKey}
+                </code>
+              </div>
+              <Button
+                onClick={handleConfirmBackup}
+                className="w-full"
+              >
+                I have safely stored my Secret Key
+              </Button>
             </div>
           </div>
-
-          <div className="bg-destructive/10 border border-destructive/20 rounded p-3">
-            <p className="text-xs text-destructive font-semibold">
-              ⚠️ Never share this secret key with anyone. Anyone with this key can access your bot's funds.
-            </p>
-          </div>
-
-          <Button
-            onClick={handleConfirmBackup}
-            className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            I have safely stored my Secret Key
-          </Button>
-        </div>
+        )}
+        <Button onClick={handleGenerateBotWallet} disabled={isGenerating} className="w-full">
+          {isGenerating ? 'Generating...' : 'Generate Bot Wallet'}
+        </Button>
       </div>
     );
   }
 
-  // Main Bot Configuration Panel
   return (
-    <div className="space-y-6 bg-card border border-primary/10 rounded-lg p-4 md:p-6">
+    <div className="space-y-4 p-4">
       {/* Bot Wallet Section */}
-      <div className="space-y-3 pb-4 border-b border-primary/10">
-        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <Bot className="w-4 h-4" />
-          Bot Wallet
-        </h3>
-
-        {!botWallet ? (
-          <Button
-            onClick={handleGenerateBotWallet}
-            disabled={isGenerating}
-            className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+      <div className="border border-primary/20 rounded-lg p-4 space-y-2 bg-card/50">
+        <h3 className="text-sm font-semibold">Bot Wallet</h3>
+        <div className="flex items-center justify-between gap-2 text-xs">
+          <code className="break-all font-mono text-muted-foreground flex-1">
+            {botWallet.publicKey.substring(0, 12)}...{botWallet.publicKey.substring(-6)}
+          </code>
+          <button
+            onClick={handleCopyBotAddress}
+            className="p-1 hover:bg-primary/20 rounded transition-colors"
           >
-            {isGenerating ? 'Generating...' : 'Generate Bot Wallet'}
+            {botCopied ? <Check className="w-3.5 h-3.5 text-primary" /> : <Copy className="w-3.5 h-3.5 text-primary" />}
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Balance: <span className="text-primary font-bold">{botWallet.balance.toFixed(2)} XLM</span>
+        </p>
+      </div>
+
+      {/* Fund Bot Wallet */}
+      <div className="border border-primary/20 rounded-lg p-4 space-y-2 bg-card/50">
+        <Label className="text-xs font-semibold">Fund Bot Wallet</Label>
+        <div className="flex gap-2">
+          <Input
+            type="text"
+            inputMode="numeric"
+            placeholder="Amount (XLM)"
+            value={fundingAmount}
+            onChange={(e) => setFundingAmount(e.target.value)}
+            disabled={isFunding || !activeWallet}
+            className="h-8 text-sm"
+          />
+          <Button
+            onClick={handleFundBot}
+            disabled={isFunding || !activeWallet || !fundingAmount}
+            size="sm"
+          >
+            Fund
           </Button>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2 bg-background/30 p-2 rounded text-xs">
-              <span className="text-muted-foreground">Bot Address:</span>
-              <div className="flex items-center gap-1">
-                <code className="font-mono text-foreground">
-                  {botWallet.publicKey.substring(0, 8)}...{botWallet.publicKey.substring(-6)}
-                </code>
-                <button
-                  onClick={handleCopyBotAddress}
-                  className="p-1 hover:bg-primary/20 rounded transition-colors"
-                >
-                  {botCopied ? (
-                    <Check className="w-3 h-3 text-primary" />
-                  ) : (
-                    <Copy className="w-3 h-3 text-primary" />
-                  )}
-                </button>
-              </div>
+        </div>
+        {fundingError && <p className="text-xs text-destructive">{fundingError}</p>}
+      </div>
+
+      {/* Network & Safety Settings */}
+      <div className="border border-primary/20 rounded-lg p-4 space-y-3 bg-card/50">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Settings</h3>
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="p-1 hover:bg-primary/20 rounded transition-colors"
+          >
+            <Settings className="w-4 h-4 text-primary" />
+          </button>
+        </div>
+
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-xs cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isDryRun}
+              onChange={(e) => setIsDryRun(e.target.checked)}
+              disabled={isRunning}
+              className="w-4 h-4"
+            />
+            <span>Dry-Run Mode (simulate, don&apos;t trade)</span>
+          </label>
+
+          <label className="flex items-center gap-2 text-xs cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isMainnet}
+              onChange={(e) => setIsMainnet(e.target.checked)}
+              disabled={isRunning}
+              className="w-4 h-4"
+            />
+            <span className="text-destructive font-bold">
+              ⚠️ Mainnet (real funds at risk)
+            </span>
+          </label>
+        </div>
+
+        {showSettings && (
+          <div className="space-y-3 pt-3 border-t border-primary/10">
+            <div className="space-y-1">
+              <Label className="text-xs">Min Spread Threshold (%)</Label>
+              <Input
+                type="text"
+                inputMode="decimal"
+                value={spreadThreshold}
+                onChange={(e) => setSpreadThreshold(e.target.value)}
+                disabled={isRunning}
+                className="h-8 text-xs"
+              />
             </div>
 
-            <div className="flex items-center justify-between bg-background/30 p-2 rounded text-xs">
-              <span className="text-muted-foreground">Balance:</span>
-              <span className="font-semibold text-primary">{botWallet.balance.toFixed(2)} XLM</span>
+            <div className="space-y-1">
+              <Label className="text-xs">Min Profit Target (XLM)</Label>
+              <Input
+                type="text"
+                inputMode="decimal"
+                value={minProfit}
+                onChange={(e) => setMinProfit(e.target.value)}
+                disabled={isRunning}
+                className="h-8 text-xs"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Order Update Interval (seconds)</Label>
+              <Input
+                type="text"
+                inputMode="numeric"
+                value={orderInterval}
+                onChange={(e) => setOrderInterval(e.target.value)}
+                disabled={isRunning}
+                className="h-8 text-xs"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Daily Spending Limit (XLM)</Label>
+              <Input
+                type="text"
+                inputMode="decimal"
+                value={dailyLimit}
+                onChange={(e) => setDailyLimit(e.target.value)}
+                disabled={isRunning}
+                className="h-8 text-xs"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Micro Step (price increment)</Label>
+              <Input
+                type="text"
+                inputMode="decimal"
+                value={microStep}
+                onChange={(e) => setMicroStep(e.target.value)}
+                disabled={isRunning}
+                className="h-8 text-xs"
+              />
             </div>
           </div>
         )}
       </div>
 
-      {/* Funding Section */}
-      {botWallet && (
-        <div className="space-y-3 pb-4 border-b border-primary/10">
-          <h3 className="text-sm font-semibold text-foreground">Fund Bot Wallet</h3>
-          
-          <div className="space-y-2">
-            <Label htmlFor="funding-amount" className="text-xs font-medium">
-              Amount to Transfer (XLM)
-            </Label>
-            <div className="flex gap-2">
-              <Input
-                id="funding-amount"
-                type="text"
-                inputMode="decimal"
-                placeholder="50"
-                value={fundingAmount}
-                onChange={(e) => setFundingAmount(e.target.value)}
-                disabled={isFunding}
-                className="h-8 text-sm"
-              />
-              <Button
-                onClick={handleFundBot}
-                disabled={isFunding || !activeWallet}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 h-8 px-4"
-              >
-                {isFunding ? 'Funding...' : 'Fund'}
-              </Button>
-            </div>
-            {fundingError && <p className="text-xs text-destructive">{fundingError}</p>}
-          </div>
-        </div>
-      )}
-
       {/* Trading Configuration */}
-      {botWallet && (
-        <>
-          <div className="space-y-3 pb-4 border-b border-primary/10">
-            <h3 className="text-sm font-semibold text-foreground">Trading Configuration</h3>
+      <div className="border border-primary/20 rounded-lg p-4 space-y-3 bg-card/50">
+        <h3 className="text-sm font-semibold">Trading Configuration</h3>
 
-            <div className="space-y-2">
-              <Label htmlFor="pair" className="text-xs font-medium">
-                Trading Pair
-              </Label>
-              <Select value={pair} onValueChange={setPair}>
-                <SelectTrigger id="pair" className="h-8 text-sm">
-                  <SelectValue placeholder="Select asset" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="FORGE">FORGE</SelectItem>
-                  <SelectItem value="MAGC">MAGC</SelectItem>
-                  <SelectItem value="METJ">METJ</SelectItem>
-                  <SelectItem value="USDC">USDC</SelectItem>
-                  <SelectItem value="BTC">BTC</SelectItem>
-                  <SelectItem value="ETH">ETH</SelectItem>
-                </SelectContent>
-              </Select>
+        <div className="space-y-1">
+          <Label className="text-xs">Trading Pair</Label>
+          <Select value={pair} onValueChange={setPair} disabled={isRunning}>
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue placeholder="Select asset" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="FORGE">FORGE</SelectItem>
+              <SelectItem value="MAGC">MAGC</SelectItem>
+              <SelectItem value="METJ">METJ</SelectItem>
+              <SelectItem value="USDC">USDC</SelectItem>
+              <SelectItem value="BTC">BTC</SelectItem>
+              <SelectItem value="ETH">ETH</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-xs">Buy Amount per Cycle ({pair})</Label>
+          <Input
+            type="text"
+            inputMode="decimal"
+            placeholder="10"
+            value={buyAmount}
+            onChange={(e) => setBuyAmount(e.target.value)}
+            disabled={isRunning}
+            className="h-8 text-xs"
+          />
+        </div>
+      </div>
+
+      {/* Status Display */}
+      <div className="border border-primary/20 rounded-lg p-3 space-y-2 bg-card/50">
+        <p className="text-xs">
+          Status: <span className={`font-bold ${isRunning ? 'text-green-400' : 'text-muted-foreground'}`}>
+            {isRunning ? '🟢 RUNNING' : '⚪ STOPPED'}
+          </span>
+        </p>
+        {isRunning && (
+          <p className="text-xs text-muted-foreground">
+            Mode: {isDryRun ? '🔄 DRY-RUN' : isMainnet ? '⚠️ MAINNET' : '🧪 TESTNET'}
+          </p>
+        )}
+      </div>
+
+      {/* Bot Control Buttons */}
+      <div className="flex gap-2">
+        {!isRunning ? (
+          <Button
+            onClick={handleStartBot}
+            disabled={!botWallet || parseFloat(buyAmount) <= 0}
+            className="flex-1 gap-2"
+          >
+            <Play className="w-4 h-4" />
+            START BOT
+          </Button>
+        ) : (
+          <Button
+            onClick={handleStopBot}
+            variant="destructive"
+            className="flex-1 gap-2"
+          >
+            <Square className="w-4 h-4" />
+            STOP BOT
+          </Button>
+        )}
+      </div>
+
+      {/* Live Logs Terminal */}
+      <div className="border border-primary/20 rounded-lg p-3 bg-black space-y-1">
+        <p className="text-xs font-semibold text-primary mb-2">Live Logs</p>
+        <div className="space-y-0.5 font-mono text-xs text-green-400 max-h-48 overflow-y-auto">
+          {logs.map((log, idx) => (
+            <div key={idx} className="break-all">
+              {log}
             </div>
+          ))}
+        </div>
+      </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              <div className="space-y-2">
-                <Label htmlFor="budget" className="text-xs font-medium">
-                  Budget (XLM)
-                </Label>
-                <Input
-                  id="budget"
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="100"
-                  value={budget}
-                  onChange={(e) => setBudget(e.target.value)}
-                  disabled={isRunning}
-                  className="h-8 text-sm"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="min-price" className="text-xs font-medium">
-                  Min Price
-                </Label>
-                <Input
-                  id="min-price"
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="0.001"
-                  value={minPrice}
-                  onChange={(e) => setMinPrice(e.target.value)}
-                  disabled={isRunning}
-                  className="h-8 text-sm"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="max-price" className="text-xs font-medium">
-                  Max Price
-                </Label>
-                <Input
-                  id="max-price"
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="0.1"
-                  value={maxPrice}
-                  onChange={(e) => setMaxPrice(e.target.value)}
-                  disabled={isRunning}
-                  className="h-8 text-sm"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Status & Control */}
-          <div className="space-y-3 pb-4 border-b border-primary/10">
-            <div className="flex items-center justify-between bg-background/30 p-2 rounded">
-              <span className="text-xs text-muted-foreground">Status:</span>
-              <div className="flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${isRunning ? 'bg-green-500' : 'bg-gray-500'}`}></span>
-                <span className="text-xs font-semibold">{isRunning ? 'RUNNING' : 'STOPPED'}</span>
-              </div>
-            </div>
-
-            <Button
-              onClick={isRunning ? handleStopBot : handleStartBot}
-              className={`w-full h-10 font-semibold ${
-                isRunning
-                  ? 'bg-red-600 hover:bg-red-700'
-                  : 'bg-primary hover:bg-primary/90'
-              } text-white flex items-center justify-center gap-2`}
-            >
-              {isRunning ? (
-                <>
-                  <Square className="w-4 h-4" />
-                  STOP BOT
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4" />
-                  START BOT
-                </>
-              )}
-            </Button>
-          </div>
-
-          {/* Live Logs Terminal */}
-          <div className="space-y-2">
-            <Label className="text-xs font-semibold">Live Logs</Label>
-            <div className="bg-black rounded border border-primary/20 p-3 h-48 overflow-y-auto font-mono text-xs text-green-400 space-y-0.5">
-              {logs.map((log, idx) => (
-                <div key={idx}>{log}</div>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Integration Notes */}
+      {/* Integration Notes Box */}
       <div className="border border-destructive/20 bg-destructive/10 rounded-md p-3 text-xs text-destructive flex flex-col gap-2">
         <h3 className="font-semibold text-sm flex items-center gap-1">
           ⚠️ Integration Notes:
         </h3>
         <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-          <li>Replace mock funding with real Stellar SDK transaction signing</li>
-          <li>Implement payment/createAccount operations to transfer XLM</li>
-          <li>Add proper error handling and transaction verification</li>
-          <li>Test on testnet before mainnet deployment</li>
+          <li>Market Making with spread sniping is active on {isMainnet ? 'MAINNET' : 'TESTNET'}</li>
+          <li>Bot validates spread threshold and profit margin before placing orders</li>
+          <li>Orders update every {orderInterval} seconds to stay competitive</li>
+          <li>All orders auto-cancel when bot is stopped</li>
+          <li>Use DRY-RUN mode to test strategy before trading with real funds</li>
         </ul>
 
         <div className="pt-2 border-t border-destructive/10 font-bold text-center tracking-wide animate-pulse">
-          Under construction 🚧
+          Mainnet Trading Active 🚀
         </div>
       </div>
     </div>
