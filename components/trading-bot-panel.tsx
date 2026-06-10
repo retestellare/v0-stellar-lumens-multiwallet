@@ -437,6 +437,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
           </p>
         )}
         </div>
+        </div>
       )}
 
       {/* Bot Control Buttons */}
