@@ -165,8 +165,12 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         addLog(`Funded bot wallet with ${fundingAmount} XLM on Mainnet. TX: ${result.hash?.substring(0, 20)}...`);
         
         // Refresh balances
-        await refreshBotBalance(botWallet.publicKey);
-        await loadMainWalletBalance();
+        try {
+          await refreshBotBalance(botWallet.publicKey);
+          await loadMainWalletBalance();
+        } catch (balanceError) {
+          console.error('[v0] Balance refresh error:', balanceError);
+        }
         
         setFundingAmount('');
         setFundingPassword('');
@@ -180,7 +184,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     } finally {
       setIsFunding(false);
     }
-  }, [activeWallet, botWallet, fundingAmount, fundingPassword, mainWalletBalance, addLog, unlockWallet]);
+  }, [activeWallet, botWallet, fundingAmount, fundingPassword, mainWalletBalance, addLog]);
 
   const handleStartBot = useCallback(async () => {
     if (!botWallet || botWallet.balance < 1) {
