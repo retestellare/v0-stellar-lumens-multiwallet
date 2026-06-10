@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { useWallet } from '@/lib/wallet-context';
 import { GridMarketMakingBot, GridStrategyType } from '@/lib/grid-strategies';
 import { transferFundsToBotWallet, getBotWalletBalance, getMainWalletBalance, TransactionResult } from '@/lib/fund-transfer';
+import { decryptSecret } from '@/lib/stellar-utils';
 import { BotWalletModal } from '@/components/bot-wallet-modal';
 
 interface TradingBotPanelProps {
@@ -26,7 +27,7 @@ interface BotWalletData {
 }
 
 export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps) {
-  const { activeWallet, unlockWallet } = useWallet();
+  const { activeWallet } = useWallet();
 
   // Bot Wallet State
   const [botWallet, setBotWallet] = useState<BotWalletData | null>(null);
@@ -142,13 +143,12 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     setFundingSuccess('');
 
     try {
-      // Get wallet secret for signing transaction
+      // Get wallet secret for signing transaction using same logic as dashboard send button
       let walletSecret: string;
       try {
-        walletSecret = unlockWallet(activeWallet.id, fundingPassword);
+        walletSecret = decryptSecret(activeWallet.encryptedSecret, fundingPassword);
       } catch (err: any) {
-        console.log('[v0] Unlock error:', err.message);
-        setFundingError('Password is incorrect or wallet does not have a password set. Please try again or check your wallet settings.');
+        setFundingError('Invalid password. Please check your wallet password and try again.');
         setIsFunding(false);
         return;
       }
