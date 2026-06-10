@@ -36,6 +36,7 @@ export async function transferFundsToBotWallet(config: FundTransferConfig): Prom
   try {
     const horizon = new Horizon.Server(HORIZON_URL);
     const fromKeypair = Keypair.fromSecret(config.fromSecretKey);
+
     const fromPublicKey = fromKeypair.publicKey();
 
     // Check if bot wallet exists
@@ -75,10 +76,9 @@ export async function transferFundsToBotWallet(config: FundTransferConfig): Prom
 
       const transaction = transactionBuilder.build();
       transaction.sign(fromKeypair);
-      const signedTx = transaction.toEnvelope().toXDR('base64');
-
+      // submitTransaction accepts the signed transaction object directly
       try {
-        const result = await horizon.submitTransaction(signedTx);
+        const result = await horizon.submitTransaction(transaction);
         console.log('[v0] Bot wallet created and funded:', result.hash);
         return {
           success: true,
@@ -105,10 +105,9 @@ export async function transferFundsToBotWallet(config: FundTransferConfig): Prom
 
     const transaction = transactionBuilder.build();
     transaction.sign(fromKeypair);
-    const signedTx = transaction.toEnvelope().toXDR('base64');
-
+    // submitTransaction accepts the signed transaction object directly
     try {
-      const result = await horizon.submitTransaction(signedTx);
+      const result = await horizon.submitTransaction(transaction);
       console.log('[v0] Funds transferred to bot wallet:', result.hash);
       return {
         success: true,
