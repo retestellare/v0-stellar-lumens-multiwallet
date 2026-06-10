@@ -74,7 +74,8 @@ export async function transferFundsToBotWallet(config: FundTransferConfig): Prom
       );
 
       const transaction = transactionBuilder.build();
-      const signedTx = fromKeypair.sign(transaction);
+      transaction.sign(fromKeypair);
+      const signedTx = transaction.toEnvelope().toXDR('base64');
 
       try {
         const result = await horizon.submitTransaction(signedTx);
@@ -103,7 +104,8 @@ export async function transferFundsToBotWallet(config: FundTransferConfig): Prom
     );
 
     const transaction = transactionBuilder.build();
-    const signedTx = fromKeypair.sign(transaction);
+    transaction.sign(fromKeypair);
+    const signedTx = transaction.toEnvelope().toXDR('base64');
 
     try {
       const result = await horizon.submitTransaction(signedTx);
