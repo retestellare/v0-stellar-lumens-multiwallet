@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { Bot, Play, Square, Copy, Check, AlertTriangle, Settings, Trash2, Lock, Info, Zap } from 'lucide-react';
+import { Bot, Play, Square, Copy, Check, AlertTriangle, Settings, Trash2, Lock, Info, Zap, Eye, EyeOff } from 'lucide-react';
 import { Keypair, Asset } from '@stellar/stellar-sdk';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +32,8 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   const [botWallet, setBotWallet] = useState<BotWalletData | null>(null);
   const [showBotWalletModal, setShowBotWalletModal] = useState(false);
   const [isFunding, setIsFunding] = useState(false);
+  const [fundingPassword, setFundingPassword] = useState<string>('');
+  const [showFundingPassword, setShowFundingPassword] = useState(false);
   const [fundingAmount, setFundingAmount] = useState<string>('10');
   const [fundingError, setFundingError] = useState<string>('');
   const [fundingSuccess, setFundingSuccess] = useState<string>('');
@@ -114,6 +116,11 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       return;
     }
 
+    if (!fundingPassword) {
+      setFundingError('Please enter your wallet password to authorize the transfer');
+      return;
+    }
+
     const amount = parseFloat(fundingAmount);
     if (isNaN(amount) || amount <= 0) {
       setFundingError('Please enter a valid amount');
@@ -138,9 +145,9 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       // Get wallet secret for signing transaction
       let walletSecret: string;
       try {
-        walletSecret = unlockWallet(activeWallet.id, '');
+        walletSecret = unlockWallet(activeWallet.id, fundingPassword);
       } catch {
-        setFundingError('Please unlock your wallet first to authorize the transaction');
+        setFundingError('Invalid password. Please try again.');
         setIsFunding(false);
         return;
       }
@@ -162,6 +169,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         await loadMainWalletBalance();
         
         setFundingAmount('');
+        setFundingPassword('');
       } else {
         setFundingError(result.error || 'Transfer failed');
         addLog(`Funding error: ${result.error}`);
@@ -172,7 +180,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     } finally {
       setIsFunding(false);
     }
-  }, [activeWallet, botWallet, fundingAmount, mainWalletBalance, addLog, unlockWallet]);
+  }, [activeWallet, botWallet, fundingAmount, fundingPassword, mainWalletBalance, addLog, unlockWallet]);
 
   const handleStartBot = useCallback(async () => {
     if (!botWallet || botWallet.balance < 1) {
@@ -340,6 +348,8 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
             <Label className="text-xs font-semibold">Fund Bot Wallet on Mainnet</Label>
             <p className="text-xs text-muted-foreground mt-1">Main wallet balance: {mainWalletBalance.toFixed(2)} XLM</p>
           </div>
+
+          {/* Amount Input */}
           <div className="flex gap-2">
             <Input
               type="text"
@@ -352,7 +362,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
             />
             <Button
               onClick={handleFundBot}
-              disabled={isFunding || !activeWallet || !fundingAmount}
+              disabled={isFunding || !activeWallet || !fundingAmount || !fundingPassword}
               size="sm"
               className="gap-1"
             >
@@ -360,6 +370,33 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
               Fund
             </Button>
           </div>
+
+          {/* Password Input for Authorization */}
+          <div className="space-y-1">
+            <Label className="text-xs font-semibold flex items-center gap-1">
+              <Lock className="w-3 h-3" />
+              Wallet Password (to authorize transfer)
+            </Label>
+            <div className="relative">
+              <Input
+                type={showFundingPassword ? 'text' : 'password'}
+                placeholder="Enter your wallet password"
+                value={fundingPassword}
+                onChange={(e) => setFundingPassword(e.target.value)}
+                disabled={isFunding || !activeWallet}
+                className="h-8 text-sm pr-8"
+              />
+              <button
+                onClick={() => setShowFundingPassword(!showFundingPassword)}
+                disabled={isFunding}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                type="button"
+              >
+                {showFundingPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+
           {fundingError && <p className="text-xs text-destructive">{fundingError}</p>}
           {fundingSuccess && <p className="text-xs text-green-400">{fundingSuccess}</p>}
         </div>
