@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { useWallet } from '@/lib/wallet-context';
 import { GridMarketMakingBot, GridStrategyType } from '@/lib/grid-strategies';
 import { transferFundsToBotWallet, getBotWalletBalance, getMainWalletBalance, TransactionResult } from '@/lib/fund-transfer';
+import { BotWalletModal } from '@/components/bot-wallet-modal';
 
 interface TradingBotPanelProps {
   selectedAsset?: { code: string; issuer?: string };
@@ -29,9 +30,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
 
   // Bot Wallet State
   const [botWallet, setBotWallet] = useState<BotWalletData | null>(null);
-  const [showOnboardingModal, setShowOnboardingModal] = useState(false);
-  const [backupConfirmed, setBackupConfirmed] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [showBotWalletModal, setShowBotWalletModal] = useState(false);
   const [isFunding, setIsFunding] = useState(false);
   const [fundingAmount, setFundingAmount] = useState<string>('10');
   const [fundingError, setFundingError] = useState<string>('');
@@ -60,7 +59,6 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       try {
         const wallet = JSON.parse(stored);
         setBotWallet(wallet);
-        setBackupConfirmed(true);
         // Refresh balance from network
         refreshBotBalance(wallet.publicKey);
       } catch (error) {
@@ -101,34 +99,14 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   }, []);
 
   const handleGenerateBotWallet = useCallback(() => {
-    setIsGenerating(true);
-    try {
-      const newKeypair = Keypair.random();
-      const wallet: BotWalletData = {
-        publicKey: newKeypair.publicKey(),
-        secretKey: newKeypair.secret(),
-        balance: 0,
-        createdAt: new Date().toISOString(),
-        network: 'mainnet',
-      };
-      setBotWallet(wallet);
-      setShowOnboardingModal(true);
-      addLog('Bot wallet generated for Mainnet');
-    } catch (error) {
-      addLog(`Error generating wallet: ${error}`);
-    } finally {
-      setIsGenerating(false);
-    }
-  }, [addLog]);
+    setShowBotWalletModal(true);
+  }, []);
 
-  const handleConfirmOnboarding = useCallback(() => {
-    if (botWallet) {
-      localStorage.setItem('stellar_bot_wallet', JSON.stringify(botWallet));
-      setBackupConfirmed(true);
-      setShowOnboardingModal(false);
-      addLog('Bot wallet secured and ready for funding on Mainnet');
-    }
-  }, [botWallet, addLog]);
+  const handleBotWalletCreated = useCallback((wallet: BotWalletData) => {
+    setBotWallet(wallet);
+    addLog('Bot wallet created and secured on Mainnet');
+    setShowBotWalletModal(false);
+  }, [addLog]);
 
   const handleFundBot = useCallback(async () => {
     if (!activeWallet || !botWallet || !fundingAmount) {
@@ -283,176 +261,113 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
 
     localStorage.removeItem('stellar_bot_wallet');
     setBotWallet(null);
-    setBackupConfirmed(false);
-    addLog('Bot wallet reset. Generate a new wallet to continue.');
-  }, [isRunning, handleStopBot, addLog]);
-
-  // Show onboarding modal if bot wallet not backed up
-  if (!botWallet || !backupConfirmed) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-4 p-6">
-        {showOnboardingModal && botWallet && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-card border border-primary/20 rounded-lg p-6 max-w-2xl w-full space-y-6 max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-destructive/20 flex items-center justify-center">
-                  <AlertTriangle className="w-6 h-6 text-destructive" />
-                </div>
-                <div>
-                  <h2 className="font-bold text-lg">Create Your Orion Trading Bot Wallet</h2>
-                  <p className="text-xs text-muted-foreground">Mainnet - Real Funds</p>
-                </div>
-              </div>
-
-              <div className="space-y-4 border-t pt-4">
-                <div className="bg-destructive/10 border border-destructive/20 rounded p-4 space-y-3">
-                  <h3 className="font-semibold text-sm text-destructive flex items-center gap-2">
-                    <Lock className="w-4 h-4" />
-                    Save Your Secret Key
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    This is your <strong>ONLY</strong> way to access your bot wallet. Store it in a safe place. Never share it with anyone.
-                  </p>
-                  <div className="bg-black/30 rounded p-3 font-mono text-xs break-all text-yellow-400 border border-yellow-500/20">
-                    {botWallet.secretKey}
-                  </div>
-                </div>
-
-                <div className="bg-muted/50 border border-primary/20 rounded p-4 space-y-3">
-                  <h3 className="font-semibold text-sm flex items-center gap-2">
-                    <Info className="w-4 h-4" />
-                    Bot Wallet Address (Mainnet)
-                  </h3>
-                  <div className="bg-black/30 rounded p-3 font-mono text-xs break-all text-muted-foreground border border-primary/20">
-                    {botWallet.publicKey}
-                  </div>
-                  <Button
-                    onClick={handleCopyBotAddress}
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                  >
-                    <Copy className="w-3 h-3 mr-1" />
-                    Copy Address
-                  </Button>
-                </div>
-
-                <div className="bg-primary/10 border border-primary/20 rounded p-4 space-y-3">
-                  <h3 className="font-semibold text-sm">Important Information</h3>
-                  <ul className="space-y-2 text-xs text-muted-foreground">
-                    <li className="flex gap-2">
-                      <span className="text-primary font-bold">•</span>
-                      <span><strong>Wallet Activation Cost:</strong> Creating this address on the Stellar Mainnet costs <strong>1 XLM</strong>, locked by the network permanently to keep the wallet active.</span>
-                    </li>
-                    <li className="flex gap-2">
-                      <span className="text-primary font-bold">•</span>
-                      <span><strong>Local Storage:</strong> Your secret key is saved locally for convenience, but <strong>Orion does not retain or backup your key</strong>. You are solely responsible for safekeeping.</span>
-                    </li>
-                    <li className="flex gap-2">
-                      <span className="text-primary font-bold">•</span>
-                      <span><strong>Your Responsibility:</strong> If you lose this secret key, you lose permanent access to your bot wallet and all its funds. There is no recovery mechanism.</span>
-                    </li>
-                    <li className="flex gap-2">
-                      <span className="text-primary font-bold">•</span>
-                      <span><strong>Mainnet Only:</strong> This bot operates exclusively on Stellar's Mainnet with real funds. Test thoroughly before deploying significant capital.</span>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-
-              <Button
-                onClick={handleConfirmOnboarding}
-                className="w-full gap-2"
-              >
-                <Check className="w-4 h-4" />
-                I understand and have saved my Secret Key securely
-              </Button>
-            </div>
-          </div>
-        )}
-
-        <Button 
-          onClick={handleGenerateBotWallet} 
-          disabled={isGenerating} 
-          size="lg"
-          className="w-full max-w-xs gap-2"
-        >
-          <Bot className="w-4 h-4" />
-          {isGenerating ? 'Generating Mainnet Bot Wallet...' : 'Create Bot Wallet on Mainnet'}
-        </Button>
-      </div>
-    );
-  }
+    addLog('Bot wallet reset. Generate or import a new wallet to continue.');
+  }, [isRunning, addLog]);
 
   return (
     <div className="space-y-4 p-4">
-      {/* Bot Wallet Section - Mainnet */}
+      <BotWalletModal
+        isOpen={showBotWalletModal}
+        onClose={() => setShowBotWalletModal(false)}
+        onWalletCreated={handleBotWalletCreated}
+      />
+
+      {/* Bot Wallet Section */}
       <div className="border border-destructive/20 rounded-lg p-4 space-y-3 bg-destructive/5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold">Bot Wallet</h3>
-            <span className="text-xs font-bold px-2 py-1 rounded bg-destructive/20 text-destructive border border-destructive/30">
-              MAINNET
-            </span>
+        {botWallet ? (
+          <>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold">Bot Wallet</h3>
+                <span className="text-xs font-bold px-2 py-1 rounded bg-destructive/20 text-destructive border border-destructive/30">
+                  MAINNET
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowBotWalletModal(true)}
+                  disabled={isRunning}
+                  className="p-1 hover:bg-primary/20 rounded transition-colors disabled:opacity-50"
+                  title="Manage Bot Wallet"
+                >
+                  <Settings className="w-3.5 h-3.5 text-primary" />
+                </button>
+                <button
+                  onClick={handleResetBotWallet}
+                  disabled={isRunning}
+                  className="p-1 hover:bg-destructive/20 rounded transition-colors disabled:opacity-50"
+                  title="Reset Bot Wallet"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <code className="break-all font-mono text-muted-foreground flex-1">
+                {botWallet.publicKey.substring(0, 12)}...{botWallet.publicKey.substring(-6)}
+              </code>
+              <button
+                onClick={handleCopyBotAddress}
+                className="p-1 hover:bg-primary/20 rounded transition-colors"
+              >
+                {botCopied ? <Check className="w-3.5 h-3.5 text-primary" /> : <Copy className="w-3.5 h-3.5 text-primary" />}
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Balance: <span className="text-primary font-bold">{botWallet.balance.toFixed(2)} XLM</span>
+              {botWallet.balance >= 1 && <span className="text-green-400 ml-2">✓ Active</span>}
+            </p>
+          </>
+        ) : (
+          <div className="flex flex-col items-center gap-3 py-2">
+            <p className="text-xs text-muted-foreground text-center">No bot wallet created yet</p>
+            <Button
+              onClick={() => setShowBotWalletModal(true)}
+              size="sm"
+              className="gap-2"
+            >
+              <Bot className="w-3 h-3" />
+              Create or Import Bot Wallet
+            </Button>
           </div>
-          <button
-            onClick={handleResetBotWallet}
-            disabled={isRunning}
-            className="p-1 hover:bg-destructive/20 rounded transition-colors disabled:opacity-50"
-            title="Reset Bot Wallet"
-          >
-            <Trash2 className="w-3.5 h-3.5 text-destructive" />
-          </button>
-        </div>
-        <div className="flex items-center justify-between gap-2 text-xs">
-          <code className="break-all font-mono text-muted-foreground flex-1">
-            {botWallet.publicKey.substring(0, 12)}...{botWallet.publicKey.substring(-6)}
-          </code>
-          <button
-            onClick={handleCopyBotAddress}
-            className="p-1 hover:bg-primary/20 rounded transition-colors"
-          >
-            {botCopied ? <Check className="w-3.5 h-3.5 text-primary" /> : <Copy className="w-3.5 h-3.5 text-primary" />}
-          </button>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Balance: <span className="text-primary font-bold">{botWallet.balance.toFixed(2)} XLM</span>
-          {botWallet.balance >= 1 && <span className="text-green-400 ml-2">✓ Active</span>}
-        </p>
+        )}
       </div>
 
-      {/* Fund Bot Wallet */}
-      <div className="border border-primary/20 rounded-lg p-4 space-y-3 bg-card/50">
-        <div>
-          <Label className="text-xs font-semibold">Fund Bot Wallet on Mainnet</Label>
-          <p className="text-xs text-muted-foreground mt-1">Main wallet balance: {mainWalletBalance.toFixed(2)} XLM</p>
+      {/* Fund Bot Wallet - Only show when wallet exists */}
+      {botWallet && (
+        <div className="border border-primary/20 rounded-lg p-4 space-y-3 bg-card/50">
+          <div>
+            <Label className="text-xs font-semibold">Fund Bot Wallet on Mainnet</Label>
+            <p className="text-xs text-muted-foreground mt-1">Main wallet balance: {mainWalletBalance.toFixed(2)} XLM</p>
+          </div>
+          <div className="flex gap-2">
+            <Input
+              type="text"
+              inputMode="numeric"
+              placeholder="Amount (XLM) - Min 1 XLM"
+              value={fundingAmount}
+              onChange={(e) => setFundingAmount(e.target.value)}
+              disabled={isFunding || !activeWallet}
+              className="h-8 text-sm"
+            />
+            <Button
+              onClick={handleFundBot}
+              disabled={isFunding || !activeWallet || !fundingAmount}
+              size="sm"
+              className="gap-1"
+            >
+              <Zap className="w-3 h-3" />
+              Fund
+            </Button>
+          </div>
+          {fundingError && <p className="text-xs text-destructive">{fundingError}</p>}
+          {fundingSuccess && <p className="text-xs text-green-400">{fundingSuccess}</p>}
         </div>
-        <div className="flex gap-2">
-          <Input
-            type="text"
-            inputMode="numeric"
-            placeholder="Amount (XLM) - Min 1 XLM"
-            value={fundingAmount}
-            onChange={(e) => setFundingAmount(e.target.value)}
-            disabled={isFunding || !activeWallet}
-            className="h-8 text-sm"
-          />
-          <Button
-            onClick={handleFundBot}
-            disabled={isFunding || !activeWallet || !fundingAmount}
-            size="sm"
-            className="gap-1"
-          >
-            <Zap className="w-3 h-3" />
-            Fund
-          </Button>
-        </div>
-        {fundingError && <p className="text-xs text-destructive">{fundingError}</p>}
-        {fundingSuccess && <p className="text-xs text-green-400">{fundingSuccess}</p>}
-      </div>
+      )}
 
-      {/* Grid Strategy Selection */}
-      <div className="border border-primary/20 rounded-lg p-4 space-y-3 bg-card/50">
+      {/* Grid Strategy Selection - Only show when wallet exists and has funds */}
+      {botWallet && botWallet.balance >= 1 && (
+        <div className="border border-primary/20 rounded-lg p-4 space-y-3 bg-card/50">
         <h3 className="text-sm font-semibold">Grid Strategy</h3>
         
         <div className="space-y-2">
@@ -508,10 +423,9 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
           />
           <span>Dry-Run Mode (simulate grid without trading)</span>
         </label>
-      </div>
 
-      {/* Status Display */}
-      <div className="border border-primary/20 rounded-lg p-3 space-y-2 bg-card/50">
+        {/* Status Display */}
+        <div className="border border-primary/20 rounded-lg p-3 space-y-2 bg-card/50">
         <p className="text-xs">
           Status: <span className={`font-bold ${isRunning ? 'text-green-400' : 'text-muted-foreground'}`}>
             {isRunning ? '🟢 RUNNING' : '⚪ STOPPED'}
@@ -522,7 +436,8 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
             Mode: {isDryRun ? '🔄 DRY-RUN' : '⚠️ MAINNET LIVE TRADING'}
           </p>
         )}
-      </div>
+        </div>
+      )}
 
       {/* Bot Control Buttons */}
       <div className="flex gap-2">
