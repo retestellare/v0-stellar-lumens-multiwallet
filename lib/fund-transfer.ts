@@ -3,7 +3,6 @@
 import {
   Keypair,
   TransactionBuilder,
-  Networks,
   BASE_FEE,
   Asset,
   Operation,
@@ -54,7 +53,7 @@ export async function transferFundsToBotWallet(config: FundTransferConfig): Prom
     const sourceAccount = await horizon.loadAccount(fromPublicKey);
     const transactionBuilder = new TransactionBuilder(sourceAccount, {
       fee: BASE_FEE,
-      networkPassphrase: Networks.PUBLIC_NETWORK,
+      networkPassphrase: 'Public Global Stellar Network ; September 2015',
       timebounds: { minTime: 0, maxTime: Math.floor(Date.now() / 1000) + TRANSACTION_TIMEOUT_SECONDS },
     });
 
