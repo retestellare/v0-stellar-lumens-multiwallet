@@ -146,8 +146,9 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       let walletSecret: string;
       try {
         walletSecret = unlockWallet(activeWallet.id, fundingPassword);
-      } catch (err) {
-        setFundingError('Invalid password. Please try again.');
+      } catch (err: any) {
+        console.log('[v0] Unlock error:', err.message);
+        setFundingError('Password is incorrect or wallet does not have a password set. Please try again or check your wallet settings.');
         setIsFunding(false);
         return;
       }

@@ -52,14 +52,21 @@ export function BotWalletModal({ isOpen, onClose, onWalletCreated }: BotWalletMo
     }
 
     try {
-      // Validate the secret key
+      // Validate the secret key format first
+      if (!importSecret.trim().startsWith('S')) {
+        setError('Invalid Stellar secret key format. Secret keys must start with "S"');
+        return;
+      }
+
+      // Validate the secret key by creating a keypair
       const keypair = Keypair.fromSecret(importSecret.trim());
       setGeneratedSecret(keypair.secret());
       setGeneratedPublic(keypair.publicKey());
+      setImportSecret(''); // Clear input for security
       setStep('confirm');
       setError('');
     } catch (err: any) {
-      setError('Invalid secret key format');
+      setError('Invalid secret key. Please check the format and try again.');
     }
   };
 
@@ -81,6 +88,20 @@ export function BotWalletModal({ isOpen, onClose, onWalletCreated }: BotWalletMo
       return;
     }
 
+    const wallet: BotWalletData = {
+      publicKey: generatedPublic,
+      secretKey: generatedSecret,
+      balance: 0,
+      createdAt: new Date().toISOString(),
+      network: 'mainnet',
+    };
+
+    localStorage.setItem('stellar_bot_wallet', JSON.stringify(wallet));
+    onWalletCreated(wallet);
+    handleClose();
+  };
+
+  const handleConfirmImport = () => {
     const wallet: BotWalletData = {
       publicKey: generatedPublic,
       secretKey: generatedSecret,
@@ -307,7 +328,7 @@ export function BotWalletModal({ isOpen, onClose, onWalletCreated }: BotWalletMo
                   Cancel
                 </Button>
                 <Button
-                  onClick={handleConfirmBackup}
+                  onClick={handleConfirmImport}
                   className="flex-1"
                 >
                   Use This Wallet
