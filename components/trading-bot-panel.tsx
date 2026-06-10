@@ -55,6 +55,11 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   const [showSettings, setShowSettings] = useState(false);
   const [mainWalletBalance, setMainWalletBalance] = useState<number>(0);
 
+  // Token Selector State
+  const [selectedToken, setSelectedToken] = useState<string>('xlm');
+  const [customAssetCode, setCustomAssetCode] = useState<string>('');
+  const [customIssuer, setCustomIssuer] = useState<string>('');
+
   // Load bot wallet from localStorage on mount
   useEffect(() => {
     const stored = localStorage.getItem('stellar_bot_wallet');
@@ -193,11 +198,20 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       return;
     }
 
+    // Validate custom token if selected
+    if (selectedToken === 'custom') {
+      if (!customAssetCode.trim() || !customIssuer.trim()) {
+        addLog('Error: Please enter both Asset Code and Issuer Public Key for custom token');
+        return;
+      }
+    }
+
     if (isDryRun) {
       addLog('DRY-RUN MODE: Orders will be simulated, not submitted to Mainnet');
     } else {
+      const tokenDisplay = selectedToken === 'xlm' ? 'XLM' : selectedToken === 'usdc' ? 'USDC' : selectedToken === 'eurc' ? 'EURC' : customAssetCode;
       addLog(`Starting LIVE Grid Bot on MAINNET with ${strategyType} strategy...`);
-      addLog(`Using ${orderSize} XLM per grid level, grid step: ${gridStepPercent}%`);
+      addLog(`Trading pair: XLM/${tokenDisplay}, Using ${orderSize} XLM per grid level, grid step: ${gridStepPercent}%`);
     }
 
     setIsRunning(true);
@@ -206,10 +220,25 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       // Get current spot price (mock for now)
       const spotPrice = 0.15;
       
+      // Determine the trading asset based on selection
+      let tradingAsset: Asset;
+      
+      if (selectedToken === 'xlm') {
+        tradingAsset = Asset.native();
+      } else if (selectedToken === 'usdc') {
+        tradingAsset = new Asset('USDC', 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5T36C2YNE7L');
+      } else if (selectedToken === 'eurc') {
+        tradingAsset = new Asset('EURC', 'GDHU6W2FSTZ7N6D7S5S7N7GFF6AL66S7X4K6P4K3K3K3K3K3K3K3K3');
+      } else if (selectedToken === 'custom') {
+        tradingAsset = new Asset(customAssetCode, customIssuer);
+      } else {
+        tradingAsset = Asset.native();
+      }
+      
       const config = {
         botSecretKey: botWallet.secretKey,
         tradingPair: {
-          buying: new Asset(selectedAsset?.code || 'FORGE', selectedAsset?.issuer || 'GBUQWP3BOUZX34ULNQG23RQ6F4BFSRJsu6LPJKW6KBTDNPK5YGDX7QU6'),
+          buying: tradingAsset,
           selling: Asset.native(),
         },
         strategyType,
@@ -234,7 +263,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       addLog(`Error starting bot: ${error}`);
       setIsRunning(false);
     }
-  }, [botWallet, isDryRun, strategyType, orderSize, gridStepPercent, selectedAsset, addLog]);
+  }, [botWallet, isDryRun, strategyType, orderSize, gridStepPercent, selectedToken, customAssetCode, customIssuer, addLog]);
 
   const handleStopBot = useCallback(async () => {
     if (botInstance && !isDryRun) {
@@ -481,6 +510,58 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         </div>
         </div>
       )}
+
+      {/* Token Selector */}
+      <div className="border border-border rounded-lg p-4 space-y-4 bg-background/50">
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Trading Token</Label>
+          <Select value={selectedToken} onValueChange={setSelectedToken}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Select a token to trade" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="xlm">XLM (Stellar Native)</SelectItem>
+              <SelectItem value="usdc">USDC (Mainnet)</SelectItem>
+              <SelectItem value="eurc">EURC (Mainnet)</SelectItem>
+              <SelectItem value="custom">Custom Token</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Bot will trade XLM against the selected token
+          </p>
+        </div>
+
+        {selectedToken === 'custom' && (
+          <div className="space-y-3 pt-2 border-t border-border">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Asset Code</Label>
+              <Input
+                placeholder="e.g., MYTOKEN"
+                value={customAssetCode}
+                onChange={(e) => setCustomAssetCode(e.target.value.toUpperCase())}
+                maxLength={12}
+                className="text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                The token code (e.g., USDC, BTC, ETH)
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Issuer Public Key</Label>
+              <Input
+                placeholder="e.g., GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5T36C2YNE7L"
+                value={customIssuer}
+                onChange={(e) => setCustomIssuer(e.target.value.trim())}
+                className="text-xs font-mono"
+              />
+              <p className="text-xs text-muted-foreground">
+                The Stellar public key that issued this token
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Bot Control Buttons */}
       <div className="flex gap-2">
