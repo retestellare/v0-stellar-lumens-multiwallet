@@ -11,35 +11,15 @@ import {
   Account,
 } from '@stellar/stellar-sdk';
 
-const HORIZON_URL = 'https://horizon.stellar.org';
-const TESTNET_HORIZON_URL = 'https://horizon-testnet.stellar.org';
-
-export interface OrderBookEntry {
-  price: string;
-  amount: string;
-}
-
-export interface OrderBook {
-  bids: OrderBookEntry[];
-  asks: OrderBookEntry[];
-}
-
-export interface ActiveOffer {
-  id: string;
-  selling: { asset_code: string; asset_issuer: string };
-  buying: { asset_code: string; asset_issuer: string };
-  amount: string;
-  price: string;
-  price_r: { n: number; d: number };
-}
+const HORIZON_URL = 'https://horizon.stellar.org'; // Mainnet only
 
 export interface MarketMakingConfig {
-  spreadThresholdPercent: number; // e.g., 0.5 for 0.5%
-  minProfitTargetXlm: number; // e.g., 0.10 for 0.10 XLM
-  orderUpdateIntervalSeconds: number; // e.g., 5-10
-  dailySpendingLimitXlm: number; // e.g., 1000
-  isTestnet: boolean;
-  microStep: string; // Price increment (e.g., "0.000001")
+  spreadThresholdPercent: number;
+  minProfitTargetXlm: number;
+  orderUpdateIntervalSeconds: number;
+  dailySpendingLimitXlm: number;
+  isTestnet: boolean; // Deprecated - always false (mainnet)
+  microStep: string;
 }
 
 export class MarketMakerBot {
@@ -57,8 +37,8 @@ export class MarketMakerBot {
     this.botKeypair = Keypair.fromSecret(botSecretKey);
     this.botPublicKey = this.botKeypair.publicKey();
     this.config = config;
-    const horizonUrl = config.isTestnet ? TESTNET_HORIZON_URL : HORIZON_URL;
-    this.horizon = new Horizon.Server(horizonUrl);
+    // Always use Mainnet
+    this.horizon = new Horizon.Server(HORIZON_URL);
   }
 
   private addLog(message: string): void {

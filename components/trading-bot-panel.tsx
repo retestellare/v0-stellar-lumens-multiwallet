@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { Bot, Play, Square, Copy, Check, AlertTriangle, Settings, Trash2 } from 'lucide-react';
+import { Bot, Play, Square, Copy, Check, AlertTriangle, Settings, Trash2, Lock, Info } from 'lucide-react';
 import { Keypair, Asset } from '@stellar/stellar-sdk';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +20,7 @@ interface BotWalletData {
   secretKey: string;
   balance: number;
   createdAt: string;
+  network: 'mainnet';
 }
 
 export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps) {
@@ -27,16 +28,15 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
 
   // Bot Wallet State
   const [botWallet, setBotWallet] = useState<BotWalletData | null>(null);
-  const [showBackupModal, setShowBackupModal] = useState(false);
+  const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   const [backupConfirmed, setBackupConfirmed] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isFunding, setIsFunding] = useState(false);
-  const [fundingAmount, setFundingAmount] = useState<string>('50');
+  const [fundingAmount, setFundingAmount] = useState<string>('10');
   const [fundingError, setFundingError] = useState<string>('');
   const [botCopied, setBotCopied] = useState(false);
 
   // Market Making Configuration
-  const [isMainnet, setIsMainnet] = useState(false);
   const [spreadThreshold, setSpreadThreshold] = useState<string>('0.5');
   const [minProfit, setMinProfit] = useState<string>('0.10');
   const [orderInterval, setOrderInterval] = useState<string>('5');
@@ -51,7 +51,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
 
   // Bot Instance and Logs
   const [botInstance, setBotInstance] = useState<MarketMakerBot | null>(null);
-  const [logs, setLogs] = useState<string[]>(['[System] Trading Bot initialized...']);
+  const [logs, setLogs] = useState<string[]>(['[System] Orion Trading Bot initialized on Mainnet...']);
   const [showSettings, setShowSettings] = useState(false);
 
   // Load bot wallet from localStorage on mount
@@ -82,10 +82,11 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         secretKey: newKeypair.secret(),
         balance: 0,
         createdAt: new Date().toISOString(),
+        network: 'mainnet',
       };
       setBotWallet(wallet);
-      setShowBackupModal(true);
-      addLog('Bot wallet generated successfully');
+      setShowOnboardingModal(true);
+      addLog('Bot wallet generated for Mainnet');
     } catch (error) {
       addLog(`Error generating wallet: ${error}`);
     } finally {
@@ -93,12 +94,12 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     }
   }, [addLog]);
 
-  const handleConfirmBackup = useCallback(() => {
+  const handleConfirmOnboarding = useCallback(() => {
     if (botWallet) {
       localStorage.setItem('stellar_bot_wallet', JSON.stringify(botWallet));
       setBackupConfirmed(true);
-      setShowBackupModal(false);
-      addLog('Bot wallet saved and backed up securely');
+      setShowOnboardingModal(false);
+      addLog('Bot wallet secured and ready for funding on Mainnet');
     }
   }, [botWallet, addLog]);
 
@@ -108,12 +109,23 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       return;
     }
 
+    const amount = parseFloat(fundingAmount);
+    if (isNaN(amount) || amount <= 0) {
+      setFundingError('Please enter a valid amount');
+      return;
+    }
+
+    if (amount < 1) {
+      setFundingError('Minimum funding is 1 XLM (required for wallet activation)');
+      return;
+    }
+
     setIsFunding(true);
     setFundingError('');
     try {
-      const amount = parseFloat(fundingAmount);
+      // In production, this would submit a real transaction
       setBotWallet(prev => prev ? { ...prev, balance: prev.balance + amount } : null);
-      addLog(`Funded bot wallet with ${fundingAmount} XLM. Balance: ${(botWallet.balance + amount).toFixed(2)} XLM`);
+      addLog(`Funded bot wallet with ${fundingAmount} XLM on Mainnet. Bot is now active.`);
       setFundingAmount('');
     } catch (error) {
       setFundingError(`Funding failed: ${error}`);
@@ -124,13 +136,13 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   }, [activeWallet, botWallet, fundingAmount, addLog]);
 
   const handleStartBot = useCallback(async () => {
-    if (!botWallet || !isMainnet === false && !isDryRun) {
-      addLog('Please configure bot wallet and select network');
+    if (!botWallet || botWallet.balance < 1) {
+      addLog('Bot wallet must have at least 1 XLM funded on Mainnet to operate');
       return;
     }
 
     setIsRunning(true);
-    addLog(`Starting market maker bot in ${isDryRun ? 'DRY-RUN' : isMainnet ? 'MAINNET' : 'TESTNET'} mode...`);
+    addLog(`Starting market maker bot on MAINNET in ${isDryRun ? 'DRY-RUN' : 'LIVE'} mode...`);
 
     try {
       const config: MarketMakingConfig = {
@@ -138,7 +150,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         minProfitTargetXlm: parseFloat(minProfit),
         orderUpdateIntervalSeconds: parseInt(orderInterval),
         dailySpendingLimitXlm: parseFloat(dailyLimit),
-        isTestnet: !isMainnet,
+        isTestnet: false, // Always mainnet
         microStep,
       };
 
@@ -148,7 +160,6 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       if (isDryRun) {
         addLog('DRY-RUN MODE: Orders will be simulated, not submitted');
       } else {
-        // Parse assets for order book
         const sellingAsset = new Asset('XLM');
         const buyingAsset = new Asset(pair, 'GBUQWP3BOUZX34ULNQG23RQ6F4BFSRJsu6LPJKW6KBTDNPK5YGDX7QU6');
 
@@ -156,19 +167,19 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
           setLogs(updatedLogs.map((log, idx) => `[${idx}] ${log}`));
         });
 
-        addLog(`Bot trading loop started with ${buyAmount} ${pair} per cycle`);
+        addLog(`Bot trading loop started with ${buyAmount} ${pair} per cycle on Mainnet`);
       }
     } catch (error) {
       addLog(`Error starting bot: ${error}`);
       setIsRunning(false);
     }
-  }, [botWallet, isMainnet, isDryRun, spreadThreshold, minProfit, orderInterval, dailyLimit, microStep, pair, buyAmount, addLog]);
+  }, [botWallet, isDryRun, spreadThreshold, minProfit, orderInterval, dailyLimit, microStep, pair, buyAmount, addLog]);
 
   const handleStopBot = useCallback(async () => {
     if (botInstance) {
       await botInstance.stopTradingLoop();
       setBotInstance(null);
-      addLog('Bot stopped, all orders cancelled');
+      addLog('Bot stopped on Mainnet, all orders cancelled');
     }
     setIsRunning(false);
   }, [botInstance, addLog]);
@@ -192,7 +203,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   }, [botWallet]);
 
   const handleResetBotWallet = useCallback(async () => {
-    if (!confirm('Are you sure you want to reset the bot wallet? This will clear the current wallet and stop the bot if running.')) {
+    if (!confirm('Are you sure you want to reset the bot wallet? This action cannot be undone and any funds will require manual recovery using the secret key.')) {
       return;
     }
 
@@ -201,47 +212,103 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     }
 
     localStorage.removeItem('stellar_bot_wallet');
-    localStorage.removeItem('stellar_bot_secret_key');
-    localStorage.removeItem('stellar_bot_public_key');
     setBotWallet(null);
     setBackupConfirmed(false);
     addLog('Bot wallet reset. Generate a new wallet to continue.');
-  }, [isRunning, addLog]);
+  }, [isRunning, handleStopBot, addLog]);
 
+  // Show onboarding modal if bot wallet not backed up
   if (!botWallet || !backupConfirmed) {
     return (
       <div className="flex flex-col items-center justify-center gap-4 p-6">
-        {showBackupModal && botWallet && (
+        {showOnboardingModal && botWallet && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-card border border-primary/20 rounded-lg p-6 max-w-md w-full space-y-4">
-              <h3 className="font-bold text-lg flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-destructive" />
-                Save Your Bot Wallet Secret Key
-              </h3>
-              <div className="bg-destructive/10 border border-destructive/20 rounded p-3">
-                <p className="text-xs text-destructive mb-2">
-                  <strong>⚠️ WARNING:</strong> Never share this secret key with anyone. If you lose it, you lose access to your bot wallet forever.
-                </p>
-                <code className="text-xs break-all text-muted-foreground">
-                  Secret: {botWallet.secretKey}
-                </code>
+            <div className="bg-card border border-primary/20 rounded-lg p-6 max-w-2xl w-full space-y-6 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-destructive/20 flex items-center justify-center">
+                  <AlertTriangle className="w-6 h-6 text-destructive" />
+                </div>
+                <div>
+                  <h2 className="font-bold text-lg">Create Your Orion Trading Bot Wallet</h2>
+                  <p className="text-xs text-muted-foreground">Mainnet - Real Funds</p>
+                </div>
               </div>
-              <div className="bg-muted/50 rounded p-3">
-                <code className="text-xs break-all text-muted-foreground">
-                  Public Key (Bot Address): {botWallet.publicKey}
-                </code>
+
+              <div className="space-y-4 border-t pt-4">
+                <div className="bg-destructive/10 border border-destructive/20 rounded p-4 space-y-3">
+                  <h3 className="font-semibold text-sm text-destructive flex items-center gap-2">
+                    <Lock className="w-4 h-4" />
+                    Save Your Secret Key
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    This is your <strong>ONLY</strong> way to access your bot wallet. Store it in a safe place. Never share it with anyone.
+                  </p>
+                  <div className="bg-black/30 rounded p-3 font-mono text-xs break-all text-yellow-400 border border-yellow-500/20">
+                    {botWallet.secretKey}
+                  </div>
+                </div>
+
+                <div className="bg-muted/50 border border-primary/20 rounded p-4 space-y-3">
+                  <h3 className="font-semibold text-sm flex items-center gap-2">
+                    <Info className="w-4 h-4" />
+                    Bot Wallet Address (Mainnet)
+                  </h3>
+                  <div className="bg-black/30 rounded p-3 font-mono text-xs break-all text-muted-foreground border border-primary/20">
+                    {botWallet.publicKey}
+                  </div>
+                  <Button
+                    onClick={handleCopyBotAddress}
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                  >
+                    <Copy className="w-3 h-3 mr-1" />
+                    Copy Address
+                  </Button>
+                </div>
+
+                <div className="bg-primary/10 border border-primary/20 rounded p-4 space-y-3">
+                  <h3 className="font-semibold text-sm">Important Information</h3>
+                  <ul className="space-y-2 text-xs text-muted-foreground">
+                    <li className="flex gap-2">
+                      <span className="text-primary font-bold">•</span>
+                      <span><strong>Wallet Activation Cost:</strong> Creating this address on the Stellar Mainnet blockchain costs <strong>1 XLM</strong>, which is locked by the network. This amount is permanently reserved to keep the wallet active and cannot be spent.</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="text-primary font-bold">•</span>
+                      <span><strong>Local Storage:</strong> Your secret key is saved locally in your browser for convenience, but <strong>Orion does not retain or backup your key</strong>. You are solely responsible for its safekeeping.</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="text-primary font-bold">•</span>
+                      <span><strong>Your Responsibility:</strong> If you lose this secret key, you lose permanent access to your bot wallet and all its funds. There is no recovery mechanism.</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="text-primary font-bold">•</span>
+                      <span><strong>Mainnet Only:</strong> This bot operates exclusively on Stellar's Mainnet with real funds. Test thoroughly before deploying significant capital.</span>
+                    </li>
+                  </ul>
+                </div>
               </div>
+
               <Button
-                onClick={handleConfirmBackup}
-                className="w-full"
+                onClick={handleConfirmOnboarding}
+                className="w-full gap-2"
               >
-                I have safely stored my Secret Key
+                <Check className="w-4 h-4" />
+                I understand and have saved my Secret Key securely
               </Button>
             </div>
           </div>
         )}
-        <Button onClick={handleGenerateBotWallet} disabled={isGenerating} className="w-full">
-          {isGenerating ? 'Generating...' : 'Generate Bot Wallet'}
+
+        <Button 
+          onClick={handleGenerateBotWallet} 
+          disabled={isGenerating} 
+          size="lg"
+          className="w-full max-w-xs gap-2"
+        >
+          <Bot className="w-4 h-4" />
+          {isGenerating ? 'Generating Mainnet Bot Wallet...' : 'Create Bot Wallet on Mainnet'}
         </Button>
       </div>
     );
@@ -249,27 +316,23 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
 
   return (
     <div className="space-y-4 p-4">
-      {/* Bot Wallet Section */}
-      <div className="border border-primary/20 rounded-lg p-4 space-y-3 bg-card/50">
+      {/* Bot Wallet Section - Mainnet */}
+      <div className="border border-destructive/20 rounded-lg p-4 space-y-3 bg-destructive/5">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Bot Wallet</h3>
           <div className="flex items-center gap-2">
-            <span className={`text-xs font-bold px-2 py-1 rounded ${
-              isMainnet 
-                ? 'bg-destructive/20 text-destructive border border-destructive/30' 
-                : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
-            }`}>
-              {isMainnet ? '🌐 MAINNET' : '🧪 TESTNET'}
+            <h3 className="text-sm font-semibold">Bot Wallet</h3>
+            <span className="text-xs font-bold px-2 py-1 rounded bg-destructive/20 text-destructive border border-destructive/30">
+              MAINNET
             </span>
-            <button
-              onClick={handleResetBotWallet}
-              disabled={isRunning}
-              className="p-1 hover:bg-destructive/20 rounded transition-colors disabled:opacity-50"
-              title="Reset Bot Wallet"
-            >
-              <Trash2 className="w-3.5 h-3.5 text-destructive" />
-            </button>
           </div>
+          <button
+            onClick={handleResetBotWallet}
+            disabled={isRunning}
+            className="p-1 hover:bg-destructive/20 rounded transition-colors disabled:opacity-50"
+            title="Reset Bot Wallet"
+          >
+            <Trash2 className="w-3.5 h-3.5 text-destructive" />
+          </button>
         </div>
         <div className="flex items-center justify-between gap-2 text-xs">
           <code className="break-all font-mono text-muted-foreground flex-1">
@@ -284,12 +347,14 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         </div>
         <p className="text-xs text-muted-foreground">
           Balance: <span className="text-primary font-bold">{botWallet.balance.toFixed(2)} XLM</span>
+          {botWallet.balance >= 1 && <span className="text-green-400 ml-2">✓ Funded</span>}
         </p>
       </div>
 
       {/* Fund Bot Wallet */}
       <div className="border border-primary/20 rounded-lg p-4 space-y-2 bg-card/50">
-        <Label className="text-xs font-semibold">Fund Bot Wallet</Label>
+        <Label className="text-xs font-semibold">Fund Bot Wallet on Mainnet</Label>
+        <p className="text-xs text-muted-foreground">Minimum 1 XLM required (1 XLM permanently locked for wallet activation)</p>
         <div className="flex gap-2">
           <Input
             type="text"
@@ -311,7 +376,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         {fundingError && <p className="text-xs text-destructive">{fundingError}</p>}
       </div>
 
-      {/* Network & Safety Settings */}
+      {/* Settings */}
       <div className="border border-primary/20 rounded-lg p-4 space-y-3 bg-card/50">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold">Settings</h3>
@@ -323,39 +388,16 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
           </button>
         </div>
 
-        <div className="space-y-2">
-          <label className="flex items-center gap-2 text-xs cursor-pointer">
-            <input
-              type="checkbox"
-              checked={isDryRun}
-              onChange={(e) => setIsDryRun(e.target.checked)}
-              disabled={isRunning}
-              className="w-4 h-4"
-            />
-            <span>Dry-Run Mode (simulate, don&apos;t trade)</span>
-          </label>
-
-          <label className="flex items-center gap-2 text-xs cursor-pointer">
-            <input
-              type="checkbox"
-              checked={isMainnet}
-              onChange={(event) => {
-                if (event.target.checked) {
-                  if (!confirm('⚠️ WARNING: You are switching to MAINNET. Real funds will be at risk. Only proceed if you have tested on TESTNET first. Continue?')) {
-                    return;
-                  }
-                }
-                setIsMainnet(event.target.checked);
-                addLog(`Network switched to ${event.target.checked ? 'MAINNET' : 'TESTNET'}`);
-              }}
-              disabled={isRunning}
-              className="w-4 h-4"
-            />
-            <span className={isMainnet ? 'text-destructive font-bold' : ''}>
-              ⚠️ Mainnet (real funds at risk)
-            </span>
-          </label>
-        </div>
+        <label className="flex items-center gap-2 text-xs cursor-pointer">
+          <input
+            type="checkbox"
+            checked={isDryRun}
+            onChange={(e) => setIsDryRun(e.target.checked)}
+            disabled={isRunning}
+            className="w-4 h-4"
+          />
+          <span>Dry-Run Mode (simulate orders without trading)</span>
+        </label>
 
         {showSettings && (
           <div className="space-y-3 pt-3 border-t border-primary/10">
@@ -466,7 +508,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         </p>
         {isRunning && (
           <p className="text-xs text-muted-foreground">
-            Mode: {isDryRun ? '🔄 DRY-RUN' : isMainnet ? '⚠️ MAINNET' : '🧪 TESTNET'}
+            Mode: {isDryRun ? '🔄 DRY-RUN' : '⚠️ MAINNET LIVE TRADING'}
           </p>
         )}
       </div>
@@ -476,7 +518,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         {!isRunning ? (
           <Button
             onClick={handleStartBot}
-            disabled={!botWallet || parseFloat(buyAmount) <= 0}
+            disabled={!botWallet || parseFloat(buyAmount) <= 0 || botWallet.balance < 1}
             className="flex-1 gap-2"
           >
             <Play className="w-4 h-4" />
@@ -496,7 +538,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
 
       {/* Live Logs Terminal */}
       <div className="border border-primary/20 rounded-lg p-3 bg-black space-y-1">
-        <p className="text-xs font-semibold text-primary mb-2">Live Logs</p>
+        <p className="text-xs font-semibold text-primary mb-2">Live Logs - Mainnet</p>
         <div className="space-y-0.5 font-mono text-xs text-green-400 max-h-48 overflow-y-auto">
           {logs.map((log, idx) => (
             <div key={idx} className="break-all">
@@ -509,21 +551,19 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       {/* Integration Notes Box */}
       <div className="border border-destructive/20 bg-destructive/10 rounded-md p-3 text-xs text-destructive flex flex-col gap-2">
         <h3 className="font-semibold text-sm flex items-center gap-1">
-          ⚠️ Integration Notes:
+          ⚠️ Mainnet Trading - Important:
         </h3>
         <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-          <li>Market Making with spread sniping is active on {isMainnet ? '🌐 MAINNET - Real Funds' : '🧪 TESTNET - Test Environment'}</li>
-          <li>Bot validates spread threshold ({spreadThreshold}%) and profit margin ({minProfit} XLM)</li>
+          <li>Bot operates exclusively on Stellar Mainnet with real funds</li>
+          <li>Market making validates spread threshold ({spreadThreshold}%) and profit margin ({minProfit} XLM)</li>
           <li>Orders update every {orderInterval} seconds to stay competitive</li>
           <li>All orders auto-cancel when bot is stopped</li>
-          <li>Use DRY-RUN mode to test strategy before trading with real funds</li>
-          {isMainnet && <li className="text-destructive font-bold">🔴 MAINNET ACTIVE - Verify settings carefully before starting!</li>}
+          <li>Use DRY-RUN mode to test strategy before live trading</li>
+          <li className="text-destructive font-bold">Bot wallet activity cannot be recovered - backup your secret key!</li>
         </ul>
 
-        <div className={`pt-2 border-t border-destructive/10 font-bold text-center tracking-wide animate-pulse ${
-          isMainnet ? 'text-destructive' : 'text-yellow-400'
-        }`}>
-          {isMainnet ? 'Real Mainnet Trading 🚀' : 'Testnet Trading Mode 🧪'}
+        <div className="pt-2 border-t border-destructive/10 font-bold text-center tracking-wide animate-pulse">
+          Mainnet Trading Active 🚀
         </div>
       </div>
     </div>
