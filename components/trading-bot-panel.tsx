@@ -1,14 +1,15 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { Bot, Play, Square, Copy, Check, AlertTriangle, Settings, Trash2, Lock, Info } from 'lucide-react';
+import { Bot, Play, Square, Copy, Check, AlertTriangle, Settings, Trash2, Lock, Info, Zap } from 'lucide-react';
 import { Keypair, Asset } from '@stellar/stellar-sdk';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { useWallet } from '@/lib/wallet-context';
-import { MarketMakerBot, MarketMakingConfig } from '@/lib/market-maker-bot';
+import { GridMarketMakingBot, GridStrategyType } from '@/lib/grid-strategies';
+import { transferFundsToBotWallet, getBotWalletBalance, getMainWalletBalance, TransactionResult } from '@/lib/fund-transfer';
 
 interface TradingBotPanelProps {
   selectedAsset?: { code: string; issuer?: string };
@@ -24,7 +25,7 @@ interface BotWalletData {
 }
 
 export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps) {
-  const { activeWallet } = useWallet();
+  const { activeWallet, unlockWallet } = useWallet();
 
   // Bot Wallet State
   const [botWallet, setBotWallet] = useState<BotWalletData | null>(null);
@@ -34,25 +35,23 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   const [isFunding, setIsFunding] = useState(false);
   const [fundingAmount, setFundingAmount] = useState<string>('10');
   const [fundingError, setFundingError] = useState<string>('');
+  const [fundingSuccess, setFundingSuccess] = useState<string>('');
   const [botCopied, setBotCopied] = useState(false);
 
-  // Market Making Configuration
-  const [spreadThreshold, setSpreadThreshold] = useState<string>('0.5');
-  const [minProfit, setMinProfit] = useState<string>('0.10');
-  const [orderInterval, setOrderInterval] = useState<string>('5');
-  const [dailyLimit, setDailyLimit] = useState<string>('1000');
-  const [microStep, setMicroStep] = useState<string>('0.000001');
+  // Grid Strategy State
+  const [strategyType, setStrategyType] = useState<GridStrategyType>('symmetrical');
+  const [orderSize, setOrderSize] = useState<string>('50');
+  const [gridStepPercent, setGridStepPercent] = useState<string>('0.20');
 
-  // Trading Configuration
-  const [pair, setPair] = useState<string>(selectedAsset?.code || 'FORGE');
-  const [buyAmount, setBuyAmount] = useState<string>('10');
+  // Trading State
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [isDryRun, setIsDryRun] = useState<boolean>(true);
 
   // Bot Instance and Logs
-  const [botInstance, setBotInstance] = useState<MarketMakerBot | null>(null);
-  const [logs, setLogs] = useState<string[]>(['[System] Orion Trading Bot initialized on Mainnet...']);
+  const [botInstance, setBotInstance] = useState<GridMarketMakingBot | null>(null);
+  const [logs, setLogs] = useState<string[]>(['[System] Orion Grid Trading Bot initialized on Mainnet...']);
   const [showSettings, setShowSettings] = useState(false);
+  const [mainWalletBalance, setMainWalletBalance] = useState<number>(0);
 
   // Load bot wallet from localStorage on mount
   useEffect(() => {
@@ -62,11 +61,39 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         const wallet = JSON.parse(stored);
         setBotWallet(wallet);
         setBackupConfirmed(true);
+        // Refresh balance from network
+        refreshBotBalance(wallet.publicKey);
       } catch (error) {
         console.error('[v0] Failed to load bot wallet:', error);
       }
     }
   }, []);
+
+  // Load main wallet balance
+  useEffect(() => {
+    if (activeWallet) {
+      loadMainWalletBalance();
+    }
+  }, [activeWallet]);
+
+  const loadMainWalletBalance = async () => {
+    if (!activeWallet) return;
+    try {
+      const balance = await getMainWalletBalance(activeWallet.publicKey);
+      setMainWalletBalance(balance.xlm);
+    } catch (error) {
+      console.error('[v0] Failed to load main wallet balance:', error);
+    }
+  };
+
+  const refreshBotBalance = async (publicKey: string) => {
+    try {
+      const balance = await getBotWalletBalance(publicKey);
+      setBotWallet(prev => prev ? { ...prev, balance } : null);
+    } catch (error) {
+      console.error('[v0] Failed to refresh bot balance:', error);
+    }
+  };
 
   const addLog = useCallback((message: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -103,7 +130,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     }
   }, [botWallet, addLog]);
 
-  const handleFundBot = useCallback(() => {
+  const handleFundBot = useCallback(async () => {
     if (!activeWallet || !botWallet || !fundingAmount) {
       setFundingError('Please provide all required information');
       return;
@@ -120,20 +147,54 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       return;
     }
 
+    if (amount > mainWalletBalance) {
+      setFundingError(`Insufficient balance. You have ${mainWalletBalance.toFixed(2)} XLM`);
+      return;
+    }
+
     setIsFunding(true);
     setFundingError('');
+    setFundingSuccess('');
+
     try {
-      // In production, this would submit a real transaction
-      setBotWallet(prev => prev ? { ...prev, balance: prev.balance + amount } : null);
-      addLog(`Funded bot wallet with ${fundingAmount} XLM on Mainnet. Bot is now active.`);
-      setFundingAmount('');
-    } catch (error) {
-      setFundingError(`Funding failed: ${error}`);
+      // Get wallet secret for signing transaction
+      let walletSecret: string;
+      try {
+        walletSecret = unlockWallet(activeWallet.id, '');
+      } catch {
+        setFundingError('Please unlock your wallet first to authorize the transaction');
+        setIsFunding(false);
+        return;
+      }
+
+      const transferConfig = {
+        fromSecretKey: walletSecret,
+        toBotPublicKey: botWallet.publicKey,
+        amountXlm: amount,
+      };
+
+      const result = await transferFundsToBotWallet(transferConfig);
+
+      if (result.success) {
+        setFundingSuccess(`Transferred ${fundingAmount} XLM to bot wallet. Transaction: ${result.hash?.substring(0, 16)}...`);
+        addLog(`Funded bot wallet with ${fundingAmount} XLM on Mainnet. TX: ${result.hash?.substring(0, 20)}...`);
+        
+        // Refresh balances
+        await refreshBotBalance(botWallet.publicKey);
+        await loadMainWalletBalance();
+        
+        setFundingAmount('');
+      } else {
+        setFundingError(result.error || 'Transfer failed');
+        addLog(`Funding error: ${result.error}`);
+      }
+    } catch (error: any) {
+      setFundingError(`Funding failed: ${error.message}`);
       addLog(`Funding error: ${error}`);
     } finally {
       setIsFunding(false);
     }
-  }, [activeWallet, botWallet, fundingAmount, addLog]);
+  }, [activeWallet, botWallet, fundingAmount, mainWalletBalance, addLog, unlockWallet]);
 
   const handleStartBot = useCallback(async () => {
     if (!botWallet || botWallet.balance < 1) {
@@ -141,48 +202,57 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       return;
     }
 
+    if (isDryRun) {
+      addLog('DRY-RUN MODE: Orders will be simulated, not submitted to Mainnet');
+    } else {
+      addLog(`Starting LIVE Grid Bot on MAINNET with ${strategyType} strategy...`);
+      addLog(`Using ${orderSize} XLM per grid level, grid step: ${gridStepPercent}%`);
+    }
+
     setIsRunning(true);
-    addLog(`Starting market maker bot on MAINNET in ${isDryRun ? 'DRY-RUN' : 'LIVE'} mode...`);
 
     try {
-      const config: MarketMakingConfig = {
-        spreadThresholdPercent: parseFloat(spreadThreshold),
-        minProfitTargetXlm: parseFloat(minProfit),
-        orderUpdateIntervalSeconds: parseInt(orderInterval),
-        dailySpendingLimitXlm: parseFloat(dailyLimit),
-        isTestnet: false, // Always mainnet
-        microStep,
+      // Get current spot price (mock for now)
+      const spotPrice = 0.15;
+      
+      const config = {
+        botSecretKey: botWallet.secretKey,
+        tradingPair: {
+          buying: new Asset(selectedAsset?.code || 'FORGE', selectedAsset?.issuer || 'GBUQWP3BOUZX34ULNQG23RQ6F4BFSRJsu6LPJKW6KBTDNPK5YGDX7QU6'),
+          selling: Asset.native(),
+        },
+        strategyType,
+        spotPrice,
+        orderSize: parseFloat(orderSize),
+        enableAutoUpdate: true,
       };
 
-      const bot = new MarketMakerBot(botWallet.secretKey, config);
+      const bot = new GridMarketMakingBot(config);
       setBotInstance(bot);
 
-      if (isDryRun) {
-        addLog('DRY-RUN MODE: Orders will be simulated, not submitted');
+      if (!isDryRun) {
+        await bot.start();
+        addLog('Grid bot trading loop started on Mainnet');
       } else {
-        const sellingAsset = new Asset('XLM');
-        const buyingAsset = new Asset(pair, 'GBUQWP3BOUZX34ULNQG23RQ6F4BFSRJsu6LPJKW6KBTDNPK5YGDX7QU6');
-
-        bot.startTradingLoop(buyingAsset, sellingAsset, buyAmount, (updatedLogs) => {
-          setLogs(updatedLogs.map((log, idx) => `[${idx}] ${log}`));
-        });
-
-        addLog(`Bot trading loop started with ${buyAmount} ${pair} per cycle on Mainnet`);
+        await bot.initializeGrid();
+        addLog('Grid initialized for DRY-RUN preview');
+        const botLogs = bot.getLogs();
+        setLogs(botLogs);
       }
     } catch (error) {
       addLog(`Error starting bot: ${error}`);
       setIsRunning(false);
     }
-  }, [botWallet, isDryRun, spreadThreshold, minProfit, orderInterval, dailyLimit, microStep, pair, buyAmount, addLog]);
+  }, [botWallet, isDryRun, strategyType, orderSize, gridStepPercent, selectedAsset, addLog]);
 
   const handleStopBot = useCallback(async () => {
-    if (botInstance) {
-      await botInstance.stopTradingLoop();
-      setBotInstance(null);
+    if (botInstance && !isDryRun) {
+      await botInstance.stop();
       addLog('Bot stopped on Mainnet, all orders cancelled');
     }
+    setBotInstance(null);
     setIsRunning(false);
-  }, [botInstance, addLog]);
+  }, [botInstance, isDryRun, addLog]);
 
   const handleCopyBotAddress = useCallback(() => {
     if (!botWallet) return;
@@ -203,7 +273,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   }, [botWallet]);
 
   const handleResetBotWallet = useCallback(async () => {
-    if (!confirm('Are you sure you want to reset the bot wallet? This action cannot be undone and any funds will require manual recovery using the secret key.')) {
+    if (!confirm('Are you sure? This will reset the bot wallet. Funds require manual recovery with your secret key.')) {
       return;
     }
 
@@ -272,11 +342,11 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
                   <ul className="space-y-2 text-xs text-muted-foreground">
                     <li className="flex gap-2">
                       <span className="text-primary font-bold">•</span>
-                      <span><strong>Wallet Activation Cost:</strong> Creating this address on the Stellar Mainnet blockchain costs <strong>1 XLM</strong>, which is locked by the network. This amount is permanently reserved to keep the wallet active and cannot be spent.</span>
+                      <span><strong>Wallet Activation Cost:</strong> Creating this address on the Stellar Mainnet costs <strong>1 XLM</strong>, locked by the network permanently to keep the wallet active.</span>
                     </li>
                     <li className="flex gap-2">
                       <span className="text-primary font-bold">•</span>
-                      <span><strong>Local Storage:</strong> Your secret key is saved locally in your browser for convenience, but <strong>Orion does not retain or backup your key</strong>. You are solely responsible for its safekeeping.</span>
+                      <span><strong>Local Storage:</strong> Your secret key is saved locally for convenience, but <strong>Orion does not retain or backup your key</strong>. You are solely responsible for safekeeping.</span>
                     </li>
                     <li className="flex gap-2">
                       <span className="text-primary font-bold">•</span>
@@ -347,19 +417,21 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         </div>
         <p className="text-xs text-muted-foreground">
           Balance: <span className="text-primary font-bold">{botWallet.balance.toFixed(2)} XLM</span>
-          {botWallet.balance >= 1 && <span className="text-green-400 ml-2">✓ Funded</span>}
+          {botWallet.balance >= 1 && <span className="text-green-400 ml-2">✓ Active</span>}
         </p>
       </div>
 
       {/* Fund Bot Wallet */}
-      <div className="border border-primary/20 rounded-lg p-4 space-y-2 bg-card/50">
-        <Label className="text-xs font-semibold">Fund Bot Wallet on Mainnet</Label>
-        <p className="text-xs text-muted-foreground">Minimum 1 XLM required (1 XLM permanently locked for wallet activation)</p>
+      <div className="border border-primary/20 rounded-lg p-4 space-y-3 bg-card/50">
+        <div>
+          <Label className="text-xs font-semibold">Fund Bot Wallet on Mainnet</Label>
+          <p className="text-xs text-muted-foreground mt-1">Main wallet balance: {mainWalletBalance.toFixed(2)} XLM</p>
+        </div>
         <div className="flex gap-2">
           <Input
             type="text"
             inputMode="numeric"
-            placeholder="Amount (XLM)"
+            placeholder="Amount (XLM) - Min 1 XLM"
             value={fundingAmount}
             onChange={(e) => setFundingAmount(e.target.value)}
             disabled={isFunding || !activeWallet}
@@ -369,23 +441,61 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
             onClick={handleFundBot}
             disabled={isFunding || !activeWallet || !fundingAmount}
             size="sm"
+            className="gap-1"
           >
+            <Zap className="w-3 h-3" />
             Fund
           </Button>
         </div>
         {fundingError && <p className="text-xs text-destructive">{fundingError}</p>}
+        {fundingSuccess && <p className="text-xs text-green-400">{fundingSuccess}</p>}
       </div>
 
-      {/* Settings */}
+      {/* Grid Strategy Selection */}
       <div className="border border-primary/20 rounded-lg p-4 space-y-3 bg-card/50">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Settings</h3>
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            className="p-1 hover:bg-primary/20 rounded transition-colors"
-          >
-            <Settings className="w-4 h-4 text-primary" />
-          </button>
+        <h3 className="text-sm font-semibold">Grid Strategy</h3>
+        
+        <div className="space-y-2">
+          <Label className="text-xs">Strategy Type</Label>
+          <Select value={strategyType} onValueChange={(val) => setStrategyType(val as GridStrategyType)} disabled={isRunning}>
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="symmetrical">Symmetrical Grid (10 levels, equal sizes)</SelectItem>
+              <SelectItem value="geometric">Geometric Asymmetric (12 levels, rising market)</SelectItem>
+              <SelectItem value="defensive">Defensive Grid (6 levels, broad range)</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground mt-1">
+            {strategyType === 'symmetrical' && '5 buy + 5 sell levels around spot price'}
+            {strategyType === 'geometric' && '8 buy + 4 sell levels, optimized for rising markets'}
+            {strategyType === 'defensive' && 'Progressive sizes across ±5% range'}
+          </p>
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-xs">Order Size per Level (XLM)</Label>
+          <Input
+            type="text"
+            inputMode="decimal"
+            value={orderSize}
+            onChange={(e) => setOrderSize(e.target.value)}
+            disabled={isRunning}
+            className="h-8 text-xs"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-xs">Grid Step (%)</Label>
+          <Input
+            type="text"
+            inputMode="decimal"
+            value={gridStepPercent}
+            onChange={(e) => setGridStepPercent(e.target.value)}
+            disabled={isRunning}
+            className="h-8 text-xs"
+          />
         </div>
 
         <label className="flex items-center gap-2 text-xs cursor-pointer">
@@ -396,107 +506,8 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
             disabled={isRunning}
             className="w-4 h-4"
           />
-          <span>Dry-Run Mode (simulate orders without trading)</span>
+          <span>Dry-Run Mode (simulate grid without trading)</span>
         </label>
-
-        {showSettings && (
-          <div className="space-y-3 pt-3 border-t border-primary/10">
-            <div className="space-y-1">
-              <Label className="text-xs">Min Spread Threshold (%)</Label>
-              <Input
-                type="text"
-                inputMode="decimal"
-                value={spreadThreshold}
-                onChange={(e) => setSpreadThreshold(e.target.value)}
-                disabled={isRunning}
-                className="h-8 text-xs"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs">Min Profit Target (XLM)</Label>
-              <Input
-                type="text"
-                inputMode="decimal"
-                value={minProfit}
-                onChange={(e) => setMinProfit(e.target.value)}
-                disabled={isRunning}
-                className="h-8 text-xs"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs">Order Update Interval (seconds)</Label>
-              <Input
-                type="text"
-                inputMode="numeric"
-                value={orderInterval}
-                onChange={(e) => setOrderInterval(e.target.value)}
-                disabled={isRunning}
-                className="h-8 text-xs"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs">Daily Spending Limit (XLM)</Label>
-              <Input
-                type="text"
-                inputMode="decimal"
-                value={dailyLimit}
-                onChange={(e) => setDailyLimit(e.target.value)}
-                disabled={isRunning}
-                className="h-8 text-xs"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs">Micro Step (price increment)</Label>
-              <Input
-                type="text"
-                inputMode="decimal"
-                value={microStep}
-                onChange={(e) => setMicroStep(e.target.value)}
-                disabled={isRunning}
-                className="h-8 text-xs"
-              />
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Trading Configuration */}
-      <div className="border border-primary/20 rounded-lg p-4 space-y-3 bg-card/50">
-        <h3 className="text-sm font-semibold">Trading Configuration</h3>
-
-        <div className="space-y-1">
-          <Label className="text-xs">Trading Pair</Label>
-          <Select value={pair} onValueChange={setPair} disabled={isRunning}>
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue placeholder="Select asset" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="FORGE">FORGE</SelectItem>
-              <SelectItem value="MAGC">MAGC</SelectItem>
-              <SelectItem value="METJ">METJ</SelectItem>
-              <SelectItem value="USDC">USDC</SelectItem>
-              <SelectItem value="BTC">BTC</SelectItem>
-              <SelectItem value="ETH">ETH</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1">
-          <Label className="text-xs">Buy Amount per Cycle ({pair})</Label>
-          <Input
-            type="text"
-            inputMode="decimal"
-            placeholder="10"
-            value={buyAmount}
-            onChange={(e) => setBuyAmount(e.target.value)}
-            disabled={isRunning}
-            className="h-8 text-xs"
-          />
-        </div>
       </div>
 
       {/* Status Display */}
@@ -518,7 +529,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         {!isRunning ? (
           <Button
             onClick={handleStartBot}
-            disabled={!botWallet || parseFloat(buyAmount) <= 0 || botWallet.balance < 1}
+            disabled={!botWallet || parseFloat(orderSize) <= 0 || botWallet.balance < 1}
             className="flex-1 gap-2"
           >
             <Play className="w-4 h-4" />
@@ -538,7 +549,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
 
       {/* Live Logs Terminal */}
       <div className="border border-primary/20 rounded-lg p-3 bg-black space-y-1">
-        <p className="text-xs font-semibold text-primary mb-2">Live Logs - Mainnet</p>
+        <p className="text-xs font-semibold text-primary mb-2">Live Logs - Mainnet Grid Bot</p>
         <div className="space-y-0.5 font-mono text-xs text-green-400 max-h-48 overflow-y-auto">
           {logs.map((log, idx) => (
             <div key={idx} className="break-all">
@@ -548,23 +559,19 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         </div>
       </div>
 
-      {/* Integration Notes Box */}
+      {/* Mainnet Warning */}
       <div className="border border-destructive/20 bg-destructive/10 rounded-md p-3 text-xs text-destructive flex flex-col gap-2">
         <h3 className="font-semibold text-sm flex items-center gap-1">
-          ⚠️ Mainnet Trading - Important:
+          ⚠️ Mainnet Grid Trading - Critical:
         </h3>
         <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-          <li>Bot operates exclusively on Stellar Mainnet with real funds</li>
-          <li>Market making validates spread threshold ({spreadThreshold}%) and profit margin ({minProfit} XLM)</li>
-          <li>Orders update every {orderInterval} seconds to stay competitive</li>
-          <li>All orders auto-cancel when bot is stopped</li>
-          <li>Use DRY-RUN mode to test strategy before live trading</li>
-          <li className="text-destructive font-bold">Bot wallet activity cannot be recovered - backup your secret key!</li>
+          <li>Bot operates exclusively on Stellar Mainnet with REAL funds</li>
+          <li>Grid orders are placed using ManageBuyOffer/ManageSellOffer with 20s timeout</li>
+          <li>All prices are subject to slippage checks before submission</li>
+          <li>Orders auto-cancel when bot is stopped - all positions closed</li>
+          <li>Use DRY-RUN first to validate your strategy before live trading</li>
+          <li className="text-destructive font-bold">Secret key = permanent access to funds. Guard it carefully!</li>
         </ul>
-
-        <div className="pt-2 border-t border-destructive/10 font-bold text-center tracking-wide animate-pulse">
-          Mainnet Trading Active 🚀
-        </div>
       </div>
     </div>
   );
