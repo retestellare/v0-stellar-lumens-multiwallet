@@ -339,19 +339,19 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
             <input
               type="checkbox"
               checked={isMainnet}
-              onChange={(e) => {
-                if (e.target.checked) {
+              onChange={(event) => {
+                if (event.target.checked) {
                   if (!confirm('⚠️ WARNING: You are switching to MAINNET. Real funds will be at risk. Only proceed if you have tested on TESTNET first. Continue?')) {
                     return;
                   }
                 }
-                setIsMainnet(e.target.checked);
-                addLog(`Network switched to ${e.target.checked ? 'MAINNET' : 'TESTNET'}`);
+                setIsMainnet(event.target.checked);
+                addLog(`Network switched to ${event.target.checked ? 'MAINNET' : 'TESTNET'}`);
               }}
               disabled={isRunning}
               className="w-4 h-4"
             />
-            <span className={e.target.checked ? 'text-destructive font-bold' : ''}>
+            <span className={isMainnet ? 'text-destructive font-bold' : ''}>
               ⚠️ Mainnet (real funds at risk)
             </span>
           </label>
