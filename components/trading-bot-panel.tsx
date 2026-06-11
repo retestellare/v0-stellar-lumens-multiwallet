@@ -60,19 +60,28 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   const [customAssetCode, setCustomAssetCode] = useState<string>('');
   const [customIssuer, setCustomIssuer] = useState<string>('');
 
-  // Load bot wallet from localStorage on mount
+  // Load bot wallet from localStorage on mount and refresh balance from Mainnet
   useEffect(() => {
-    const stored = localStorage.getItem('stellar_bot_wallet');
-    if (stored) {
-      try {
-        const wallet = JSON.parse(stored);
-        setBotWallet(wallet);
-        // Refresh balance from network
-        refreshBotBalance(wallet.publicKey);
-      } catch (error) {
-        console.error('[v0] Failed to load bot wallet:', error);
+    const loadBotWallet = async () => {
+      const stored = localStorage.getItem('stellar_bot_wallet');
+      if (stored) {
+        try {
+          const wallet = JSON.parse(stored);
+          setBotWallet(wallet);
+          // Immediately refresh balance from Mainnet Horizon
+          try {
+            const balance = await getBotWalletBalance(wallet.publicKey);
+            setBotWallet(prev => prev ? { ...prev, balance } : null);
+            console.log('[v0] Bot wallet balance loaded from Mainnet:', balance);
+          } catch (error) {
+            console.error('[v0] Failed to fetch bot wallet balance from Mainnet:', error);
+          }
+        } catch (error) {
+          console.error('[v0] Failed to parse stored bot wallet:', error);
+        }
       }
-    }
+    };
+    loadBotWallet();
   }, []);
 
   // Load main wallet balance
@@ -92,14 +101,15 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     }
   };
 
-  const refreshBotBalance = async (publicKey: string) => {
+  const refreshBotBalance = useCallback(async (publicKey: string) => {
     try {
       const balance = await getBotWalletBalance(publicKey);
       setBotWallet(prev => prev ? { ...prev, balance } : null);
+      console.log('[v0] Bot wallet balance refreshed from Mainnet:', balance);
     } catch (error) {
-      console.error('[v0] Failed to refresh bot balance:', error);
+      console.error('[v0] Failed to refresh bot balance from Mainnet:', error);
     }
-  };
+  }, []);
 
   const addLog = useCallback((message: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -113,6 +123,8 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   const handleBotWalletCreated = useCallback((wallet: BotWalletData) => {
     setBotWallet(wallet);
     addLog('Bot wallet created and secured on Mainnet');
+    // Immediately refresh balance from Mainnet after creation/import
+    refreshBotBalance(wallet.publicKey);
     setShowBotWalletModal(false);
   }, [addLog]);
 
