@@ -216,7 +216,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         addLog('[Error] Invalid or missing wallet password for authorization.');
         return false;
       }
-
+      
       try {
         if (asset.isNative()) {
           return true;
@@ -273,6 +273,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       addLog('[Error] Enter password before starting the bot.');
       return;
     }
+    
 
     if (!botWallet || botWallet.balance < 1) {
       addLog('Bot wallet must have at least 1 XLM funded on Mainnet to operate');
@@ -695,7 +696,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       </div>
 
       {/* Bot Trading Authorization Password */}
-      {botWallet && botWallet.balance >= 1 && selectedToken !== 'xlm' && (
+      {botWallet && selectedToken !== 'xlm' && (
         <div className="border border-primary/20 rounded-lg p-4 space-y-3 bg-card/50">
           <div className="space-y-2">
             <Label className="text-xs font-semibold flex items-center gap-1">
