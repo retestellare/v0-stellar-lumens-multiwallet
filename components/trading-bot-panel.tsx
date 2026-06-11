@@ -206,7 +206,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     }
   }, [activeWallet, botWallet, fundingAmount, fundingPassword, mainWalletBalance, addLog]);
 
-  const handleStartBot = useCallback(async () => {
+  const handleStartBot = useCallback(async (password: string) => {
     if (!botWallet || botWallet.balance < 1) {
       addLog('Bot wallet must have at least 1 XLM funded on Mainnet to operate');
       return;
@@ -265,7 +265,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     if (!tradingAsset.isNative()) {
       try {
         // Require password for trustline operation
-        if (!botPassword || botPassword.trim() === '') {
+        if (!password || password.trim() === '') {
           addLog('[Error] Invalid or missing wallet password for authorization.');
           return;
         }
@@ -280,7 +280,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
           // Decrypt bot secret key for trustline operation
           let botSecretKey: string;
           try {
-            botSecretKey = decryptSecret(botWallet.encryptedSecret, botPassword);
+            botSecretKey = decryptSecret(botWallet.encryptedSecret, password);
           } catch (err: any) {
             addLog('[Error] Invalid or missing wallet password for authorization.');
             return;
@@ -329,7 +329,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       // Decrypt bot secret key for trading
       let decryptedSecretKey: string;
       try {
-        decryptedSecretKey = decryptSecret(botWallet.encryptedSecret, botPassword);
+        decryptedSecretKey = decryptSecret(botWallet.encryptedSecret, password);
       } catch (err: any) {
         addLog('[Error] Invalid or missing wallet password for authorization.');
         setIsRunning(false);
@@ -369,7 +369,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       addLog(`[Error] Bot startup failed: ${errorCode}`);
       setIsRunning(false);
     }
-  }, [botWallet, isDryRun, strategyType, orderSize, gridStepPercent, selectedToken, customAssetCode, customIssuer, botPassword, addLog]);
+  }, [botWallet, isDryRun, strategyType, orderSize, gridStepPercent, selectedToken, customAssetCode, customIssuer, addLog]);
 
   const handleStopBot = useCallback(async () => {
     if (botInstance && !isDryRun) {
@@ -708,7 +708,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       <div className="flex gap-2">
         {!isRunning ? (
           <Button
-            onClick={handleStartBot}
+            onClick={() => handleStartBot(botPassword)}
             disabled={!botWallet || parseFloat(orderSize) <= 0 || botWallet.balance < 1 || (selectedToken !== 'xlm' && !botPassword)}
             className="flex-1 gap-2"
           >
