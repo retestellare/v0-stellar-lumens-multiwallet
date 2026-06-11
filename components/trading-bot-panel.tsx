@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { Bot, Play, Square, Copy, Check, AlertTriangle, Settings, Trash2, Lock, Info, Zap, Eye, EyeOff } from 'lucide-react';
-import { Keypair, Asset } from '@stellar/stellar-sdk';
+import { Keypair, Asset, Horizon } from '@stellar/stellar-sdk';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { useWallet } from '@/lib/wallet-context';
 import { GridMarketMakingBot, GridStrategyType } from '@/lib/grid-strategies';
 import { transferFundsToBotWallet, getBotWalletBalance, getMainWalletBalance, TransactionResult } from '@/lib/fund-transfer';
-import { decryptSecret } from '@/lib/stellar-utils';
+import { decryptSecret, addTrustline } from '@/lib/stellar-utils';
 import { BotWalletModal } from '@/components/bot-wallet-modal';
 
 interface TradingBotPanelProps {
@@ -218,12 +218,98 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       }
     }
 
+    // ============ CENTRALIZED ASSET VALIDATION & TRUSTLINE MANAGEMENT ============
+
+    // Determine the trading asset based on selection
+    let tradingAsset: Asset;
+    let assetDisplay: string;
+    let assetCode: string;
+    let assetIssuer: string;
+
+    if (selectedToken === 'xlm') {
+      tradingAsset = Asset.native();
+      assetDisplay = 'XLM';
+      assetCode = 'XLM';
+      assetIssuer = '';
+    } else if (selectedToken === 'usdc') {
+      assetCode = 'USDC';
+      assetIssuer = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5T36C2YNE7L';
+      tradingAsset = new Asset(assetCode, assetIssuer);
+      assetDisplay = 'USDC';
+    } else if (selectedToken === 'eurc') {
+      assetCode = 'EURC';
+      assetIssuer = 'GDHU6W2FSTZ7N6D7S5S7N7GFF6AL66S7X4K6P4K3K3K3K3K3K3K3K3';
+      tradingAsset = new Asset(assetCode, assetIssuer);
+      assetDisplay = 'EURC';
+    } else if (selectedToken === 'custom') {
+      assetCode = customAssetCode;
+      assetIssuer = customIssuer;
+      tradingAsset = new Asset(assetCode, assetIssuer);
+      assetDisplay = assetCode;
+    } else {
+      tradingAsset = Asset.native();
+      assetDisplay = 'XLM';
+      assetCode = 'XLM';
+      assetIssuer = '';
+    }
+
+    // STEP 1: Check for identical assets (XLM/XLM pair)
+    if (tradingAsset.isNative()) {
+      addLog('[Error] Unable to trade XLM against XLM. Please select a different token.');
+      return;
+    }
+
+    // STEP 2: Check and open trustline for non-XLM assets
+    if (!tradingAsset.isNative()) {
+      try {
+        const horizon = new Horizon.Server('https://horizon.stellar.org');
+        const account = await horizon.loadAccount(botWallet.publicKey);
+        const hasTrust = account.balances.some((b: any) => b.asset_code === assetCode && b.asset_issuer === assetIssuer);
+
+        if (!hasTrust) {
+          addLog(`[System] Missing Trustline for ${assetDisplay}. Opening on Mainnet...`);
+
+          // Decrypt bot secret key for trustline operation
+          let botSecretKey: string;
+          try {
+            botSecretKey = decryptSecret(botWallet.encryptedSecret, botWallet.password || '');
+          } catch (err: any) {
+            addLog('[Error] Failed to decrypt bot wallet for trustline operation');
+            return;
+          }
+
+          // Open trustline using addTrustline
+          const trustlineResult = await addTrustline(botSecretKey, assetCode, assetIssuer);
+
+          if (!trustlineResult.success) {
+            const errorCode = trustlineResult.error || 'unknown_error';
+            addLog(`[Error] Failed to open trustline for ${assetDisplay}. Error: ${errorCode}`);
+            return;
+          }
+
+          addLog(`[System] Trustline for ${assetDisplay} confirmed on Mainnet. Proceeding with strategy launch.`);
+
+          // Small delay to ensure trustline is fully processed
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      } catch (error: any) {
+        let errorCode = 'unknown_error';
+        if (error.response?.data?.extras?.result_codes) {
+          const codes = error.response.data.extras.result_codes;
+          errorCode = codes.operations?.[0] || codes.transaction || errorCode;
+        }
+        addLog(`[Error] Trustline validation failed: ${errorCode}`);
+        return;
+      }
+    }
+
+    // ============ END ASSET VALIDATION & TRUSTLINE MANAGEMENT ============
+
     if (isDryRun) {
       addLog('DRY-RUN MODE: Orders will be simulated, not submitted to Mainnet');
     } else {
-      const tokenDisplay = selectedToken === 'xlm' ? 'XLM' : selectedToken === 'usdc' ? 'USDC' : selectedToken === 'eurc' ? 'EURC' : customAssetCode;
-      addLog(`Starting LIVE Grid Bot on MAINNET with ${strategyType} strategy...`);
-      addLog(`Trading pair: XLM/${tokenDisplay}, Using ${orderSize} XLM per grid level, grid step: ${gridStepPercent}%`);
+      addLog(`Starting LIVE Bot on MAINNET with ${strategyType} strategy...`);
+      addLog(`Trading pair: XLM/${assetDisplay}, Using ${orderSize} XLM per grid level, grid step: ${gridStepPercent}%`);
     }
 
     setIsRunning(true);
@@ -231,22 +317,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     try {
       // Get current spot price (mock for now)
       const spotPrice = 0.15;
-      
-      // Determine the trading asset based on selection
-      let tradingAsset: Asset;
-      
-      if (selectedToken === 'xlm') {
-        tradingAsset = Asset.native();
-      } else if (selectedToken === 'usdc') {
-        tradingAsset = new Asset('USDC', 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5T36C2YNE7L');
-      } else if (selectedToken === 'eurc') {
-        tradingAsset = new Asset('EURC', 'GDHU6W2FSTZ7N6D7S5S7N7GFF6AL66S7X4K6P4K3K3K3K3K3K3K3K3');
-      } else if (selectedToken === 'custom') {
-        tradingAsset = new Asset(customAssetCode, customIssuer);
-      } else {
-        tradingAsset = Asset.native();
-      }
-      
+
       const config = {
         botSecretKey: botWallet.secretKey,
         tradingPair: {
@@ -264,15 +335,20 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
 
       if (!isDryRun) {
         await bot.start();
-        addLog('Grid bot trading loop started on Mainnet');
+        addLog('Bot trading loop started on Mainnet');
       } else {
         await bot.initializeGrid();
         addLog('Grid initialized for DRY-RUN preview');
         const botLogs = bot.getLogs();
         setLogs(botLogs);
       }
-    } catch (error) {
-      addLog(`Error starting bot: ${error}`);
+    } catch (error: any) {
+      let errorCode = 'unknown_error';
+      if (error.response?.data?.extras?.result_codes) {
+        const codes = error.response.data.extras.result_codes;
+        errorCode = codes.operations?.[0] || codes.transaction || errorCode;
+      }
+      addLog(`[Error] Bot startup failed: ${errorCode}`);
       setIsRunning(false);
     }
   }, [botWallet, isDryRun, strategyType, orderSize, gridStepPercent, selectedToken, customAssetCode, customIssuer, addLog]);
