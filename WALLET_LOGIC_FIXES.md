@@ -49,7 +49,7 @@
 - Input field cleared after successful validation
 - Better format validation for secret keys (must start with "S")
 
-### trading-bot-panel.tsx
+### 
 - Improved password error message when `unlockWallet()` fails
 - Better guidance for users on what went wrong
 - Added console logging for debugging
