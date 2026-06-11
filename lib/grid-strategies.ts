@@ -14,7 +14,7 @@ import {
 const HORIZON_URL = 'https://horizon.stellar.org'; // Mainnet only
 const TRANSACTION_TIMEOUT_SECONDS = 20;
 
-export type GridStrategyType = 'symmetrical' | 'geometric' | 'defensive';
+export type GridStrategyType = 'symmetrical' | 'geometric' | 'defensive' | 'spread';
 
 export interface GridLevel {
   price: number;
@@ -159,8 +159,34 @@ export function createDefensiveGrid(
 }
 
 /**
- * Grid Market Making Bot Implementation
+ * STRATEGY 4: Spread Market Maker (Top of Book)
+ * - Dynamic top-of-book market making strategy
+ * - Places buy order just above best bid
+ * - Places sell order just below best ask
+ * - Monitors order book every 5-10 seconds
+ * - Cancels and replaces orders if no longer at top of book
+ * - Maximizes order fill probability while maintaining tight spreads
  */
+export function createSpreadMarketMakerGrid(
+  spotPrice: number,
+  orderSize: number,
+  microSpreadBps: number = 5 // 0.05% spread increment from best bid/ask
+): GridLevel[] {
+  // This strategy will be handled dynamically in the bot class
+  // We return empty here as levels are created based on live order book
+  return [
+    {
+      price: spotPrice,
+      size: orderSize,
+      side: 'buy',
+    },
+    {
+      price: spotPrice,
+      size: orderSize,
+      side: 'sell',
+    },
+  ];
+}
 export class GridMarketMakingBot {
   private botKeypair: Keypair;
   private botPublicKey: string;
@@ -204,6 +230,10 @@ export class GridMarketMakingBot {
           break;
         case 'defensive':
           this.currentGrid = createDefensiveGrid(this.config.spotPrice, this.config.orderSize);
+          break;
+        case 'spread':
+          this.currentGrid = createSpreadMarketMakerGrid(this.config.spotPrice, this.config.orderSize);
+          this.addLog('Spread Market Maker (Top of Book) strategy initialized - will fetch live order book');
           break;
       }
       this.addLog(`Grid initialized with ${this.currentGrid.length} levels (${this.config.strategyType})`);
@@ -355,18 +385,162 @@ export class GridMarketMakingBot {
   }
 
   /**
+   * Manage Top of Book Orders for Spread Market Maker Strategy
+   * - Fetches current best bid and best ask
+   * - Places buy order just above best bid
+   * - Places sell order just below best ask
+   * - Cancels old orders if prices have moved
+   */
+  private async manageTopOfBook(): Promise<void> {
+    try {
+      const orderBook = await this.fetchOrderBook();
+      if (!orderBook || orderBook.bid <= 0 || orderBook.ask <= 0) {
+        this.addLog('Cannot fetch valid order book for top-of-book management');
+        return;
+      }
+
+      const { bid, ask } = orderBook;
+      const microSpreadBps = 5; // 0.05% above bid and below ask
+      const microSpread = bid * (microSpreadBps / 10000);
+
+      // Calculate top-of-book prices
+      const buyPrice = parseFloat((bid + microSpread).toFixed(7)); // Just above best bid
+      const sellPrice = parseFloat((ask - microSpread).toFixed(7)); // Just below best ask
+
+      // Fetch active offers
+      const activeOffers = await this.fetchActiveOffers();
+      
+      // Find existing buy and sell offers
+      let existingBuyOffer = activeOffers.find(o => o.side === 'buy');
+      let existingSellOffer = activeOffers.find(o => o.side === 'sell');
+
+      const account = await this.horizon.loadAccount(this.botPublicKey);
+      const transactionBuilder = new TransactionBuilder(account, {
+        fee: BASE_FEE,
+        networkPassphrase: 'Public Global Stellar Network ; September 2015',
+      });
+
+      let operationCount = 0;
+
+      // Cancel existing offers if prices have changed significantly
+      if (existingBuyOffer && parseFloat(existingBuyOffer.price) !== buyPrice) {
+        this.addLog(`Cancelling stale buy order at ${existingBuyOffer.price}, replacing with ${buyPrice}`);
+        transactionBuilder.addOperation(
+          Operation.manageBuyOffer({
+            selling: this.config.tradingPair.selling,
+            buying: this.config.tradingPair.buying,
+            buyAmount: '0',
+            price: existingBuyOffer.price,
+            offerId: existingBuyOffer.id,
+          })
+        );
+        operationCount++;
+      }
+
+      if (existingSellOffer && parseFloat(existingSellOffer.price) !== sellPrice) {
+        this.addLog(`Cancelling stale sell order at ${existingSellOffer.price}, replacing with ${sellPrice}`);
+        transactionBuilder.addOperation(
+          Operation.manageSellOffer({
+            selling: this.config.tradingPair.selling,
+            buying: this.config.tradingPair.buying,
+            amount: '0',
+            price: existingSellOffer.price,
+            offerId: existingSellOffer.id,
+          })
+        );
+        operationCount++;
+      }
+
+      // Place new buy order at top of book
+      if (!existingBuyOffer || parseFloat(existingBuyOffer.price) !== buyPrice) {
+        this.addLog(`Placing top-of-book buy order at ${buyPrice} (${this.config.orderSize} units)`);
+        transactionBuilder.addOperation(
+          Operation.manageBuyOffer({
+            selling: this.config.tradingPair.selling,
+            buying: this.config.tradingPair.buying,
+            buyAmount: this.config.orderSize.toString(),
+            price: buyPrice.toString(),
+            offerId: '0',
+          })
+        );
+        operationCount++;
+      }
+
+      // Place new sell order at top of book
+      if (!existingSellOffer || parseFloat(existingSellOffer.price) !== sellPrice) {
+        this.addLog(`Placing top-of-book sell order at ${sellPrice} (${this.config.orderSize} units)`);
+        transactionBuilder.addOperation(
+          Operation.manageSellOffer({
+            selling: this.config.tradingPair.selling,
+            buying: this.config.tradingPair.buying,
+            amount: this.config.orderSize.toString(),
+            price: sellPrice.toString(),
+            offerId: '0',
+          })
+        );
+        operationCount++;
+      }
+
+      if (operationCount === 0) {
+        // No changes needed, orders already at top of book
+        return;
+      }
+
+      transactionBuilder.setTimeout(TRANSACTION_TIMEOUT_SECONDS);
+      const transaction = transactionBuilder.build();
+      const signedTx = this.botKeypair.sign(transaction);
+
+      await this.horizon.submitTransaction(signedTx);
+      this.addLog(`Top-of-book positions updated: buy at ${buyPrice}, sell at ${sellPrice}`);
+    } catch (error) {
+      this.addLog(`Error managing top-of-book: ${error}`);
+    }
+  }
+
+  /**
+   * Fetch active offers for this bot account
+   */
+  private async fetchActiveOffers(): Promise<Array<{ id: string; side: 'buy' | 'sell'; price: string }>> {
+    try {
+      const response = await this.horizon.offers().forAccount(this.botPublicKey).call();
+      return response.records.map(offer => ({
+        id: offer.id,
+        side: offer.buying.asset_code === this.config.tradingPair.buying.code ? 'buy' : 'sell',
+        price: offer.price,
+      })) as Array<{ id: string; side: 'buy' | 'sell'; price: string }>;
+    } catch (error) {
+      this.addLog(`Error fetching active offers: ${error}`);
+      return [];
+    }
+  }
+
+  /**
    * Start trading loop
    */
   async start(): Promise<void> {
     try {
       await this.initializeGrid();
-      await this.placeGridOrders();
-
-      this.tradingLoopInterval = setInterval(async () => {
+      
+      if (this.config.strategyType === 'spread') {
+        // For spread market maker, immediately fetch order book and place top-of-book orders
+        await this.manageTopOfBook();
+        
+        // Monitor order book every 5-10 seconds for top-of-book management
+        this.tradingLoopInterval = setInterval(async () => {
+          await this.manageTopOfBook();
+        }, 7000); // Update every 7 seconds for tight top-of-book management
+        
+        this.addLog('Spread Market Maker (Top of Book) bot started - monitoring order book every 7 seconds');
+      } else {
+        // For grid strategies, use standard grid order placement
         await this.placeGridOrders();
-      }, 10000); // Update every 10 seconds
-
-      this.addLog('Grid bot started');
+        
+        this.tradingLoopInterval = setInterval(async () => {
+          await this.placeGridOrders();
+        }, 10000); // Update every 10 seconds
+        
+        this.addLog('Grid bot started');
+      }
     } catch (error) {
       this.addLog(`Error starting bot: ${error}`);
     }

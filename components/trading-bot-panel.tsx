@@ -463,12 +463,14 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
               <SelectItem value="symmetrical">Symmetrical Grid (10 levels, equal sizes)</SelectItem>
               <SelectItem value="geometric">Geometric Asymmetric (12 levels, rising market)</SelectItem>
               <SelectItem value="defensive">Defensive Grid (6 levels, broad range)</SelectItem>
+              <SelectItem value="spread">Spread Market Maker (Top of Book)</SelectItem>
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground mt-1">
             {strategyType === 'symmetrical' && '5 buy + 5 sell levels around spot price'}
             {strategyType === 'geometric' && '8 buy + 4 sell levels, optimized for rising markets'}
             {strategyType === 'defensive' && 'Progressive sizes across ±5% range'}
+            {strategyType === 'spread' && 'Dynamic top-of-book orders - places buy just above best bid, sell just below best ask, updates every 5-10 seconds'}
           </p>
         </div>
 
