@@ -48,8 +48,8 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   // Trading State
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [isDryRun, setIsDryRun] = useState<boolean>(true);
-  const [botPassword, setBotPassword] = useState<string>('');
-  const [showBotPassword, setShowBotPassword] = useState(false);
+  const [walletPassword, setWalletPassword] = useState<string>('');
+  const [showWalletPassword, setShowWalletPassword] = useState(false);
 
   // Bot Instance and Logs
   const [botInstance, setBotInstance] = useState<GridMarketMakingBot | null>(null);
@@ -206,7 +206,74 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     }
   }, [activeWallet, botWallet, fundingAmount, fundingPassword, mainWalletBalance, addLog]);
 
+  /**
+   * Check if trustline exists and create if missing.
+   * This function explicitly receives the wallet password as a parameter.
+   */
+  const checkAndCreateTrustline = useCallback(
+    async (password: string, asset: Asset, assetCode: string, assetIssuer: string, assetDisplay: string): Promise<boolean> => {
+      if (!password || password.trim() === '') {
+        addLog('[Error] Invalid or missing wallet password for authorization.');
+        return false;
+      }
+
+      try {
+        if (asset.isNative()) {
+          return true;
+        }
+
+        const horizon = new Horizon.Server('https://horizon.stellar.org');
+        const account = await horizon.loadAccount(botWallet!.publicKey);
+        const hasTrust = account.balances.some((b: any) => b.asset_code === assetCode && b.asset_issuer === assetIssuer);
+
+        if (!hasTrust) {
+          addLog(`[System] Missing Trustline for ${assetDisplay}. Opening on Mainnet...`);
+
+          // Decrypt bot secret key using the passed password parameter
+          let botSecretKey: string;
+          try {
+            botSecretKey = decryptSecret(botWallet!.encryptedSecret, password);
+          } catch (err: any) {
+            addLog('[Error] Invalid or missing wallet password for authorization.');
+            return false;
+          }
+
+          // Open trustline using addTrustline
+          const trustlineResult = await addTrustline(botSecretKey, assetCode, assetIssuer);
+
+          if (!trustlineResult.success) {
+            const errorCode = trustlineResult.error || 'unknown_error';
+            addLog(`[Error] Failed to open trustline for ${assetDisplay}. Error: ${errorCode}`);
+            return false;
+          }
+
+          addLog(`[System] Trustline for ${assetDisplay} confirmed on Mainnet. Proceeding with strategy launch.`);
+
+          // Small delay to ensure trustline is fully processed
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+        return true;
+      } catch (error: any) {
+        let errorCode = 'unknown_error';
+        if (error.response?.data?.extras?.result_codes) {
+          const codes = error.response.data.extras.result_codes;
+          errorCode = codes.operations?.[0] || codes.transaction || errorCode;
+        }
+        addLog(`[Error] Trustline validation failed: ${errorCode}`);
+        return false;
+      }
+    },
+    [botWallet, addLog]
+  );
+
   const handleStartBot = useCallback(async (password: string) => {
+    // EXPLICIT PASSWORD CHECK at the beginning
+    if (!password || password.trim() === '') {
+      addLog('[Error] Enter password before starting the bot.');
+      return;
+    }
+
     if (!botWallet || botWallet.balance < 1) {
       addLog('Bot wallet must have at least 1 XLM funded on Mainnet to operate');
       return;
@@ -261,54 +328,10 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       return;
     }
 
-    // STEP 2: Check and open trustline for non-XLM assets
-    if (!tradingAsset.isNative()) {
-      try {
-        // Require password for trustline operation
-        if (!password || password.trim() === '') {
-          addLog('[Error] Invalid or missing wallet password for authorization.');
-          return;
-        }
-
-        const horizon = new Horizon.Server('https://horizon.stellar.org');
-        const account = await horizon.loadAccount(botWallet.publicKey);
-        const hasTrust = account.balances.some((b: any) => b.asset_code === assetCode && b.asset_issuer === assetIssuer);
-
-        if (!hasTrust) {
-          addLog(`[System] Missing Trustline for ${assetDisplay}. Opening on Mainnet...`);
-
-          // Decrypt bot secret key for trustline operation
-          let botSecretKey: string;
-          try {
-            botSecretKey = decryptSecret(botWallet.encryptedSecret, password);
-          } catch (err: any) {
-            addLog('[Error] Invalid or missing wallet password for authorization.');
-            return;
-          }
-
-          // Open trustline using addTrustline
-          const trustlineResult = await addTrustline(botSecretKey, assetCode, assetIssuer);
-
-          if (!trustlineResult.success) {
-            const errorCode = trustlineResult.error || 'unknown_error';
-            addLog(`[Error] Failed to open trustline for ${assetDisplay}. Error: ${errorCode}`);
-            return;
-          }
-
-          addLog(`[System] Trustline for ${assetDisplay} confirmed on Mainnet. Proceeding with strategy launch.`);
-
-          // Small delay to ensure trustline is fully processed
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      } catch (error: any) {
-        let errorCode = 'unknown_error';
-        if (error.response?.data?.extras?.result_codes) {
-          const codes = error.response.data.extras.result_codes;
-          errorCode = codes.operations?.[0] || codes.transaction || errorCode;
-        }
-        addLog(`[Error] Trustline validation failed: ${errorCode}`);
-        return;
-      }
+    // STEP 2: Check and open trustline using dedicated function
+    const trustlineReady = await checkAndCreateTrustline(password, tradingAsset, assetCode, assetIssuer, assetDisplay);
+    if (!trustlineReady) {
+      return;
     }
 
     // ============ END ASSET VALIDATION & TRUSTLINE MANAGEMENT ============
@@ -369,7 +392,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       addLog(`[Error] Bot startup failed: ${errorCode}`);
       setIsRunning(false);
     }
-  }, [botWallet, isDryRun, strategyType, orderSize, gridStepPercent, selectedToken, customAssetCode, customIssuer, addLog]);
+  }, [botWallet, isDryRun, strategyType, orderSize, gridStepPercent, selectedToken, customAssetCode, customIssuer, checkAndCreateTrustline, addLog]);
 
   const handleStopBot = useCallback(async () => {
     if (botInstance && !isDryRun) {
@@ -681,20 +704,20 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
             </Label>
             <div className="relative">
               <Input
-                type={showBotPassword ? 'text' : 'password'}
+                type={showWalletPassword ? 'text' : 'password'}
                 placeholder="Enter your wallet password"
-                value={botPassword}
-                onChange={(e) => setBotPassword(e.target.value)}
+                value={walletPassword}
+                onChange={(e) => setWalletPassword(e.target.value)}
                 disabled={isRunning}
                 className="h-8 text-sm pr-8"
               />
               <button
-                onClick={() => setShowBotPassword(!showBotPassword)}
+                onClick={() => setShowWalletPassword(!showWalletPassword)}
                 disabled={isRunning}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
                 type="button"
               >
-                {showBotPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                {showWalletPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -708,8 +731,8 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       <div className="flex gap-2">
         {!isRunning ? (
           <Button
-            onClick={() => handleStartBot(botPassword)}
-            disabled={!botWallet || parseFloat(orderSize) <= 0 || botWallet.balance < 1 || (selectedToken !== 'xlm' && !botPassword)}
+            onClick={() => handleStartBot(walletPassword)}
+            disabled={!botWallet || parseFloat(orderSize) <= 0 || botWallet.balance < 1 || (selectedToken !== 'xlm' && !walletPassword)}
             className="flex-1 gap-2"
           >
             <Play className="w-4 h-4" />
