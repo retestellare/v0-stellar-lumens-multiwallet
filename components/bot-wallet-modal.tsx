@@ -3,15 +3,18 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { X, AlertTriangle, Copy, Check, Info } from 'lucide-react';
+import { X, AlertTriangle, Copy, Check, Info, Eye, EyeOff } from 'lucide-react';
 import { Keypair } from '@stellar/stellar-sdk';
+import { encryptSecret } from '@/lib/encryption';
 
 interface BotWalletData {
   publicKey: string;
   secretKey: string;
+  encryptedSecret: string;
   balance: number;
   createdAt: string;
   network: 'mainnet';
+  password?: string;
 }
 
 interface BotWalletModalProps {
@@ -20,7 +23,7 @@ interface BotWalletModalProps {
   onWalletCreated: (wallet: BotWalletData) => void;
 }
 
-type Step = 'mode' | 'create' | 'import' | 'backup' | 'confirm';
+type Step = 'mode' | 'create' | 'import' | 'backup' | 'setPassword' | 'confirm';
 
 export function BotWalletModal({ isOpen, onClose, onWalletCreated }: BotWalletModalProps) {
   const [step, setStep] = useState<Step>('mode');
@@ -32,6 +35,10 @@ export function BotWalletModal({ isOpen, onClose, onWalletCreated }: BotWalletMo
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [backupConfirmed, setBackupConfirmed] = useState(false);
+  const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
 
   const handleCreateNew = () => {
     try {
@@ -87,32 +94,61 @@ export function BotWalletModal({ isOpen, onClose, onWalletCreated }: BotWalletMo
       setError('You must confirm that you have safely stored your secret key');
       return;
     }
-
-    const wallet: BotWalletData = {
-      publicKey: generatedPublic,
-      secretKey: generatedSecret,
-      balance: 0,
-      createdAt: new Date().toISOString(),
-      network: 'mainnet',
-    };
-
-    localStorage.setItem('stellar_bot_wallet', JSON.stringify(wallet));
-    onWalletCreated(wallet);
-    handleClose();
+    
+    setPassword('');
+    setPasswordConfirm('');
+    setStep('setPassword');
+    setError('');
   };
 
   const handleConfirmImport = () => {
-    const wallet: BotWalletData = {
-      publicKey: generatedPublic,
-      secretKey: generatedSecret,
-      balance: 0,
-      createdAt: new Date().toISOString(),
-      network: 'mainnet',
-    };
+    setPassword('');
+    setPasswordConfirm('');
+    setStep('setPassword');
+    setError('');
+  };
 
-    localStorage.setItem('stellar_bot_wallet', JSON.stringify(wallet));
-    onWalletCreated(wallet);
-    handleClose();
+  const handleSetPassword = async () => {
+    // Validate password
+    if (!password.trim()) {
+      setError('Password is required');
+      return;
+    }
+
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
+
+    if (password !== passwordConfirm) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      // Encrypt the secret key with the password
+      const encryptedSecret = await encryptSecret(generatedSecret, password);
+
+      const wallet: BotWalletData = {
+        publicKey: generatedPublic,
+        secretKey: generatedSecret,
+        encryptedSecret,
+        balance: 0,
+        createdAt: new Date().toISOString(),
+        network: 'mainnet',
+        password,
+      };
+
+      localStorage.setItem('stellar_bot_wallet', JSON.stringify(wallet));
+      onWalletCreated(wallet);
+      handleClose();
+    } catch (err: any) {
+      setError('Failed to encrypt password. Please try again.');
+      console.error('Encryption error:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleClose = () => {
@@ -124,6 +160,10 @@ export function BotWalletModal({ isOpen, onClose, onWalletCreated }: BotWalletMo
     setBackupConfirmed(false);
     setCopiedSecret(false);
     setCopiedPublic(false);
+    setPassword('');
+    setPasswordConfirm('');
+    setShowPassword(false);
+    setShowPasswordConfirm(false);
     onClose();
   };
 
@@ -332,6 +372,101 @@ export function BotWalletModal({ isOpen, onClose, onWalletCreated }: BotWalletMo
                   className="flex-1"
                 >
                   Use This Wallet
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {step === 'setPassword' && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/30 flex gap-3">
+                <Info className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm text-blue-500 font-medium mb-1">Set Bot Password</p>
+                  <p className="text-xs text-blue-500/80">
+                    Create a password to authorize transactions and bot operations. This password will be required to start the bot.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Password</label>
+                  <div className="relative">
+                    <Input
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="Enter a secure password (min 8 characters)"
+                      value={password}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        setError('');
+                      }}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Confirm Password</label>
+                  <div className="relative">
+                    <Input
+                      type={showPasswordConfirm ? 'text' : 'password'}
+                      placeholder="Re-enter your password"
+                      value={passwordConfirm}
+                      onChange={(e) => {
+                        setPasswordConfirm(e.target.value);
+                        setError('');
+                      }}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordConfirm(!showPasswordConfirm)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showPasswordConfirm ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {error && <p className="text-xs text-destructive">{error}</p>}
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setStep('mode');
+                    setPassword('');
+                    setPasswordConfirm('');
+                    setError('');
+                  }}
+                  disabled={loading}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSetPassword}
+                  disabled={!password || !passwordConfirm || loading}
+                  className="flex-1"
+                >
+                  {loading ? 'Setting up...' : 'Create Wallet'}
                 </Button>
               </div>
             </div>

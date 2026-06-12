@@ -21,9 +21,11 @@ interface TradingBotPanelProps {
 interface BotWalletData {
   publicKey: string;
   secretKey: string;
+  encryptedSecret: string;
   balance: number;
   createdAt: string;
   network: 'mainnet';
+  password?: string;
 }
 
 export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps) {
