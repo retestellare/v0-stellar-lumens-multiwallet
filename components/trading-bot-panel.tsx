@@ -346,9 +346,9 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   }, [trustlinePassword, selectedToken, customAssetCode, customIssuer, botWallet, checkAndCreateTrustline, addLog]);
 
   const handleStartBot = useCallback(async (password: string) => {
-    // EXPLICIT PASSWORD CHECK at the beginning
-    if (!password || password.trim() === '') {
-      addLog('[Error] Enter password before starting the bot.');
+    // Password is required only for XLM or when trustline is not setup
+    if ((selectedToken === 'xlm' || !isTrustlineSetup) && (!password || password.trim() === '')) {
+      addLog('[Error] Enter password before launching the bot.');
       return;
     }
 
@@ -367,7 +367,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
 
     // For non-XLM tokens, verify trustline is already set up
     if (selectedToken !== 'xlm' && !isTrustlineSetup) {
-      addLog('[Error] Please add the trustline for the selected token before starting the bot.');
+      addLog('[Error] Please add the trustline for the selected token before launching the bot.');
       return;
     }
 
@@ -821,8 +821,32 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         </div>
       )}
 
-      {/* Bot Trading Authorization Password - for bot startup */}
+      {/* Strategy Requirements Info */}
       {botWallet && (
+        <div className="border border-blue-500/20 rounded-lg p-3 bg-blue-500/5">
+          <p className="text-xs font-semibold text-blue-600 mb-1">Strategy Requirements:</p>
+          <p className="text-xs text-muted-foreground">
+            {strategyType === 'symmetrical' || strategyType === 'spreadMarketMaker' ? (
+              <>
+                <strong>Spread Market Maker:</strong> Only XLM is needed. The bot places buy orders at spreads using your XLM,
+                then immediately sells purchased tokens at spread prices, repeating until you close the bot.
+              </>
+            ) : strategyType === 'grid' ? (
+              <>
+                <strong>Grid Strategy:</strong> Requires your selected token ({selectedToken.toUpperCase()}) and sufficient balance
+                to maintain grid orders across multiple price levels.
+              </>
+            ) : (
+              <>
+                <strong>Trading Strategy:</strong> Requires {selectedToken.toUpperCase()} to execute trading operations.
+              </>
+            )}
+          </p>
+        </div>
+      )}
+
+      {/* Bot Trading Authorization Password - only show if trustline not setup yet */}
+      {botWallet && (selectedToken === 'xlm' || !isTrustlineSetup) && (
         <div className="border border-primary/20 rounded-lg p-4 space-y-3 bg-card/50">
           <div className="space-y-2">
             <Label className="text-xs font-semibold flex items-center gap-1">
@@ -859,11 +883,11 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         {!isRunning ? (
           <Button
             onClick={() => handleStartBot(walletPassword)}
-            disabled={!botWallet || parseFloat(orderSize) <= 0 || botWallet.balance < 1 || !walletPassword || (selectedToken !== 'xlm' && !isTrustlineSetup)}
+            disabled={!botWallet || parseFloat(orderSize) <= 0 || botWallet.balance < 1 || (selectedToken === 'xlm' || !isTrustlineSetup ? !walletPassword : false)}
             className="flex-1 gap-2"
           >
             <Play className="w-4 h-4" />
-            START BOT
+            LAUNCH BOT
           </Button>
         ) : (
           <Button
