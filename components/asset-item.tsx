@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { fetchTokenMetadataFromToml, getIssuerTokenIcon } from '@/lib/stellar-utils';
 import { getTokenPicks } from '@/lib/token-service';
+import { calculateValueInXLM } from '@/lib/price-service';
 
 // Known tokens cache for instant metadata lookup
 const KNOWN_TOKEN_METADATA: Record<string, { name: string; domain: string; image: string }> = {
@@ -48,25 +49,41 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
   const [image, setImage] = useState<string | null>(cachedMeta?.image || null);
   const [domain, setDomain] = useState<string | null>(cachedMeta?.domain || null);
   const [imageError, setImageError] = useState(false);
+  const [valueInXLM, setValueInXLM] = useState<string>('0.0000');
+  const [loading, setLoading] = useState(true);
   
-  // Fetch image and domain
+  // Fetch image, domain, and calculate XLM value
   useEffect(() => {
     let cancelled = false;
     
     const fetchMeta = async () => {
-      // Fetch icon with caching
-      if (!image) {
-        const iconUrl = await getIssuerTokenIcon(code, issuer);
-        if (!cancelled && iconUrl) {
-          setImage(iconUrl);
+      try {
+        // Fetch icon with caching
+        if (!image) {
+          const iconUrl = await getIssuerTokenIcon(code, issuer);
+          if (!cancelled && iconUrl) {
+            setImage(iconUrl);
+          }
         }
-      }
-      
-      // Fetch domain from TOML if not cached
-      if (!domain && issuer) {
-        const meta = await fetchTokenMetadataFromToml(issuer);
-        if (!cancelled && meta.domain) {
-          setDomain(meta.domain);
+        
+        // Fetch domain from TOML if not cached
+        if (!domain && issuer) {
+          const meta = await fetchTokenMetadataFromToml(issuer);
+          if (!cancelled && meta.domain) {
+            setDomain(meta.domain);
+          }
+        }
+
+        // Calculate value in XLM
+        if (!cancelled) {
+          const xlmValue = await calculateValueInXLM(balance, code);
+          if (!cancelled) {
+            setValueInXLM(xlmValue);
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
         }
       }
     };
@@ -74,7 +91,7 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
     fetchMeta();
     
     return () => { cancelled = true; };
-  }, [code, issuer, image, domain]);
+  }, [code, issuer, balance, image, domain]);
   
   return (
     <button 
@@ -106,9 +123,16 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
       </div>
       
       {/* Balance */}
-      <p className="text-sm font-semibold text-primary ml-2">
-        {parseFloat(balance).toFixed(4)}
-      </p>
+      <div className="flex flex-col items-end gap-1 ml-2">
+        <p className="text-sm font-semibold text-primary">
+          {parseFloat(balance).toFixed(4)}
+        </p>
+        {!loading && code !== 'XLM' && (
+          <p className="text-xs text-muted-foreground">
+            {valueInXLM} XLM
+          </p>
+        )}
+      </div>
     </button>
   );
 }
