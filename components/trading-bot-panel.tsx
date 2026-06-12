@@ -52,6 +52,10 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   const [isDryRun, setIsDryRun] = useState<boolean>(true);
   const [walletPassword, setWalletPassword] = useState<string>('');
   const [showWalletPassword, setShowWalletPassword] = useState(false);
+  const [trustlinePassword, setTrustlinePassword] = useState<string>('');
+  const [showTrustlinePassword, setShowTrustlinePassword] = useState(false);
+  const [isTrustlineSetup, setIsTrustlineSetup] = useState<boolean>(false);
+  const [trustlineLoading, setTrustlineLoading] = useState<boolean>(false);
 
   // Bot Instance and Logs
   const [botInstance, setBotInstance] = useState<GridMarketMakingBot | null>(null);
@@ -269,13 +273,84 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     [botWallet, addLog]
   );
 
+  const handleAddTrustline = useCallback(async () => {
+    if (!trustlinePassword || trustlinePassword.trim() === '') {
+      addLog('[Error] Please enter your wallet password to add trustline.');
+      return;
+    }
+
+    if (selectedToken === 'xlm') {
+      addLog('[Error] XLM does not require a trustline.');
+      return;
+    }
+
+    if (!botWallet) {
+      addLog('[Error] Bot wallet not found.');
+      return;
+    }
+
+    // Validate custom token if selected
+    if (selectedToken === 'custom') {
+      if (!customAssetCode.trim() || !customIssuer.trim()) {
+        addLog('Error: Please enter both Asset Code and Issuer Public Key for custom token');
+        return;
+      }
+    }
+
+    // Determine the trading asset based on selection
+    let tradingAsset: Asset;
+    let assetDisplay: string;
+    let assetCode: string;
+    let assetIssuer: string;
+
+    if (selectedToken === 'usdc') {
+      assetCode = 'USDC';
+      assetIssuer = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5T36C2YNE7L';
+      tradingAsset = new Asset(assetCode, assetIssuer);
+      assetDisplay = 'USDC';
+    } else if (selectedToken === 'eurc') {
+      assetCode = 'EURC';
+      assetIssuer = 'GDHU6W2FSTZ7N6D7S5S7N7GFF6AL66S7X4K6P4K3K3K3K3K3K3K3K3';
+      tradingAsset = new Asset(assetCode, assetIssuer);
+      assetDisplay = 'EURC';
+    } else if (selectedToken === 'custom') {
+      assetCode = customAssetCode;
+      assetIssuer = customIssuer;
+      tradingAsset = new Asset(assetCode, assetIssuer);
+      assetDisplay = assetCode;
+    } else {
+      addLog('[Error] Invalid token selection.');
+      return;
+    }
+
+    setTrustlineLoading(true);
+    try {
+      const trustlineReady = await checkAndCreateTrustline(
+        trustlinePassword,
+        tradingAsset,
+        assetCode,
+        assetIssuer,
+        assetDisplay
+      );
+
+      if (trustlineReady) {
+        setIsTrustlineSetup(true);
+        addLog(`[System] Trustline for ${assetDisplay} is ready. You can now start the bot.`);
+        setTrustlinePassword('');
+      }
+    } catch (error: any) {
+      addLog(`[Error] Failed to add trustline: ${error.message}`);
+    } finally {
+      setTrustlineLoading(false);
+    }
+  }, [trustlinePassword, selectedToken, customAssetCode, customIssuer, botWallet, checkAndCreateTrustline, addLog]);
+
   const handleStartBot = useCallback(async (password: string) => {
     // EXPLICIT PASSWORD CHECK at the beginning
     if (!password || password.trim() === '') {
       addLog('[Error] Enter password before starting the bot.');
       return;
     }
-    
 
     if (!botWallet || botWallet.balance < 1) {
       addLog('Bot wallet must have at least 1 XLM funded on Mainnet to operate');
@@ -290,7 +365,11 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       }
     }
 
-    // ============ CENTRALIZED ASSET VALIDATION & TRUSTLINE MANAGEMENT ============
+    // For non-XLM tokens, verify trustline is already set up
+    if (selectedToken !== 'xlm' && !isTrustlineSetup) {
+      addLog('[Error] Please add the trustline for the selected token before starting the bot.');
+      return;
+    }
 
     // Determine the trading asset based on selection
     let tradingAsset: Asset;
@@ -325,19 +404,11 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       assetIssuer = '';
     }
 
-    // STEP 1: Check for identical assets (XLM/XLM pair)
+    // Check for identical assets (XLM/XLM pair)
     if (tradingAsset.isNative()) {
       addLog('[Error] Unable to trade XLM against XLM. Please select a different token.');
       return;
     }
-
-    // STEP 2: Check and open trustline using dedicated function
-    const trustlineReady = await checkAndCreateTrustline(password, tradingAsset, assetCode, assetIssuer, assetDisplay);
-    if (!trustlineReady) {
-      return;
-    }
-
-    // ============ END ASSET VALIDATION & TRUSTLINE MANAGEMENT ============
 
     if (isDryRun) {
       addLog('DRY-RUN MODE: Orders will be simulated, not submitted to Mainnet');
@@ -395,7 +466,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       addLog(`[Error] Bot startup failed: ${errorCode}`);
       setIsRunning(false);
     }
-  }, [botWallet, isDryRun, strategyType, orderSize, gridStepPercent, selectedToken, customAssetCode, customIssuer, checkAndCreateTrustline, addLog]);
+  }, [botWallet, isDryRun, strategyType, orderSize, gridStepPercent, selectedToken, customAssetCode, customIssuer, isTrustlineSetup, addLog]);
 
   const handleStopBot = useCallback(async () => {
     if (botInstance && !isDryRun) {
@@ -697,13 +768,66 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         )}
       </div>
 
-      {/* Bot Trading Authorization Password */}
-      {botWallet && selectedToken !== 'xlm' && (
+      {/* Trustline Setup Section - Only for non-XLM tokens */}
+      {botWallet && selectedToken !== 'xlm' && !isTrustlineSetup && (
+        <div className="border border-amber-500/20 rounded-lg p-4 space-y-3 bg-amber-500/5">
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold flex items-center gap-1 text-amber-600">
+              <Zap className="w-3 h-3" />
+              Add Trustline for {selectedToken.toUpperCase()}
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Enter your wallet password to add the trustline for this token to your bot wallet.
+            </p>
+            <div className="relative">
+              <Input
+                type={showTrustlinePassword ? 'text' : 'password'}
+                placeholder="Enter your wallet password"
+                value={trustlinePassword}
+                onChange={(e) => {
+                  setTrustlinePassword(e.target.value);
+                }}
+                disabled={trustlineLoading}
+                className="h-8 text-sm pr-8"
+              />
+              <button
+                onClick={() => setShowTrustlinePassword(!showTrustlinePassword)}
+                disabled={trustlineLoading}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                type="button"
+              >
+                {showTrustlinePassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+          <Button
+            onClick={handleAddTrustline}
+            disabled={!trustlinePassword || trustlineLoading}
+            className="w-full"
+            variant="outline"
+          >
+            {trustlineLoading ? 'Adding Trustline...' : 'Add Trustline'}
+          </Button>
+        </div>
+      )}
+
+      {/* Trustline Confirmed Status */}
+      {botWallet && selectedToken !== 'xlm' && isTrustlineSetup && (
+        <div className="border border-green-500/20 rounded-lg p-3 bg-green-500/5 flex items-center gap-2">
+          <Check className="w-4 h-4 text-green-600" />
+          <span className="text-xs text-green-600">
+            Trustline for {selectedToken.toUpperCase()} is ready
+          </span>
+        </div>
+      )}
+
+      {/* Bot Trading Authorization Password - for bot startup */}
+      {botWallet && (
         <div className="border border-primary/20 rounded-lg p-4 space-y-3 bg-card/50">
           <div className="space-y-2">
             <Label className="text-xs font-semibold flex items-center gap-1">
               <Lock className="w-3 h-3" />
-              Wallet Password (to authorize trading and trustline operations)
+              Wallet Password (to authorize bot trading)
             </Label>
             <div className="relative">
               <Input
@@ -724,7 +848,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
               </button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Required to decrypt bot wallet keys for trustline and trading operations
+              Required to decrypt bot wallet keys for trading operations
             </p>
           </div>
         </div>
@@ -735,7 +859,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         {!isRunning ? (
           <Button
             onClick={() => handleStartBot(walletPassword)}
-            disabled={!botWallet || parseFloat(orderSize) <= 0 || botWallet.balance < 1 || (selectedToken !== 'xlm' && !walletPassword)}
+            disabled={!botWallet || parseFloat(orderSize) <= 0 || botWallet.balance < 1 || !walletPassword || (selectedToken !== 'xlm' && !isTrustlineSetup)}
             className="flex-1 gap-2"
           >
             <Play className="w-4 h-4" />
