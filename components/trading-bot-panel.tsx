@@ -50,6 +50,10 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   // Trading State
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [isDryRun, setIsDryRun] = useState<boolean>(true);
+  const [sessionPassword, setSessionPassword] = useState<string>('');
+  const [showSessionPasswordModal, setShowSessionPasswordModal] = useState<boolean>(false);
+  const [sessionPasswordInput, setSessionPasswordInput] = useState<string>('');
+  const [showSessionPasswordInput, setShowSessionPasswordInput] = useState(false);
   const [walletPassword, setWalletPassword] = useState<string>('');
   const [showWalletPassword, setShowWalletPassword] = useState(false);
   const [trustlinePassword, setTrustlinePassword] = useState<string>('');
@@ -76,6 +80,10 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         try {
           const wallet = JSON.parse(stored);
           setBotWallet(wallet);
+          // If wallet exists and no session password, show password modal
+          if (!sessionPassword) {
+            setShowSessionPasswordModal(true);
+          }
           // Immediately refresh balance from Mainnet Horizon
           try {
             const balance = await getBotWalletBalance(wallet.publicKey);
@@ -90,7 +98,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       }
     };
     loadBotWallet();
-  }, []);
+  }, [sessionPassword]);
 
   // Load main wallet balance
   useEffect(() => {
@@ -130,6 +138,10 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
 
   const handleBotWalletCreated = useCallback((wallet: BotWalletData) => {
     setBotWallet(wallet);
+    // Store password in session if provided
+    if (wallet.password) {
+      setSessionPassword(wallet.password);
+    }
     addLog('Bot wallet created and secured on Mainnet');
     // Immediately refresh balance from Mainnet after creation/import
     refreshBotBalance(wallet.publicKey);
@@ -274,8 +286,9 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   );
 
   const handleAddTrustline = useCallback(async () => {
-    if (!trustlinePassword || trustlinePassword.trim() === '') {
-      addLog('[Error] Please enter your wallet password to add trustline.');
+    if (!sessionPassword || sessionPassword.trim() === '') {
+      addLog('[Error] Session expired. Please re-authenticate with your wallet password.');
+      setShowSessionPasswordModal(true);
       return;
     }
 
@@ -326,7 +339,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     setTrustlineLoading(true);
     try {
       const trustlineReady = await checkAndCreateTrustline(
-        trustlinePassword,
+        sessionPassword,
         tradingAsset,
         assetCode,
         assetIssuer,
@@ -336,17 +349,21 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       if (trustlineReady) {
         setIsTrustlineSetup(true);
         addLog(`[System] Trustline for ${assetDisplay} is ready. You can now start the bot.`);
-        setTrustlinePassword('');
       }
     } catch (error: any) {
       addLog(`[Error] Failed to add trustline: ${error.message}`);
     } finally {
       setTrustlineLoading(false);
     }
-  }, [trustlinePassword, selectedToken, customAssetCode, customIssuer, botWallet, checkAndCreateTrustline, addLog]);
+  }, [sessionPassword, selectedToken, customAssetCode, customIssuer, botWallet, checkAndCreateTrustline, addLog]);
 
   const handleStartBot = useCallback(async () => {
-    // No password required - bot uses encrypted secret from wallet
+    // Check if session password exists
+    if (!sessionPassword || sessionPassword.trim() === '') {
+      addLog('[Error] Session expired. Please re-authenticate with your wallet password.');
+      setShowSessionPasswordModal(true);
+      return;
+    }
     
     if (!botWallet || botWallet.balance < 1) {
       addLog('Bot wallet must have at least 1 XLM funded on Mainnet to operate');
@@ -422,13 +439,14 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       // Get current spot price (will fetch real price from Stellar API)
       const spotPrice = 0.15;
 
-      // Use bot's encrypted secret key directly (stored in localStorage with wallet)
+      // Use bot's encrypted secret key with session password
       let decryptedSecretKey: string;
       try {
-        decryptedSecretKey = decryptSecret(botWallet.encryptedSecret, password);
+        decryptedSecretKey = decryptSecret(botWallet.encryptedSecret, sessionPassword);
       } catch (err: any) {
-        addLog('[Error] Invalid or missing wallet password for authorization.');
+        addLog('[Error] Failed to decrypt wallet. Session may have expired.');
         setIsRunning(false);
+        setShowSessionPasswordModal(true);
         return;
       }
 
@@ -465,7 +483,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       addLog(`[Error] Bot startup failed: ${errorCode}`);
       setIsRunning(false);
     }
-  }, [botWallet, isDryRun, strategyType, orderSize, gridStepPercent, selectedToken, customAssetCode, customIssuer, isTrustlineSetup, addLog]);
+  }, [botWallet, isDryRun, strategyType, orderSize, gridStepPercent, selectedToken, customAssetCode, customIssuer, isTrustlineSetup, sessionPassword, addLog]);
 
   const handleStopBot = useCallback(async () => {
     if (botInstance && !isDryRun) {
@@ -510,6 +528,69 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
 
   return (
     <div className="space-y-4 p-4">
+      {/* Session Password Modal */}
+      {showSessionPasswordModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 rounded-lg">
+          <div className="bg-card border border-border rounded-lg p-6 max-w-sm w-full mx-4 space-y-4">
+            <h2 className="text-lg font-semibold">Re-authenticate Wallet</h2>
+            <p className="text-xs text-muted-foreground">
+              Enter your wallet password to authorize bot operations for this session.
+            </p>
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold">Wallet Password</Label>
+              <div className="relative">
+                <Input
+                  type={showSessionPasswordInput ? 'text' : 'password'}
+                  placeholder="Enter your wallet password"
+                  value={sessionPasswordInput}
+                  onChange={(e) => setSessionPasswordInput(e.target.value)}
+                  className="h-8 text-sm pr-8"
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && sessionPasswordInput.trim()) {
+                      setSessionPassword(sessionPasswordInput);
+                      setShowSessionPasswordModal(false);
+                      setSessionPasswordInput('');
+                    }
+                  }}
+                />
+                <button
+                  onClick={() => setShowSessionPasswordInput(!showSessionPasswordInput)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  type="button"
+                >
+                  {showSessionPasswordInput ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowSessionPasswordModal(false);
+                  setSessionPasswordInput('');
+                }}
+                className="flex-1 h-8 text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (sessionPasswordInput.trim()) {
+                    setSessionPassword(sessionPasswordInput);
+                    setShowSessionPasswordModal(false);
+                    setSessionPasswordInput('');
+                  }
+                }}
+                disabled={!sessionPasswordInput.trim()}
+                className="flex-1 h-8 text-xs"
+              >
+                Authenticate
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <BotWalletModal
         isOpen={showBotWalletModal}
         onClose={() => setShowBotWalletModal(false)}
@@ -776,32 +857,12 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
               Add Trustline for {selectedToken.toUpperCase()}
             </Label>
             <p className="text-xs text-muted-foreground">
-              Enter your wallet password to add the trustline for this token to your bot wallet.
+              Click the button below to add a trustline for this token to your bot wallet using your stored session password.
             </p>
-            <div className="relative">
-              <Input
-                type={showTrustlinePassword ? 'text' : 'password'}
-                placeholder="Enter your wallet password"
-                value={trustlinePassword}
-                onChange={(e) => {
-                  setTrustlinePassword(e.target.value);
-                }}
-                disabled={trustlineLoading}
-                className="h-8 text-sm pr-8"
-              />
-              <button
-                onClick={() => setShowTrustlinePassword(!showTrustlinePassword)}
-                disabled={trustlineLoading}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-                type="button"
-              >
-                {showTrustlinePassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              </button>
-            </div>
           </div>
           <Button
             onClick={handleAddTrustline}
-            disabled={!trustlinePassword || trustlineLoading}
+            disabled={!sessionPassword || trustlineLoading}
             className="w-full"
             variant="outline"
           >
