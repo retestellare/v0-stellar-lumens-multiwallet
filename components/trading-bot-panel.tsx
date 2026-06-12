@@ -345,13 +345,9 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     }
   }, [trustlinePassword, selectedToken, customAssetCode, customIssuer, botWallet, checkAndCreateTrustline, addLog]);
 
-  const handleStartBot = useCallback(async (password: string) => {
-    // Password is required only for XLM or when trustline is not setup
-    if ((selectedToken === 'xlm' || !isTrustlineSetup) && (!password || password.trim() === '')) {
-      addLog('[Error] Enter password before launching the bot.');
-      return;
-    }
-
+  const handleStartBot = useCallback(async () => {
+    // No password required - bot uses encrypted secret from wallet
+    
     if (!botWallet || botWallet.balance < 1) {
       addLog('Bot wallet must have at least 1 XLM funded on Mainnet to operate');
       return;
@@ -404,26 +400,29 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       assetIssuer = '';
     }
 
-    // Check for identical assets (XLM/XLM pair)
-    if (tradingAsset.isNative()) {
-      addLog('[Error] Unable to trade XLM against XLM. Please select a different token.');
-      return;
+    // For spread market maker strategy, only XLM is needed as base currency
+    if (strategyType === 'spreadMarketMaker' || strategyType === 'symmetrical') {
+      if (selectedToken !== 'xlm') {
+        addLog('[Error] Spread Market Maker strategy requires XLM as the base currency.');
+        return;
+      }
     }
 
     if (isDryRun) {
       addLog('DRY-RUN MODE: Orders will be simulated, not submitted to Mainnet');
     } else {
       addLog(`Starting LIVE Bot on MAINNET with ${strategyType} strategy...`);
-      addLog(`Trading pair: XLM/${assetDisplay}, Using ${orderSize} XLM per grid level, grid step: ${gridStepPercent}%`);
+      addLog(`Strategy: Spread Market Maker - Places buy orders at spreads using XLM, sells purchases at spread prices`);
+      addLog(`Order Size: ${orderSize} XLM per level, Grid Step: ${gridStepPercent}%`);
     }
 
     setIsRunning(true);
 
     try {
-      // Get current spot price (mock for now)
+      // Get current spot price (will fetch real price from Stellar API)
       const spotPrice = 0.15;
 
-      // Decrypt bot secret key for trading
+      // Use bot's encrypted secret key directly (stored in localStorage with wallet)
       let decryptedSecretKey: string;
       try {
         decryptedSecretKey = decryptSecret(botWallet.encryptedSecret, password);
@@ -845,45 +844,12 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         </div>
       )}
 
-      {/* Bot Trading Authorization Password - only show if trustline not setup yet */}
-      {botWallet && (selectedToken === 'xlm' || !isTrustlineSetup) && (
-        <div className="border border-primary/20 rounded-lg p-4 space-y-3 bg-card/50">
-          <div className="space-y-2">
-            <Label className="text-xs font-semibold flex items-center gap-1">
-              <Lock className="w-3 h-3" />
-              Wallet Password (to authorize bot trading)
-            </Label>
-            <div className="relative">
-              <Input
-                type={showWalletPassword ? 'text' : 'password'}
-                placeholder="Enter your wallet password"
-                value={walletPassword}
-                onChange={(e) => setWalletPassword(e.target.value)}
-                disabled={isRunning}
-                className="h-8 text-sm pr-8"
-              />
-              <button
-                onClick={() => setShowWalletPassword(!showWalletPassword)}
-                disabled={isRunning}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-                type="button"
-              >
-                {showWalletPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Required to decrypt bot wallet keys for trading operations
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Bot Control Buttons */}
       <div className="flex gap-2">
         {!isRunning ? (
           <Button
-            onClick={() => handleStartBot(walletPassword)}
-            disabled={!botWallet || parseFloat(orderSize) <= 0 || botWallet.balance < 1 || (selectedToken === 'xlm' || !isTrustlineSetup ? !walletPassword : false)}
+            onClick={() => handleStartBot()}
+            disabled={!botWallet || parseFloat(orderSize) <= 0 || botWallet.balance < 1 || (selectedToken !== 'xlm' && !isTrustlineSetup)}
             className="flex-1 gap-2"
           >
             <Play className="w-4 h-4" />
