@@ -562,6 +562,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
                   value={sessionPasswordInput}
                   onChange={(e) => setSessionPasswordInput(e.target.value)}
                   className="h-8 text-sm pr-8"
+                  autoFocus
                   onKeyPress={(e) => {
                     if (e.key === 'Enter' && sessionPasswordInput.trim()) {
                       setSessionPassword(sessionPasswordInput);
@@ -927,7 +928,15 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       <div className="flex gap-2">
         {!isRunning ? (
           <Button
-            onClick={() => handleStartBot()}
+            onClick={() => {
+              // If no session password, show modal first before proceeding
+              if (!sessionPassword) {
+                console.log('[v0] No session password, showing modal before bot launch');
+                setShowSessionPasswordModal(true);
+              } else {
+                handleStartBot();
+              }
+            }}
             disabled={!botWallet || parseFloat(orderSize) <= 0 || botWallet.balance < 1 || (selectedToken !== 'xlm' && !isTrustlineSetup)}
             className="flex-1 gap-2"
           >
