@@ -17,6 +17,7 @@ import {
   Zap,
   TrendingUp,
   AlertCircle,
+  Bot,
 } from 'lucide-react';
 import { BotWalletModal } from '@/components/bot-wallet-modal';
 import { checkAndCreateTrustline } from '@/lib/stellar-trustline';
