@@ -72,19 +72,24 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   const [customAssetCode, setCustomAssetCode] = useState<string>('');
   const [customIssuer, setCustomIssuer] = useState<string>('');
 
-  // Load bot wallet from localStorage on mount and refresh balance from Mainnet
+  // Load bot wallet from localStorage on mount
   useEffect(() => {
-    const loadBotWallet = async () => {
-      const stored = localStorage.getItem('stellar_bot_wallet');
-      if (stored) {
-        try {
-          const wallet = JSON.parse(stored);
-          setBotWallet(wallet);
-          // If wallet exists and no session password, show password modal
-          if (!sessionPassword) {
-            setShowSessionPasswordModal(true);
-          }
-          // Immediately refresh balance from Mainnet Horizon
+    const stored = localStorage.getItem('stellar_bot_wallet');
+    console.log('[v0] Loading bot wallet on mount, stored:', stored ? 'yes' : 'no');
+    if (stored) {
+      try {
+        const wallet = JSON.parse(stored);
+        console.log('[v0] Bot wallet loaded, has password:', wallet.password ? 'yes' : 'no');
+        setBotWallet(wallet);
+        // If wallet exists and no session password, show password modal
+        if (!sessionPassword) {
+          console.log('[v0] No session password, showing modal');
+          setShowSessionPasswordModal(true);
+        } else {
+          console.log('[v0] Session password already set');
+        }
+        // Immediately refresh balance from Mainnet Horizon
+        (async () => {
           try {
             const balance = await getBotWalletBalance(wallet.publicKey);
             setBotWallet(prev => prev ? { ...prev, balance } : null);
@@ -92,12 +97,20 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
           } catch (error) {
             console.error('[v0] Failed to fetch bot wallet balance from Mainnet:', error);
           }
-        } catch (error) {
-          console.error('[v0] Failed to parse stored bot wallet:', error);
-        }
+        })();
+      } catch (error) {
+        console.error('[v0] Failed to parse stored bot wallet:', error);
       }
-    };
-    loadBotWallet();
+    }
+  }, []); // Only run on mount
+
+  // Show modal if wallet exists but no session password
+  useEffect(() => {
+    const stored = localStorage.getItem('stellar_bot_wallet');
+    if (stored && !sessionPassword) {
+      console.log('[v0] Wallet exists but no session password, showing modal');
+      setShowSessionPasswordModal(true);
+    }
   }, [sessionPassword]);
 
   // Load main wallet balance
@@ -137,9 +150,11 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   }, []);
 
   const handleBotWalletCreated = useCallback((wallet: BotWalletData) => {
+    console.log('[v0] Wallet created callback, has password:', wallet.password ? 'yes' : 'no');
     setBotWallet(wallet);
     // Store password in session if provided
     if (wallet.password) {
+      console.log('[v0] Setting session password from wallet');
       setSessionPassword(wallet.password);
     }
     addLog('Bot wallet created and secured on Mainnet');
@@ -359,12 +374,14 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
 
   const handleStartBot = useCallback(async () => {
     // Check if session password exists
+    console.log('[v0] handleStartBot called, sessionPassword exists:', !!sessionPassword, 'length:', sessionPassword?.length || 0);
     if (!sessionPassword || sessionPassword.trim() === '') {
       addLog('[Error] Session expired. Please re-authenticate with your wallet password.');
       setShowSessionPasswordModal(true);
       return;
     }
     
+    console.log('[v0] Session password verified, proceeding with bot startup');
     if (!botWallet || botWallet.balance < 1) {
       addLog('Bot wallet must have at least 1 XLM funded on Mainnet to operate');
       return;
@@ -576,6 +593,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
               <Button
                 onClick={() => {
                   if (sessionPasswordInput.trim()) {
+                    console.log('[v0] Setting session password from modal input');
                     setSessionPassword(sessionPasswordInput);
                     setShowSessionPasswordModal(false);
                     setSessionPasswordInput('');
