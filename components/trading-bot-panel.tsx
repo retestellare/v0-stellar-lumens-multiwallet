@@ -188,11 +188,8 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     setBotWallet(wallet);
     // Store password in BOTH React state AND module-level storage for reliability
     if (wallet.password) {
-      console.log('[v0] Setting sessionPassword from newly created wallet');
       setSessionPassword(wallet.password);
-      setSessionPasswordStorage(wallet.password); // CRITICAL: Store in module scope too
-    } else {
-      console.log('[v0] WARNING: Wallet has no password field!');
+      setSessionPasswordStorage(wallet.password); // Store in module scope too
     }
     addLog('Bot wallet created and secured on Mainnet');
     // Immediately refresh balance from Mainnet after creation/import
@@ -413,11 +410,9 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   const handleStartBot = useCallback(async () => {
     // Get password from BOTH sources - module storage is authoritative
     const passwordToUse = getSessionPasswordStorage() || sessionPassword;
-    console.log('[v0] handleStartBot called, module storage password exists:', !!getSessionPasswordStorage(), 'state password:', !!sessionPassword);
     
     // Check if session password exists in either source
     if (!passwordToUse || passwordToUse.trim() === '') {
-      console.log('[v0] No password available, showing modal');
       addLog('[Error] Session expired. Please re-authenticate with your wallet password.');
       setShowSessionPasswordModal(true);
       return;
@@ -500,11 +495,8 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       // Use bot's encrypted secret key with session password
       let decryptedSecretKey: string;
       try {
-        console.log('[v0] Attempting decrypt with password length:', passwordToUse?.length || 0);
         decryptedSecretKey = decryptSecret(botWallet.encryptedSecret, passwordToUse);
-        console.log('[v0] Decrypt successful');
       } catch (err: any) {
-        console.log('[v0] Decrypt failed - password may be incorrect or session expired');
         addLog('[Error] Failed to decrypt wallet. Session may have expired.');
         setIsRunning(false);
         setShowSessionPasswordModal(true);
@@ -638,9 +630,8 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
               <Button
                 onClick={() => {
                   if (sessionPasswordInput.trim()) {
-                    console.log('[v0] Setting session password from modal');
                     setSessionPassword(sessionPasswordInput);
-                    setSessionPasswordStorage(sessionPasswordInput); // CRITICAL: Store in module scope
+                    setSessionPasswordStorage(sessionPasswordInput); // Store in module scope
                     setShowSessionPasswordModal(false);
                     setSessionPasswordInput('');
                   }
