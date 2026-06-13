@@ -140,6 +140,7 @@ export function BotWalletModal({ isOpen, onClose, onWalletCreated }: BotWalletMo
         password,
       };
 
+      console.log('[v0] Wallet created with password, calling onWalletCreated');
       localStorage.setItem('stellar_bot_wallet', JSON.stringify(wallet));
       onWalletCreated(wallet);
       handleClose();
