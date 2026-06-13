@@ -1,22 +1,63 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
-import { Bot, Play, Square, Copy, Check, AlertTriangle, Settings, Trash2, Lock, Info, Zap, Eye, EyeOff } from 'lucide-react';
-import { Keypair, Asset, Horizon } from '@stellar/stellar-sdk';
+import { useCallback, useEffect, useState } from 'react';
+import useSWR from 'swr';
+import { useWallet } from '@/lib/wallet-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { useWallet } from '@/lib/wallet-context';
-import { GridMarketMakingBot, GridStrategyType } from '@/lib/grid-strategies';
-import { transferFundsToBotWallet, getBotWalletBalance, getMainWalletBalance, TransactionResult } from '@/lib/fund-transfer';
-import { decryptSecret, addTrustline } from '@/lib/stellar-utils';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Play,
+  Square,
+  Lock,
+  Eye,
+  EyeOff,
+  Zap,
+  TrendingUp,
+  AlertCircle,
+} from 'lucide-react';
 import { BotWalletModal } from '@/components/bot-wallet-modal';
+import { checkAndCreateTrustline } from '@/lib/stellar-trustline';
+import { decryptSecret } from '@/lib/encryption';
+import { Asset, Keypair } from '@stellar/stellar-sdk';
 
-interface TradingBotPanelProps {
-  selectedAsset?: { code: string; issuer?: string };
-  onClose?: () => void;
+interface BotWalletData {
+  publicKey: string;
+  secretKey: string;
+  encryptedSecret: string;
+  balance: number;
+  createdAt: string;
+  network: 'mainnet';
+  password?: string;
 }
+
+interface GridLevel {
+  price: number;
+  buyQuantity: number;
+  sellQuantity: number;
+  buyOrderId?: string;
+  sellOrderId?: string;
+}
+
+// CRITICAL: Store session password in module scope to ensure it persists across renders
+// This is cleared on page unload
+let SESSION_PASSWORD_STORAGE: string = '';
+
+const setSessionPasswordStorage = (pwd: string | null | undefined) => {
+  if (pwd) {
+    SESSION_PASSWORD_STORAGE = pwd;
+  }
+};
+
+const getSessionPasswordStorage = (): string => {
+  return SESSION_PASSWORD_STORAGE;
+};
+
+const clearSessionPasswordStorage = () => {
+  SESSION_PASSWORD_STORAGE = '';
+};
 
 interface BotWalletData {
   publicKey: string;
@@ -144,9 +185,13 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
 
   const handleBotWalletCreated = useCallback((wallet: BotWalletData) => {
     setBotWallet(wallet);
-    // Store password in session if provided
+    // Store password in BOTH React state AND module-level storage for reliability
     if (wallet.password) {
+      console.log('[v0] Setting sessionPassword from newly created wallet');
       setSessionPassword(wallet.password);
+      setSessionPasswordStorage(wallet.password); // CRITICAL: Store in module scope too
+    } else {
+      console.log('[v0] WARNING: Wallet has no password field!');
     }
     addLog('Bot wallet created and secured on Mainnet');
     // Immediately refresh balance from Mainnet after creation/import
@@ -292,7 +337,8 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   );
 
   const handleAddTrustline = useCallback(async () => {
-    if (!sessionPassword || sessionPassword.trim() === '') {
+    const passwordToUse = getSessionPasswordStorage() || sessionPassword;
+    if (!passwordToUse || passwordToUse.trim() === '') {
       addLog('[Error] Session expired. Please re-authenticate with your wallet password.');
       setShowSessionPasswordModal(true);
       return;
@@ -345,7 +391,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     setTrustlineLoading(true);
     try {
       const trustlineReady = await checkAndCreateTrustline(
-        sessionPassword,
+        passwordToUse,
         tradingAsset,
         assetCode,
         assetIssuer,
@@ -364,8 +410,13 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   }, [sessionPassword, selectedToken, customAssetCode, customIssuer, botWallet, checkAndCreateTrustline, addLog]);
 
   const handleStartBot = useCallback(async () => {
-    // Check if session password exists
-    if (!sessionPassword || sessionPassword.trim() === '') {
+    // Get password from BOTH sources - module storage is authoritative
+    const passwordToUse = getSessionPasswordStorage() || sessionPassword;
+    console.log('[v0] handleStartBot called, module storage password exists:', !!getSessionPasswordStorage(), 'state password:', !!sessionPassword);
+    
+    // Check if session password exists in either source
+    if (!passwordToUse || passwordToUse.trim() === '') {
+      console.log('[v0] No password available, showing modal');
       addLog('[Error] Session expired. Please re-authenticate with your wallet password.');
       setShowSessionPasswordModal(true);
       return;
@@ -448,8 +499,11 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       // Use bot's encrypted secret key with session password
       let decryptedSecretKey: string;
       try {
-        decryptedSecretKey = decryptSecret(botWallet.encryptedSecret, sessionPassword);
+        console.log('[v0] Attempting decrypt with password length:', passwordToUse?.length || 0);
+        decryptedSecretKey = decryptSecret(botWallet.encryptedSecret, passwordToUse);
+        console.log('[v0] Decrypt successful');
       } catch (err: any) {
+        console.log('[v0] Decrypt failed - password may be incorrect or session expired');
         addLog('[Error] Failed to decrypt wallet. Session may have expired.');
         setIsRunning(false);
         setShowSessionPasswordModal(true);
@@ -583,7 +637,9 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
               <Button
                 onClick={() => {
                   if (sessionPasswordInput.trim()) {
+                    console.log('[v0] Setting session password from modal');
                     setSessionPassword(sessionPasswordInput);
+                    setSessionPasswordStorage(sessionPasswordInput); // CRITICAL: Store in module scope
                     setShowSessionPasswordModal(false);
                     setSessionPasswordInput('');
                   }
