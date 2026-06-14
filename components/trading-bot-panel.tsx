@@ -42,10 +42,10 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   const [fundingSuccess, setFundingSuccess] = useState<string>('');
   const [botCopied, setBotCopied] = useState(false);
 
-  // Grid Strategy State
-  const [strategyType, setStrategyType] = useState<GridStrategyType>('symmetrical');
+  // Grid Strategy State - Locked to Spread Market Maker
   const [orderSize, setOrderSize] = useState<string>('50');
   const [gridStepPercent, setGridStepPercent] = useState<string>('0.20');
+  const strategyType: GridStrategyType = 'spread'; // Only use Spread Market Maker
 
   // Trading State
   const [isRunning, setIsRunning] = useState<boolean>(false);
@@ -423,12 +423,10 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       assetIssuer = '';
     }
 
-    // For spread market maker strategy, only XLM is needed as base currency
-    if (strategyType === 'spreadMarketMaker' || strategyType === 'symmetrical') {
-      if (selectedToken !== 'xlm') {
-        addLog('[Error] Spread Market Maker strategy requires XLM as the base currency.');
-        return;
-      }
+    // Spread market maker strategy requires XLM as base currency
+    if (selectedToken !== 'xlm') {
+      addLog('[Error] Spread Market Maker strategy requires XLM as the base currency.');
+      return;
     }
 
     if (isDryRun) {
@@ -731,24 +729,14 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         <div className="border border-primary/20 rounded-lg p-4 space-y-3 bg-card/50">
         <h3 className="text-sm font-semibold">Grid Strategy</h3>
         
-        <div className="space-y-2">
-          <Label className="text-xs">Strategy Type</Label>
-          <Select value={strategyType} onValueChange={(val) => setStrategyType(val as GridStrategyType)} disabled={isRunning}>
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="symmetrical">Symmetrical Grid (10 levels, equal sizes)</SelectItem>
-              <SelectItem value="geometric">Geometric Asymmetric (12 levels, rising market)</SelectItem>
-              <SelectItem value="defensive">Defensive Grid (6 levels, broad range)</SelectItem>
-              <SelectItem value="spread">Spread Market Maker (Top of Book)</SelectItem>
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground mt-1">
-            {strategyType === 'symmetrical' && '5 buy + 5 sell levels around spot price'}
-            {strategyType === 'geometric' && '8 buy + 4 sell levels, optimized for rising markets'}
-            {strategyType === 'defensive' && 'Progressive sizes across ±5% range'}
-            {strategyType === 'spread' && 'Dynamic top-of-book orders - places buy just above best bid, sell just below best ask, updates every 5-10 seconds'}
+        {/* Spread Market Maker Strategy Info */}
+        <div className="border border-primary/20 rounded-lg p-3 bg-primary/5 space-y-1">
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-primary" />
+            <Label className="text-xs font-semibold text-primary">Spread Market Maker Strategy</Label>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Places buy orders just above the best bid and sell orders just below the best ask. Updates every 5-10 seconds to capture spreads on Mainnet.
           </p>
         </div>
 
@@ -893,21 +881,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         <div className="border border-blue-500/20 rounded-lg p-3 bg-blue-500/5">
           <p className="text-xs font-semibold text-blue-600 mb-1">Strategy Requirements:</p>
           <p className="text-xs text-muted-foreground">
-            {strategyType === 'symmetrical' || strategyType === 'spreadMarketMaker' ? (
-              <>
-                <strong>Spread Market Maker:</strong> Only XLM is needed. The bot places buy orders at spreads using your XLM,
-                then immediately sells purchased tokens at spread prices, repeating until you close the bot.
-              </>
-            ) : strategyType === 'grid' ? (
-              <>
-                <strong>Grid Strategy:</strong> Requires your selected token ({selectedToken.toUpperCase()}) and sufficient balance
-                to maintain grid orders across multiple price levels.
-              </>
-            ) : (
-              <>
-                <strong>Trading Strategy:</strong> Requires {selectedToken.toUpperCase()} to execute trading operations.
-              </>
-            )}
+            <strong>Spread Market Maker:</strong> Only XLM is needed. The bot places buy orders just above the best bid and sell orders just below the best ask, automatically executing spread trades on Stellar Mainnet.
           </p>
         </div>
       )}
