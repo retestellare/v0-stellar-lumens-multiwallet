@@ -18,10 +18,12 @@ import {
   TrendingUp,
   AlertCircle,
   Bot,
+  Settings,
 } from 'lucide-react';
 import { BotWalletModal } from '@/components/bot-wallet-modal';
 import { checkAndCreateTrustline } from '@/lib/stellar-trustline';
 import { decryptSecret } from '@/lib/encryption';
+import { getMainWalletBalance, getBotWalletBalance } from '@/lib/fund-transfer';
 import { Asset, Keypair } from '@stellar/stellar-sdk';
 
 interface BotWalletData {
