@@ -10,6 +10,7 @@ import {
   Horizon,
   Account,
 } from '@stellar/stellar-sdk';
+import { executeMarketMakerOrder } from '@/lib/stellar-market-maker';
 
 const HORIZON_URL = 'https://horizon.stellar.org'; // Mainnet only
 const TRANSACTION_TIMEOUT_SECONDS = 20;
@@ -267,45 +268,6 @@ export class GridMarketMakingBot {
   }
 
   /**
-   * Execute a grid order with minimum size filtering
-   * Called at the point where the bot calculates order size based on current spread
-   * Validates amount against minimum threshold and handles dry-run simulation
-   */
-  private async executeGridOrder({
-    calculatedAmount,
-    minOrderSize,
-    bestPrice,
-    assetBuying,
-    assetSelling,
-    isDryRun,
-  }: {
-    calculatedAmount: number;
-    minOrderSize: number;
-    bestPrice: number;
-    assetBuying: Asset;
-    assetSelling: Asset;
-    isDryRun: boolean;
-  }): Promise<{ success: boolean; reason?: string; simulated?: boolean; operation?: any }> {
-    // Validate: calculated amount must meet minimum threshold
-    if (calculatedAmount < minOrderSize) {
-      this.addLog(
-        `[GRID] Skipped: Amount (${calculatedAmount.toFixed(2)} XLM) below minimum (${minOrderSize.toFixed(2)} XLM)`
-      );
-      return { success: false, reason: 'BELOW_MIN_LIMIT' };
-    }
-
-    // Dry-run mode: simulate order without blockchain execution
-    if (isDryRun) {
-      this.addLog(`[DRY-RUN] Valid simulated: ${calculatedAmount.toFixed(7)} XLM @ ${bestPrice.toFixed(6)}`);
-      return { success: true, simulated: true };
-    }
-
-    // Live mode: order passes validation, ready for submission to blockchain
-    this.addLog(`[LIVE] Order validated: ${calculatedAmount.toFixed(7)} XLM @ ${bestPrice.toFixed(6)}`);
-    return { success: true };
-  }
-
-  /**
    * Place grid orders (buy and sell)
    */
   async placeGridOrders(): Promise<void> {
@@ -492,55 +454,49 @@ export class GridMarketMakingBot {
         operationCount++;
       }
 
-      // Place new buy order at top of book - with minimum size validation
+      // Place new buy order at top of book - with advanced market maker validation and execution
       if (!existingBuyOffer || parseFloat(existingBuyOffer.price) !== buyPrice) {
-        const buyOrderValidation = await this.executeGridOrder({
+        const buyOrderResult = await executeMarketMakerOrder({
+          userSecretKey: this.botSecretKey,
           calculatedAmount: this.config.orderSize,
           minOrderSize: this.config.minOrderSize,
-          bestPrice: buyPrice,
+          targetPrice: buyPrice,
           assetBuying: this.config.tradingPair.buying,
           assetSelling: this.config.tradingPair.selling,
           isDryRun: this.config.isDryRun,
         });
 
-        if (buyOrderValidation.success) {
-          this.addLog(`Placing top-of-book buy order at ${buyPrice} (${this.config.orderSize} units)`);
-          transactionBuilder.addOperation(
-            Operation.manageBuyOffer({
-              selling: this.config.tradingPair.selling,
-              buying: this.config.tradingPair.buying,
-              buyAmount: this.config.orderSize.toString(),
-              price: buyPrice.toString(),
-              offerId: '0',
-            })
-          );
-          operationCount++;
+        if (buyOrderResult.success) {
+          if (buyOrderResult.status === 'DRY_RUN_SUCCESS') {
+            this.addLog(`[DRY-RUN] Buy order validated: ${this.config.orderSize} at ${buyPrice}`);
+          } else {
+            this.addLog(`[BUY ORDER LIVE] Submitted to Stellar: ${buyOrderResult.txHash}`);
+          }
+        } else if (buyOrderResult.status !== 'SKIPPED_BELOW_MINIMUM') {
+          this.addLog(`[BUY ERROR] ${buyOrderResult.message}`);
         }
       }
 
-      // Place new sell order at top of book - with minimum size validation
+      // Place new sell order at top of book - with advanced market maker validation and execution
       if (!existingSellOffer || parseFloat(existingSellOffer.price) !== sellPrice) {
-        const sellOrderValidation = await this.executeGridOrder({
+        const sellOrderResult = await executeMarketMakerOrder({
+          userSecretKey: this.botSecretKey,
           calculatedAmount: this.config.orderSize,
           minOrderSize: this.config.minOrderSize,
-          bestPrice: sellPrice,
+          targetPrice: sellPrice,
           assetBuying: this.config.tradingPair.buying,
           assetSelling: this.config.tradingPair.selling,
           isDryRun: this.config.isDryRun,
         });
 
-        if (sellOrderValidation.success) {
-          this.addLog(`Placing top-of-book sell order at ${sellPrice} (${this.config.orderSize} units)`);
-          transactionBuilder.addOperation(
-            Operation.manageSellOffer({
-              selling: this.config.tradingPair.selling,
-              buying: this.config.tradingPair.buying,
-              amount: this.config.orderSize.toString(),
-              price: sellPrice.toString(),
-              offerId: '0',
-            })
-          );
-          operationCount++;
+        if (sellOrderResult.success) {
+          if (sellOrderResult.status === 'DRY_RUN_SUCCESS') {
+            this.addLog(`[DRY-RUN] Sell order validated: ${this.config.orderSize} at ${sellPrice}`);
+          } else {
+            this.addLog(`[SELL ORDER LIVE] Submitted to Stellar: ${sellOrderResult.txHash}`);
+          }
+        } else if (sellOrderResult.status !== 'SKIPPED_BELOW_MINIMUM') {
+          this.addLog(`[SELL ERROR] ${sellOrderResult.message}`);
         }
       }
 
