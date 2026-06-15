@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import GridStrategyForm from '@/components/grid-strategy-form';
+import WalletMonitorDashboard from '@/components/wallet-monitor-dashboard';
 import { useWallet } from '@/lib/wallet-context';
 import { GridMarketMakingBot, GridStrategyType } from '@/lib/grid-strategies';
 import { transferFundsToBotWallet, getBotWalletBalance, getMainWalletBalance, TransactionResult } from '@/lib/fund-transfer';
@@ -35,6 +36,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   // Bot Wallet State
   const [botWallet, setBotWallet] = useState<BotWalletData | null>(null);
   const [botTokenHoldings, setBotTokenHoldings] = useState<any[]>([]);
+  const [botWalletError, setBotWalletError] = useState<string | null>(null);
   const [showBotWalletModal, setShowBotWalletModal] = useState(false);
   const [isFunding, setIsFunding] = useState(false);
   const [fundingPassword, setFundingPassword] = useState<string>('');
@@ -82,6 +84,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       try {
         const wallet = JSON.parse(stored);
         setBotWallet(wallet);
+        setBotWalletError(null);
         // If wallet exists and no session password, show password modal
         if (!sessionPassword) {
           setShowSessionPasswordModal(true);
@@ -94,12 +97,15 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
             // Fetch all token holdings
             const holdings = await getAccountBalancesClean(wallet.publicKey);
             setBotTokenHoldings(holdings);
+            setBotWalletError(null);
           } catch (error) {
             console.error('[v0] Failed to fetch bot wallet balance and holdings from Mainnet:', error);
+            setBotWalletError(String(error));
           }
         })();
       } catch (error) {
         console.error('[v0] Failed to parse stored bot wallet:', error);
+        setBotWalletError('Failed to decrypt bot wallet. Check environment variables and try again.');
       }
     }
   }, []); // Only run on mount
@@ -136,9 +142,12 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       // Also fetch updated token holdings
       const holdings = await getAccountBalancesClean(publicKey);
       setBotTokenHoldings(holdings);
+      setBotWalletError(null);
       console.log('[v0] Bot wallet balance and holdings refreshed from Mainnet:', balance);
     } catch (error) {
+      const errorMsg = String(error);
       console.error('[v0] Failed to refresh bot balance and holdings from Mainnet:', error);
+      setBotWalletError(errorMsg);
     }
   }, []);
 
@@ -613,94 +622,53 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         onWalletCreated={handleBotWalletCreated}
       />
 
-      {/* Bot Wallet Section */}
-      <div className="border border-destructive/20 rounded-lg p-4 space-y-3 bg-destructive/5">
-        {botWallet ? (
-          <>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-semibold">Bot Wallet</h3>
-                <span className="text-xs font-bold px-2 py-1 rounded bg-destructive/20 text-destructive border border-destructive/30">
-                  MAINNET
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowBotWalletModal(true)}
-                  disabled={isRunning}
-                  className="p-1 hover:bg-primary/20 rounded transition-colors disabled:opacity-50"
-                  title="Manage Bot Wallet"
-                >
-                  <Settings className="w-3.5 h-3.5 text-primary" />
-                </button>
-                <button
-                  onClick={handleResetBotWallet}
-                  disabled={isRunning}
-                  className="p-1 hover:bg-destructive/20 rounded transition-colors disabled:opacity-50"
-                  title="Reset Bot Wallet"
-                >
-                  <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                </button>
-              </div>
-            </div>
-            <div className="flex items-center justify-between gap-2 text-xs">
-              <code className="break-all font-mono text-muted-foreground flex-1">
-                {botWallet.publicKey.substring(0, 12)}...{botWallet.publicKey.substring(-6)}
-              </code>
-              <button
-                onClick={handleCopyBotAddress}
-                className="p-1 hover:bg-primary/20 rounded transition-colors"
-              >
-                {botCopied ? <Check className="w-3.5 h-3.5 text-primary" /> : <Copy className="w-3.5 h-3.5 text-primary" />}
-              </button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Balance: <span className="text-primary font-bold">{botWallet.balance.toFixed(2)} XLM</span>
-              {botWallet.balance >= 1 && <span className="text-green-400 ml-2">✓ Active</span>}
-            </p>
-            
-            {/* Token Holdings */}
-            {botTokenHoldings.length > 0 && (
-              <div className="space-y-2 mt-3 pt-3 border-t border-destructive/10">
-                <p className="text-xs font-semibold text-muted-foreground">Token Holdings:</p>
-                <div className="space-y-1">
-                  {botTokenHoldings.map((holding, idx) => {
-                    const assetCode = holding.asset_code || 'XLM';
-                    const assetIssuer = holding.asset_issuer 
-                      ? `${holding.asset_issuer.substring(0, 6)}...${holding.asset_issuer.substring(-4)}`
-                      : 'Native';
-                    const balance = parseFloat(holding.balance).toFixed(4);
-                    
-                    return (
-                      <div key={idx} className="flex items-center justify-between text-xs bg-background/50 p-2 rounded">
-                        <div className="flex flex-col">
-                          <span className="font-mono font-semibold text-primary">{assetCode}</span>
-                          {holding.asset_issuer && (
-                            <span className="text-muted-foreground text-xs">{assetIssuer}</span>
-                          )}
-                        </div>
-                        <span className="font-semibold">{balance}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="flex flex-col items-center gap-3 py-2">
-            <p className="text-xs text-muted-foreground text-center">No bot wallet created yet</p>
-            <Button
-              onClick={() => setShowBotWalletModal(true)}
-              size="sm"
-              className="gap-2"
-            >
-              <Bot className="w-3 h-3" />
-              Create or Import Bot Wallet
-            </Button>
-          </div>
-        )}
-      </div>
+      {/* Bot Wallet Monitor Dashboard */}
+      <WalletMonitorDashboard
+        walletAddress={botWallet?.publicKey || 'No wallet created'}
+        xlmBalance={botWallet?.balance || 0}
+        tokenBalances={botTokenHoldings}
+        status={
+          botWalletError ? 'ERROR' : 
+          botWallet?.balance && botWallet.balance >= 1 ? 'READY' : 
+          botWallet ? 'INSUFFICIENT' : 'LOADING'
+        }
+        error={botWalletError || undefined}
+        isActive={botWallet?.balance ? botWallet.balance >= 1 : false}
+      />
+
+      {!botWallet && (
+        <Button
+          onClick={() => setShowBotWalletModal(true)}
+          size="sm"
+          className="w-full gap-2"
+        >
+          <Bot className="w-3 h-3" />
+          Create or Import Bot Wallet
+        </Button>
+      )}
+
+      {botWallet && (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowBotWalletModal(true)}
+            disabled={isRunning}
+            className="flex-1 p-2 hover:bg-primary/10 rounded transition-colors disabled:opacity-50 text-xs font-medium border border-primary/20"
+            title="Manage Bot Wallet"
+          >
+            <Settings className="w-3.5 h-3.5 inline mr-1" />
+            Manage Wallet
+          </button>
+          <button
+            onClick={handleResetBotWallet}
+            disabled={isRunning}
+            className="flex-1 p-2 hover:bg-destructive/10 rounded transition-colors disabled:opacity-50 text-xs font-medium border border-destructive/20 text-destructive"
+            title="Reset Bot Wallet"
+          >
+            <Trash2 className="w-3.5 h-3.5 inline mr-1" />
+            Reset
+          </button>
+        </div>
+      )}
 
       {/* Fund Bot Wallet - Only show when wallet exists */}
       {botWallet && (
