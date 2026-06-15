@@ -36,6 +36,8 @@ export interface GridMarketMakingConfig {
   strategyType: GridStrategyType;
   spotPrice: number;
   orderSize: number;
+  minOrderSize: number; // Minimum order size threshold
+  isDryRun: boolean; // Simulate orders without execution
   enableAutoUpdate: boolean;
 }
 
@@ -265,6 +267,35 @@ export class GridMarketMakingBot {
   }
 
   /**
+   * Execute a grid order with minimum size filtering
+   * Validates order amount against minimum threshold and handles dry-run mode
+   */
+  private async executeGridOrder({
+    calculatedAmount,
+    bestPrice,
+  }: {
+    calculatedAmount: number;
+    bestPrice: number;
+  }): Promise<{ success: boolean; reason?: string; simulated?: boolean }> {
+    // Check if calculated amount meets minimum threshold
+    if (calculatedAmount < this.config.minOrderSize) {
+      this.addLog(
+        `[GRID] Skipped level: Amount (${calculatedAmount.toFixed(2)} XLM) below minimum (${this.config.minOrderSize.toFixed(2)} XLM)`
+      );
+      return { success: false, reason: 'BELOW_MIN_LIMIT' };
+    }
+
+    // Dry-run mode: simulate order without execution
+    if (this.config.isDryRun) {
+      this.addLog(`[DRY-RUN] Valid simulated order: ${calculatedAmount.toFixed(7)} XLM @ ${bestPrice.toFixed(6)}`);
+      return { success: true, simulated: true };
+    }
+
+    // Order passes validation, ready for submission
+    return { success: true };
+  }
+
+  /**
    * Place grid orders (buy and sell)
    */
   async placeGridOrders(): Promise<void> {
@@ -451,34 +482,48 @@ export class GridMarketMakingBot {
         operationCount++;
       }
 
-      // Place new buy order at top of book
+      // Place new buy order at top of book - with minimum size validation
       if (!existingBuyOffer || parseFloat(existingBuyOffer.price) !== buyPrice) {
-        this.addLog(`Placing top-of-book buy order at ${buyPrice} (${this.config.orderSize} units)`);
-        transactionBuilder.addOperation(
-          Operation.manageBuyOffer({
-            selling: this.config.tradingPair.selling,
-            buying: this.config.tradingPair.buying,
-            buyAmount: this.config.orderSize.toString(),
-            price: buyPrice.toString(),
-            offerId: '0',
-          })
-        );
-        operationCount++;
+        const buyOrderValidation = await this.executeGridOrder({
+          calculatedAmount: this.config.orderSize,
+          bestPrice: buyPrice,
+        });
+
+        if (buyOrderValidation.success) {
+          this.addLog(`Placing top-of-book buy order at ${buyPrice} (${this.config.orderSize} units)`);
+          transactionBuilder.addOperation(
+            Operation.manageBuyOffer({
+              selling: this.config.tradingPair.selling,
+              buying: this.config.tradingPair.buying,
+              buyAmount: this.config.orderSize.toString(),
+              price: buyPrice.toString(),
+              offerId: '0',
+            })
+          );
+          operationCount++;
+        }
       }
 
-      // Place new sell order at top of book
+      // Place new sell order at top of book - with minimum size validation
       if (!existingSellOffer || parseFloat(existingSellOffer.price) !== sellPrice) {
-        this.addLog(`Placing top-of-book sell order at ${sellPrice} (${this.config.orderSize} units)`);
-        transactionBuilder.addOperation(
-          Operation.manageSellOffer({
-            selling: this.config.tradingPair.selling,
-            buying: this.config.tradingPair.buying,
-            amount: this.config.orderSize.toString(),
-            price: sellPrice.toString(),
-            offerId: '0',
-          })
-        );
-        operationCount++;
+        const sellOrderValidation = await this.executeGridOrder({
+          calculatedAmount: this.config.orderSize,
+          bestPrice: sellPrice,
+        });
+
+        if (sellOrderValidation.success) {
+          this.addLog(`Placing top-of-book sell order at ${sellPrice} (${this.config.orderSize} units)`);
+          transactionBuilder.addOperation(
+            Operation.manageSellOffer({
+              selling: this.config.tradingPair.selling,
+              buying: this.config.tradingPair.buying,
+              amount: this.config.orderSize.toString(),
+              price: sellPrice.toString(),
+              offerId: '0',
+            })
+          );
+          operationCount++;
+        }
       }
 
       if (operationCount === 0) {

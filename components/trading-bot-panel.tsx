@@ -472,6 +472,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         spotPrice,
         orderSize: parseFloat(orderSize),
         minOrderSize: parseFloat(minOrderSize),
+        isDryRun,
         enableAutoUpdate: true,
       };
 

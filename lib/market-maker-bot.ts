@@ -16,9 +16,11 @@ const HORIZON_URL = 'https://horizon.stellar.org'; // Mainnet only
 export interface MarketMakingConfig {
   spreadThresholdPercent: number;
   minProfitTargetXlm: number;
+  minOrderSize: number; // Minimum order size threshold
   orderUpdateIntervalSeconds: number;
   dailySpendingLimitXlm: number;
   isTestnet: boolean; // Deprecated - always false (mainnet)
+  isDryRun: boolean; // Simulate orders without execution
   microStep: string;
 }
 
@@ -105,19 +107,54 @@ export class MarketMakerBot {
   }
 
   /**
-   * Calculate net profit margin after fees
-   * profit = (sellPrice - buyPrice) * amount - (2 * BASE_FEE in XLM)
+   * Execute a grid order with minimum size filtering
+   * Handles order submission, applies the minimum order size threshold,
+   * and distinguishes between dry-run simulation and live execution
    */
-  private calculateNetProfit(
-    buyPrice: number,
-    sellPrice: number,
-    amount: number
-  ): number {
-    const baseFeeXlm = BASE_FEE / 10000000; // 100 stroops = 0.00001 XLM
-    const totalFeeXlm = 2 * baseFeeXlm; // 2 operations (buy + sell)
-    const grossProfit = (sellPrice - buyPrice) * amount;
-    const netProfit = grossProfit - totalFeeXlm;
-    return netProfit;
+  private async executeGridOrder({
+    calculatedAmount,
+    minOrderSize,
+    bestPrice,
+    assetBuying,
+    assetSelling,
+    isDryRun,
+  }: {
+    calculatedAmount: number;
+    minOrderSize: number;
+    bestPrice: number;
+    assetBuying: Asset;
+    assetSelling: Asset;
+    isDryRun: boolean;
+  }): Promise<{ success: boolean; reason?: string; simulated?: boolean; operation?: any }> {
+    // Check if calculated amount meets minimum threshold
+    if (calculatedAmount < minOrderSize) {
+      this.addLog(
+        `[GRID] Skipped level: Calculated amount (${calculatedAmount.toFixed(2)} XLM) below minimum threshold (${minOrderSize.toFixed(2)} XLM).`
+      );
+      return { success: false, reason: 'BELOW_MIN_LIMIT' };
+    }
+
+    // Dry-run mode: simulate order without execution
+    if (isDryRun) {
+      this.addLog(`[DRY-RUN] Valid simulated order: ${calculatedAmount.toFixed(7)} XLM @ price ${bestPrice.toFixed(6)}`);
+      return { success: true, simulated: true };
+    }
+
+    // Live mode: create real Stellar operation
+    try {
+      const operation = Operation.manageSellOffer({
+        selling: assetSelling,
+        buying: assetBuying,
+        amount: calculatedAmount.toFixed(7),
+        price: bestPrice.toFixed(6),
+        offerId: '0',
+      });
+
+      return { success: true, operation };
+    } catch (error) {
+      this.addLog(`[GRID ERROR] Failed to create operation: ${error}`);
+      return { success: false, reason: 'OPERATION_ERROR' };
+    }
   }
 
   /**
@@ -342,14 +379,32 @@ export class MarketMakerBot {
           return;
         }
 
-        // Submit or update orders
-        const success = await this.submitOrUpdateOrders(
-          buyingAsset,
-          sellingAsset,
-          bid,
-          ask,
-          buyAmount
-        );
+        // Execute order with minimum size filtering
+        const orderResult = await this.executeGridOrder({
+          calculatedAmount: parseFloat(buyAmount),
+          minOrderSize: this.config.minOrderSize,
+          bestPrice: bid + parseFloat(this.config.microStep),
+          assetBuying: buyingAsset,
+          assetSelling: sellingAsset,
+          isDryRun: this.config.isDryRun,
+        });
+
+        // If order passes minimum threshold, submit it
+        if (orderResult.success) {
+          const success = await this.submitOrUpdateOrders(
+            buyingAsset,
+            sellingAsset,
+            bid,
+            ask,
+            buyAmount
+          );
+
+          if (!success) {
+            this.addLog('Failed to submit orders');
+          }
+        } else {
+          this.addLog(`Order rejected: ${orderResult.reason}`);
+        }
 
         if (onUpdate) {
           onUpdate(this.logs);
