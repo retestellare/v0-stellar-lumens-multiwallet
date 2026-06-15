@@ -1,10 +1,9 @@
 import { Keypair, TransactionBuilder, Networks, BASE_FEE, Asset, Operation, Horizon, Account } from '@stellar/stellar-sdk';
-
-const HORIZON_URL = 'https://horizon.stellar.org';
-const NETWORK_PASSPHRASE = Networks.PUBLIC;
+import { getBotConfig } from '@/lib/bot-config';
 
 /**
  * Execute a Market Maker order with advanced validation, fee handling, and error management.
+ * Uses environment-based config for Horizon URL and network settings.
  * Validates order size, handles dry-run simulation, fetches live network fees,
  * builds and signs transaction, and submits to Stellar network.
  */
@@ -32,7 +31,8 @@ export async function executeMarketMakerOrder({
   rawError?: string;
 }> {
   try {
-    const server = new Horizon.Server(HORIZON_URL);
+    const config = getBotConfig();
+    const server = new Horizon.Server(config.horizonUrl);
 
     // Initialize user keypair from secret key
     const sourceKeypair = Keypair.fromSecret(userSecretKey);
@@ -85,7 +85,7 @@ export async function executeMarketMakerOrder({
     // Structure the Transaction envelope
     const transaction = new TransactionBuilder(account, {
       fee: automaticMarketFee,
-      networkPassphrase: NETWORK_PASSPHRASE,
+      networkPassphrase: config.networkPassphrase,
     })
       .addOperation(dexOperation)
       .setTimeout(30) // Transaction automatically expires in 30 seconds if network congests, avoiding stale fills

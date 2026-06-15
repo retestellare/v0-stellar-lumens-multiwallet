@@ -11,8 +11,8 @@ import {
   Account,
 } from '@stellar/stellar-sdk';
 import { executeMarketMakerOrder } from '@/lib/stellar-market-maker';
+import { getBotConfig } from '@/lib/bot-config';
 
-const HORIZON_URL = 'https://horizon.stellar.org'; // Mainnet only
 const TRANSACTION_TIMEOUT_SECONDS = 20;
 
 export type GridStrategyType = 'symmetrical' | 'geometric' | 'defensive' | 'spread';
@@ -203,7 +203,8 @@ export class GridMarketMakingBot {
     this.botKeypair = Keypair.fromSecret(config.botSecretKey);
     this.botPublicKey = this.botKeypair.publicKey();
     this.config = config;
-    this.horizon = new Horizon.Server(HORIZON_URL);
+    const botConfig = getBotConfig();
+    this.horizon = new Horizon.Server(botConfig.horizonUrl);
   }
 
   private addLog(message: string): void {
