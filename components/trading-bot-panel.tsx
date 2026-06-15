@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import GridStrategyForm from '@/components/grid-strategy-form';
 import { useWallet } from '@/lib/wallet-context';
 import { GridMarketMakingBot, GridStrategyType } from '@/lib/grid-strategies';
 import { transferFundsToBotWallet, getBotWalletBalance, getMainWalletBalance, TransactionResult } from '@/lib/fund-transfer';
@@ -767,67 +768,18 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         <div className="border border-primary/20 rounded-lg p-4 space-y-3 bg-card/50">
         <h3 className="text-sm font-semibold">Grid Strategy</h3>
         
-        {/* Spread Market Maker Strategy Info */}
-        <div className="border border-primary/20 rounded-lg p-3 bg-primary/5 space-y-1">
-          <div className="flex items-center gap-2">
-            <Zap className="w-4 h-4 text-primary" />
-            <Label className="text-xs font-semibold text-primary">Spread Market Maker Strategy</Label>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Places buy orders just above the best bid and sell orders just below the best ask. Updates every 5-10 seconds to capture spreads on Mainnet.
-          </p>
-        </div>
-
-        <div className="space-y-1">
-          <Label className="text-xs">Order Size per Level (XLM)</Label>
-          <Input
-            type="text"
-            inputMode="decimal"
-            value={orderSize}
-            onChange={(e) => setOrderSize(e.target.value)}
-            disabled={isRunning}
-            className="h-8 text-xs"
-          />
-        </div>
-
-        <div className="space-y-1">
-          <Label className="text-xs">Minimum Order Size to Place (XLM)</Label>
-          <Input
-            type="text"
-            inputMode="decimal"
-            value={minOrderSize}
-            onChange={(e) => setMinOrderSize(e.target.value)}
-            placeholder="e.g. 10"
-            disabled={isRunning}
-            className="h-8 text-xs text-primary font-medium focus:border-primary"
-          />
-          <p className="text-[10px] text-muted-foreground mt-0.5">
-            Dynamic orders below this threshold will be discarded to avoid micro-fills.
-          </p>
-        </div>
-
-        <div className="space-y-1">
-          <Label className="text-xs">Grid Step (%)</Label>
-          <Input
-            type="text"
-            inputMode="decimal"
-            value={gridStepPercent}
-            onChange={(e) => setGridStepPercent(e.target.value)}
-            disabled={isRunning}
-            className="h-8 text-xs"
-          />
-        </div>
-
-        <label className="flex items-center gap-2 text-xs cursor-pointer">
-          <input
-            type="checkbox"
-            checked={isDryRun}
-            onChange={(e) => setIsDryRun(e.target.checked)}
-            disabled={isRunning}
-            className="w-4 h-4"
-          />
-          <span>Dry-Run Mode (simulate grid without trading)</span>
-        </label>
+        <GridStrategyForm
+          orderSize={orderSize}
+          minOrderSize={minOrderSize}
+          gridStep={gridStepPercent}
+          isDryRun={isDryRun}
+          isRunning={isRunning}
+          status={isRunning ? 'RUNNING' : 'STOPPED'}
+          onOrderSizeChange={setOrderSize}
+          onMinOrderSizeChange={setMinOrderSize}
+          onGridStepChange={setGridStepPercent}
+          onDryRunChange={setIsDryRun}
+        />
 
         {/* Status Display */}
         <div className="border border-primary/20 rounded-lg p-3 space-y-2 bg-card/50">
