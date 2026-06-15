@@ -268,30 +268,40 @@ export class GridMarketMakingBot {
 
   /**
    * Execute a grid order with minimum size filtering
-   * Validates order amount against minimum threshold and handles dry-run mode
+   * Called at the point where the bot calculates order size based on current spread
+   * Validates amount against minimum threshold and handles dry-run simulation
    */
   private async executeGridOrder({
     calculatedAmount,
+    minOrderSize,
     bestPrice,
+    assetBuying,
+    assetSelling,
+    isDryRun,
   }: {
     calculatedAmount: number;
+    minOrderSize: number;
     bestPrice: number;
-  }): Promise<{ success: boolean; reason?: string; simulated?: boolean }> {
-    // Check if calculated amount meets minimum threshold
-    if (calculatedAmount < this.config.minOrderSize) {
+    assetBuying: Asset;
+    assetSelling: Asset;
+    isDryRun: boolean;
+  }): Promise<{ success: boolean; reason?: string; simulated?: boolean; operation?: any }> {
+    // Validate: calculated amount must meet minimum threshold
+    if (calculatedAmount < minOrderSize) {
       this.addLog(
-        `[GRID] Skipped level: Amount (${calculatedAmount.toFixed(2)} XLM) below minimum (${this.config.minOrderSize.toFixed(2)} XLM)`
+        `[GRID] Skipped: Amount (${calculatedAmount.toFixed(2)} XLM) below minimum (${minOrderSize.toFixed(2)} XLM)`
       );
       return { success: false, reason: 'BELOW_MIN_LIMIT' };
     }
 
-    // Dry-run mode: simulate order without execution
-    if (this.config.isDryRun) {
-      this.addLog(`[DRY-RUN] Valid simulated order: ${calculatedAmount.toFixed(7)} XLM @ ${bestPrice.toFixed(6)}`);
+    // Dry-run mode: simulate order without blockchain execution
+    if (isDryRun) {
+      this.addLog(`[DRY-RUN] Valid simulated: ${calculatedAmount.toFixed(7)} XLM @ ${bestPrice.toFixed(6)}`);
       return { success: true, simulated: true };
     }
 
-    // Order passes validation, ready for submission
+    // Live mode: order passes validation, ready for submission to blockchain
+    this.addLog(`[LIVE] Order validated: ${calculatedAmount.toFixed(7)} XLM @ ${bestPrice.toFixed(6)}`);
     return { success: true };
   }
 
@@ -486,7 +496,11 @@ export class GridMarketMakingBot {
       if (!existingBuyOffer || parseFloat(existingBuyOffer.price) !== buyPrice) {
         const buyOrderValidation = await this.executeGridOrder({
           calculatedAmount: this.config.orderSize,
+          minOrderSize: this.config.minOrderSize,
           bestPrice: buyPrice,
+          assetBuying: this.config.tradingPair.buying,
+          assetSelling: this.config.tradingPair.selling,
+          isDryRun: this.config.isDryRun,
         });
 
         if (buyOrderValidation.success) {
@@ -508,7 +522,11 @@ export class GridMarketMakingBot {
       if (!existingSellOffer || parseFloat(existingSellOffer.price) !== sellPrice) {
         const sellOrderValidation = await this.executeGridOrder({
           calculatedAmount: this.config.orderSize,
+          minOrderSize: this.config.minOrderSize,
           bestPrice: sellPrice,
+          assetBuying: this.config.tradingPair.buying,
+          assetSelling: this.config.tradingPair.selling,
+          isDryRun: this.config.isDryRun,
         });
 
         if (sellOrderValidation.success) {
