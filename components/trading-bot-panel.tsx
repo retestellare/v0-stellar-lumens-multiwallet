@@ -45,6 +45,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
 
   // Grid Strategy State - Locked to Spread Market Maker
   const [orderSize, setOrderSize] = useState<string>('50');
+  const [minOrderSize, setMinOrderSize] = useState<string>('10');
   const [gridStepPercent, setGridStepPercent] = useState<string>('0.20');
   const strategyType: GridStrategyType = 'spread'; // Only use Spread Market Maker
 
@@ -441,7 +442,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     } else {
       addLog(`Starting LIVE Bot on MAINNET with ${strategyType} strategy...`);
       addLog(`Strategy: Spread Market Maker - Places buy orders at spreads using XLM, sells purchases at spread prices`);
-      addLog(`Order Size: ${orderSize} XLM per level, Grid Step: ${gridStepPercent}%`);
+      addLog(`Order Size: ${orderSize} XLM per level, Min Order: ${minOrderSize} XLM, Grid Step: ${gridStepPercent}%`);
     }
 
     setIsRunning(true);
@@ -470,6 +471,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         strategyType,
         spotPrice,
         orderSize: parseFloat(orderSize),
+        minOrderSize: parseFloat(minOrderSize),
         enableAutoUpdate: true,
       };
 
@@ -494,7 +496,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
       addLog(`[Error] Bot startup failed: ${errorCode}`);
       setIsRunning(false);
     }
-  }, [botWallet, isDryRun, strategyType, orderSize, gridStepPercent, selectedToken, customAssetCode, customIssuer, isTrustlineSetup, sessionPassword, addLog]);
+  }, [botWallet, isDryRun, strategyType, orderSize, minOrderSize, gridStepPercent, selectedToken, customAssetCode, customIssuer, isTrustlineSetup, sessionPassword, addLog]);
 
   const handleStopBot = useCallback(async () => {
     if (botInstance && !isDryRun) {
@@ -785,6 +787,22 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
             disabled={isRunning}
             className="h-8 text-xs"
           />
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-xs">Minimum Order Size to Place (XLM)</Label>
+          <Input
+            type="text"
+            inputMode="decimal"
+            value={minOrderSize}
+            onChange={(e) => setMinOrderSize(e.target.value)}
+            placeholder="e.g. 10"
+            disabled={isRunning}
+            className="h-8 text-xs text-primary font-medium focus:border-primary"
+          />
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            Dynamic orders below this threshold will be discarded to avoid micro-fills.
+          </p>
         </div>
 
         <div className="space-y-1">
