@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { useWallet } from '@/lib/wallet-context';
 import { GridMarketMakingBot, GridStrategyType } from '@/lib/grid-strategies';
 import { transferFundsToBotWallet, getBotWalletBalance, getMainWalletBalance, TransactionResult } from '@/lib/fund-transfer';
-import { decryptSecret, addTrustline } from '@/lib/stellar-utils';
+import { decryptSecret, addTrustline, getAccountBalancesClean } from '@/lib/stellar-utils';
 import { BotWalletModal } from '@/components/bot-wallet-modal';
 
 interface TradingBotPanelProps {
@@ -33,6 +33,7 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
 
   // Bot Wallet State
   const [botWallet, setBotWallet] = useState<BotWalletData | null>(null);
+  const [botTokenHoldings, setBotTokenHoldings] = useState<any[]>([]);
   const [showBotWalletModal, setShowBotWalletModal] = useState(false);
   const [isFunding, setIsFunding] = useState(false);
   const [fundingPassword, setFundingPassword] = useState<string>('');
@@ -83,13 +84,16 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
         if (!sessionPassword) {
           setShowSessionPasswordModal(true);
         }
-        // Immediately refresh balance from Mainnet Horizon
+        // Immediately refresh balance and token holdings from Mainnet Horizon
         (async () => {
           try {
             const balance = await getBotWalletBalance(wallet.publicKey);
             setBotWallet(prev => prev ? { ...prev, balance } : null);
+            // Fetch all token holdings
+            const holdings = await getAccountBalancesClean(wallet.publicKey);
+            setBotTokenHoldings(holdings);
           } catch (error) {
-            console.error('[v0] Failed to fetch bot wallet balance from Mainnet:', error);
+            console.error('[v0] Failed to fetch bot wallet balance and holdings from Mainnet:', error);
           }
         })();
       } catch (error) {
@@ -127,9 +131,12 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     try {
       const balance = await getBotWalletBalance(publicKey);
       setBotWallet(prev => prev ? { ...prev, balance } : null);
-      console.log('[v0] Bot wallet balance refreshed from Mainnet:', balance);
+      // Also fetch updated token holdings
+      const holdings = await getAccountBalancesClean(publicKey);
+      setBotTokenHoldings(holdings);
+      console.log('[v0] Bot wallet balance and holdings refreshed from Mainnet:', balance);
     } catch (error) {
-      console.error('[v0] Failed to refresh bot balance from Mainnet:', error);
+      console.error('[v0] Failed to refresh bot balance and holdings from Mainnet:', error);
     }
   }, []);
 
@@ -647,6 +654,34 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
               Balance: <span className="text-primary font-bold">{botWallet.balance.toFixed(2)} XLM</span>
               {botWallet.balance >= 1 && <span className="text-green-400 ml-2">✓ Active</span>}
             </p>
+            
+            {/* Token Holdings */}
+            {botTokenHoldings.length > 0 && (
+              <div className="space-y-2 mt-3 pt-3 border-t border-destructive/10">
+                <p className="text-xs font-semibold text-muted-foreground">Token Holdings:</p>
+                <div className="space-y-1">
+                  {botTokenHoldings.map((holding, idx) => {
+                    const assetCode = holding.asset_code || 'XLM';
+                    const assetIssuer = holding.asset_issuer 
+                      ? `${holding.asset_issuer.substring(0, 6)}...${holding.asset_issuer.substring(-4)}`
+                      : 'Native';
+                    const balance = parseFloat(holding.balance).toFixed(4);
+                    
+                    return (
+                      <div key={idx} className="flex items-center justify-between text-xs bg-background/50 p-2 rounded">
+                        <div className="flex flex-col">
+                          <span className="font-mono font-semibold text-primary">{assetCode}</span>
+                          {holding.asset_issuer && (
+                            <span className="text-muted-foreground text-xs">{assetIssuer}</span>
+                          )}
+                        </div>
+                        <span className="font-semibold">{balance}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <div className="flex flex-col items-center gap-3 py-2">
