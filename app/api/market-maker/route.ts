@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { getBotConfig } from '@/lib/bot-config';
 import { executeMarketMakerOrder } from '@/lib/stellar-market-maker';
@@ -7,10 +7,46 @@ export const runtime = 'nodejs';
 
 /**
  * Market Maker Cron Job API
- * Runs every minute (via Vercel Cron) to execute automated grid trading
- * Fetches real SDEX order book and places market maker orders
+ * Secured with Bearer token validation from CRON_SECRET_KEY environment variable
+ * Uses Upstash QStash for minute-level automation (replaces Vercel crons)
  */
-export async function GET(request: Request) {
+
+/**
+ * Validate incoming request has valid Authorization header
+ * Prevents unauthorized calls from outside Upstash QStash
+ */
+function validateAuthorization(request: NextRequest): boolean {
+  const authHeader = request.headers.get('authorization');
+  const cronSecret = process.env.CRON_SECRET_KEY;
+
+  if (!cronSecret) {
+    console.warn('[Security] CRON_SECRET_KEY not configured - requests will be rejected');
+    return false;
+  }
+
+  if (!authHeader) {
+    console.warn('[Security] Request missing Authorization header');
+    return false;
+  }
+
+  const expectedBearer = `Bearer ${cronSecret}`;
+  if (authHeader !== expectedBearer) {
+    console.warn('[Security] Invalid Bearer token');
+    return false;
+  }
+
+  return true;
+}
+
+export async function GET(request: NextRequest) {
+  // SECURITY: Validate request authorization
+  if (!validateAuthorization(request)) {
+    return NextResponse.json(
+      { success: false, error: 'Unauthorized - invalid or missing Bearer token' },
+      { status: 401 }
+    );
+  }
+
   try {
     // Get bot configuration from environment variables
     const config = getBotConfig();
@@ -213,8 +249,8 @@ export async function GET(request: Request) {
 }
 
 /**
- * Also support POST requests for manual trigger
+ * Also support POST requests for manual trigger or testing (still requires auth)
  */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   return GET(request);
 }
