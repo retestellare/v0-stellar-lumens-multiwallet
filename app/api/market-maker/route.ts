@@ -2,8 +2,15 @@ import { NextResponse, NextRequest } from 'next/server';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { getBotConfig } from '@/lib/bot-config';
 import { executeMarketMakerOrder } from '@/lib/stellar-market-maker';
+import {
+  getActiveOffers,
+  loadFreshAccount,
+  findExistingOfferID,
+  submitWithTimeout,
+} from '@/lib/market-maker-operations';
 
 export const runtime = 'nodejs';
+const OPERATION_TIMEOUT_MS = 8000; // 8 second timeout per operation
 
 /**
  * Market Maker Cron Job API
