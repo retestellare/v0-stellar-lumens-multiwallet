@@ -50,7 +50,13 @@ export async function GET(request: Request) {
     // Fetch real order book from Stellar SDEX
     let orderbook;
     try {
-      orderbook = await horizonServer.orderbook(baseAsset, counterAsset).call();
+      // OPTIMIZATION 1: Timeout protection for order book fetch
+      orderbook = await Promise.race([
+        horizonServer.orderbook(baseAsset, counterAsset).call(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Order book fetch timeout')), OPERATION_TIMEOUT_MS)
+        ),
+      ]);
     } catch (error) {
       console.error('[Market Maker Cron] Failed to fetch order book:', error);
       return NextResponse.json(
@@ -97,45 +103,76 @@ export async function GET(request: Request) {
       });
     }
 
-    // Live execution: place buy order
-    console.log(`[Market Maker Cron] Executing BUY order: ${orderSize} @ ${buyPrice}`);
-    const buyResult = await executeMarketMakerOrder({
-      userSecretKey: process.env.STELLAR_BOT_SECRET_KEY,
-      calculatedAmount: orderSize,
-      minOrderSize,
-      targetPrice: parseFloat(buyPrice),
-      assetBuying: baseAsset,
-      assetSelling: counterAsset,
-      isDryRun: false,
-    });
-
-    if (!buyResult.success) {
-      console.error('[Market Maker Cron] Buy order failed:', buyResult.message);
-    } else {
-      console.log(`[Market Maker Cron] Buy order success: ${buyResult.txHash}`);
+    // OPTIMIZATIONS 2 & 3: Load fresh account and fetch active offers for order replacement
+    console.log('[Market Maker Cron] Loading fresh account and active offers...');
+    let account, activeOffers;
+    try {
+      [account, activeOffers] = await Promise.all([
+        loadFreshAccount(horizonServer, botPublicKey, OPERATION_TIMEOUT_MS),
+        getActiveOffers(horizonServer, botPublicKey, OPERATION_TIMEOUT_MS),
+      ]);
+    } catch (error) {
+      console.error('[Market Maker Cron] Failed to load account or offers:', error);
+      return NextResponse.json(
+        { success: false, error: 'Failed to load account data', details: String(error) },
+        { status: 500 }
+      );
     }
 
-    // Place sell order
-    console.log(`[Market Maker Cron] Executing SELL order: ${orderSize} @ ${sellPrice}`);
-    const sellResult = await executeMarketMakerOrder({
-      userSecretKey: process.env.STELLAR_BOT_SECRET_KEY,
-      calculatedAmount: orderSize,
-      minOrderSize,
-      targetPrice: parseFloat(sellPrice),
-      assetBuying: counterAsset,
-      assetSelling: baseAsset,
-      isDryRun: false,
-    });
+    // Find existing offer IDs to replace instead of creating duplicates
+    const existingBuyOfferID = findExistingOfferID(activeOffers, baseAsset, counterAsset, true);
+    const existingSellOfferID = findExistingOfferID(activeOffers, baseAsset, counterAsset, false);
 
-    if (!sellResult.success) {
-      console.error('[Market Maker Cron] Sell order failed:', sellResult.message);
-    } else {
-      console.log(`[Market Maker Cron] Sell order success: ${sellResult.txHash}`);
+    console.log(
+      `[Market Maker Cron] Fresh sequence=${account.sequence}, existing offers: Buy=${existingBuyOfferID}, Sell=${existingSellOfferID}`
+    );
+
+    // Build transaction with order replacement
+    const transactionBuilder = new StellarSdk.TransactionBuilder(account, {
+      fee: StellarSdk.BASE_FEE,
+      networkPassphrase: config.networkPassphrase,
+    }).setTimeout(30);
+
+    // Add buy and sell orders (will replace if offerID exists)
+    transactionBuilder
+      .addOperation(
+        StellarSdk.Operation.manageBuyOffer({
+          selling: counterAsset,
+          buying: baseAsset,
+          buyAmount: orderSize.toString(),
+          price: buyPrice,
+          offerId: existingBuyOfferID,
+        })
+      )
+      .addOperation(
+        StellarSdk.Operation.manageSellOffer({
+          selling: baseAsset,
+          buying: counterAsset,
+          amount: orderSize.toString(),
+          price: sellPrice,
+          offerId: existingSellOfferID,
+        })
+      );
+
+    const transaction = transactionBuilder.build();
+    transaction.sign(botKeypair);
+
+    // Submit with timeout protection
+    let response;
+    try {
+      response = await submitWithTimeout(horizonServer, transaction, OPERATION_TIMEOUT_MS);
+      console.log(`[Market Maker Cron] Transaction submitted: ${response.hash}`);
+    } catch (error) {
+      console.error('[Market Maker Cron] Submit error:', error);
+      return NextResponse.json(
+        { success: false, error: 'Transaction submission failed', details: String(error) },
+        { status: 500 }
+      );
     }
 
     // Return execution results
     return NextResponse.json({
-      success: buyResult.success && sellResult.success,
+      success: true,
       mode: 'LIVE',
       timestamp: new Date().toISOString(),
       market: {
@@ -144,22 +181,24 @@ export async function GET(request: Request) {
         midPrice: midPrice.toFixed(7),
         spread: spreadPercent,
       },
+      orderReplacement: {
+        buyOfferID: existingBuyOfferID,
+        sellOfferID: existingSellOfferID,
+        activeOffers: activeOffers.length,
+      },
+      transaction: {
+        hash: response.hash,
+      },
       orders: {
         buy: {
-          success: buyResult.success,
           price: buyPrice,
           size: orderSize,
-          status: buyResult.status,
-          txHash: buyResult.txHash,
-          message: buyResult.message,
+          action: existingBuyOfferID === '0' ? 'CREATE' : 'REPLACE',
         },
         sell: {
-          success: sellResult.success,
           price: sellPrice,
           size: orderSize,
-          status: sellResult.status,
-          txHash: sellResult.txHash,
-          message: sellResult.message,
+          action: existingSellOfferID === '0' ? 'CREATE' : 'REPLACE',
         },
       },
       executedAt: new Date().toISOString(),
