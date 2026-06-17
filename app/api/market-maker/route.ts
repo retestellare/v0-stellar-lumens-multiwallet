@@ -8,6 +8,7 @@ import {
   findExistingOfferID,
   submitWithTimeout,
 } from '@/lib/market-maker-operations';
+import { logTradeExecution, logError, logInfo } from '@/lib/telegram-logger';
 
 export const runtime = 'nodejs';
 const OPERATION_TIMEOUT_MS = 8000; // 8 second timeout per operation
@@ -102,6 +103,7 @@ export async function GET(request: NextRequest) {
       ]);
     } catch (error) {
       console.error('[Market Maker Cron] Failed to fetch order book:', error);
+      logError('Order Book Fetch Failed', `Failed to fetch SDEX order book: ${String(error)}`);
       return NextResponse.json(
         { success: false, error: 'Failed to fetch order book from SDEX', details: String(error) },
         { status: 500 }
@@ -156,6 +158,7 @@ export async function GET(request: NextRequest) {
       ]);
     } catch (error) {
       console.error('[Market Maker Cron] Failed to load account or offers:', error);
+      logError('Account Load Failed', `Failed to load fresh account data: ${String(error)}`);
       return NextResponse.json(
         { success: false, error: 'Failed to load account data', details: String(error) },
         { status: 500 }
@@ -205,8 +208,22 @@ export async function GET(request: NextRequest) {
     try {
       response = await submitWithTimeout(horizonServer, transaction, OPERATION_TIMEOUT_MS);
       console.log(`[Market Maker Cron] Transaction submitted: ${response.hash}`);
+
+      // Send Telegram notification for successful trade (fire-and-forget)
+      logTradeExecution({
+        txHash: response.hash,
+        buyPrice,
+        sellPrice,
+        orderSize,
+        spread: spreadPercent,
+        action: existingBuyOfferID === '0' ? 'CREATE' : 'REPLACE',
+      });
     } catch (error) {
       console.error('[Market Maker Cron] Submit error:', error);
+
+      // Send Telegram error notification (fire-and-forget)
+      logError('Market Maker Trade Failed', String(error));
+
       return NextResponse.json(
         { success: false, error: 'Transaction submission failed', details: String(error) },
         { status: 500 }
@@ -248,6 +265,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('[Market Maker Cron] Unexpected error:', error);
+    logError('Unexpected Market Maker Error', error.message || String(error));
     return NextResponse.json(
       { success: false, error: error.message || 'Internal server error' },
       { status: 500 }

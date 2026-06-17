@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from 'next/server';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { getBotConfig } from '@/lib/bot-config';
+import { logWarning, logInfo } from '@/lib/telegram-logger';
 
 export const runtime = 'nodejs';
 
@@ -130,8 +131,15 @@ export async function POST(request: NextRequest) {
     try {
       response = await horizonServer.submitTransaction(transaction);
       console.log(`[Kill Switch] Transaction submitted: ${response.hash}`);
+
+      // Send Telegram notification for emergency stop
+      logWarning(
+        'Emergency Stop Triggered',
+        `Market maker has been shut down. ${activeOffers.length} active offers have been canceled. TX: ${response.hash}`
+      );
     } catch (error) {
       console.error('[Kill Switch] Failed to submit cancellation transaction:', error);
+      logWarning('Emergency Stop Failed', `Failed to submit cancellation transaction: ${String(error)}`);
       return NextResponse.json(
         { success: false, error: 'Failed to submit cancellation', details: String(error) },
         { status: 500 }
@@ -157,6 +165,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('[Kill Switch] Unexpected error:', error);
+    logWarning('Emergency Stop Error', `Unexpected error during emergency shutdown: ${error.message || String(error)}`);
     return NextResponse.json(
       { success: false, error: error.message || 'Internal server error', details: error.stack },
       { status: 500 }
