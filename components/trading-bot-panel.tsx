@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Bot, Play, Square, Copy, Check, AlertTriangle, Settings, Trash2, Lock, Info, Zap, Eye, EyeOff } from 'lucide-react';
 import { Keypair, Asset, Horizon } from '@stellar/stellar-sdk';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import { GridMarketMakingBot, GridStrategyType } from '@/lib/grid-strategies';
 import { transferFundsToBotWallet, getBotWalletBalance, getMainWalletBalance, TransactionResult } from '@/lib/fund-transfer';
 import { decryptSecret, addTrustline, getAccountBalancesClean } from '@/lib/stellar-utils';
 import { BotWalletModal } from '@/components/bot-wallet-modal';
+import { BrowserMarketMakerBot } from '@/lib/browser-market-maker';
 
 interface TradingBotPanelProps {
   selectedAsset?: { code: string; issuer?: string };
@@ -76,6 +77,12 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
   const [selectedToken, setSelectedToken] = useState<string>('xlm');
   const [customAssetCode, setCustomAssetCode] = useState<string>('');
   const [customIssuer, setCustomIssuer] = useState<string>('');
+
+  // Browser-based Market Maker Bot State
+  const browserBotRef = useRef<BrowserMarketMakerBot | null>(null);
+  const [isBotRunning, setIsBotRunning] = useState(false);
+  const [botLogs, setBotLogs] = useState<string[]>(['Bot ready to launch']);
+  const [botStats, setBotStats] = useState({ trades: 0, errors: 0, lastExecution: null as Date | null });
 
   // Load bot wallet from localStorage on mount
   useEffect(() => {
@@ -550,6 +557,75 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
     addLog('Bot wallet reset. Generate or import a new wallet to continue.');
   }, [isRunning, addLog]);
 
+  // Browser-based market maker bot control functions
+  const launchBrowserBot = useCallback(async () => {
+    if (!botWallet || !sessionPassword) {
+      setBotLogs((prev) => [...prev, '❌ Bot wallet or session password missing']);
+      return;
+    }
+
+    try {
+      setBotLogs((prev) => [...prev, '🚀 Launching browser-based market maker bot...']);
+      setIsBotRunning(true);
+
+      // Decrypt the bot secret key
+      const decryptedSecret = decryptSecret(botWallet.encryptedSecret, sessionPassword);
+
+      // Define trading assets (default to XLM/XLM for now, can be extended)
+      const baseAsset = Asset.native();
+      const counterAsset = Asset.native();
+
+      // Create bot instance
+      const bot = new BrowserMarketMakerBot(
+        {
+          orderSize: parseFloat(orderSize),
+          minOrderSize: parseFloat(minOrderSize),
+          gridStepPercent: parseFloat(gridStepPercent),
+          baseAsset,
+          counterAsset,
+          onLog: (message: string) => {
+            setBotLogs((prev) => [...prev.slice(-50), message]);
+            setBotStats((prev) => {
+              const state = bot.getState();
+              return { trades: state.tradeCount, errors: state.errorCount, lastExecution: state.lastExecution };
+            });
+          },
+        },
+        decryptedSecret
+      );
+
+      browserBotRef.current = bot;
+      bot.start();
+      setBotLogs((prev) => [...prev, '✅ Bot launched! Running every 60 seconds.']);
+    } catch (error) {
+      setBotLogs((prev) => [...prev, `❌ Failed to launch: ${error}`]);
+      setIsBotRunning(false);
+    }
+  }, [botWallet, sessionPassword, orderSize, minOrderSize, gridStepPercent]);
+
+  const stopBrowserBot = useCallback(async () => {
+    if (!browserBotRef.current) return;
+
+    try {
+      setBotLogs((prev) => [...prev, '🛑 Stopping bot and canceling orders...']);
+      await browserBotRef.current.stop();
+      browserBotRef.current = null;
+      setIsBotRunning(false);
+      setBotLogs((prev) => [...prev, '✅ Bot stopped. All orders canceled.']);
+    } catch (error) {
+      setBotLogs((prev) => [...prev, `❌ Error stopping bot: ${error}`]);
+    }
+  }, []);
+
+  // Cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      if (browserBotRef.current && isBotRunning) {
+        browserBotRef.current.stop().catch(console.error);
+      }
+    };
+  }, [isBotRunning]);
+
   return (
     <div className="space-y-4 p-4">
       {/* Session Password Modal */}
@@ -667,6 +743,73 @@ export function TradingBotPanel({ selectedAsset, onClose }: TradingBotPanelProps
             <Trash2 className="w-3.5 h-3.5 inline mr-1" />
             Reset
           </button>
+        </div>
+      )}
+
+      {/* Browser-based Market Maker Bot Controls */}
+      {botWallet && botWallet.balance >= parseFloat(minOrderSize) && (
+        <div className="border border-primary/30 rounded-lg p-4 space-y-3 bg-primary/5">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold flex items-center gap-2">
+              <Zap className="w-4 h-4 text-primary" />
+              Browser Market Maker
+            </h3>
+            <span
+              className={`text-xs px-2 py-1 rounded ${
+                isBotRunning ? 'bg-green-500/20 text-green-700' : 'bg-slate-200 text-slate-700'
+              }`}
+            >
+              {isBotRunning ? '🟢 RUNNING' : '⚪ STOPPED'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 text-xs">
+            <div className="bg-background/50 p-2 rounded">
+              <div className="text-muted-foreground">Trades</div>
+              <div className="font-bold text-primary">{botStats.trades}</div>
+            </div>
+            <div className="bg-background/50 p-2 rounded">
+              <div className="text-muted-foreground">Errors</div>
+              <div className="font-bold text-destructive">{botStats.errors}</div>
+            </div>
+            <div className="bg-background/50 p-2 rounded">
+              <div className="text-muted-foreground">Last Run</div>
+              <div className="font-bold text-xs">
+                {botStats.lastExecution ? new Date(botStats.lastExecution).toLocaleTimeString() : 'Never'}
+              </div>
+            </div>
+          </div>
+
+          {/* Bot Logs */}
+          <div className="bg-background/50 rounded p-2 max-h-40 overflow-y-auto text-xs font-mono space-y-1">
+            {botLogs.slice(-10).map((log, idx) => (
+              <div key={idx} className="text-muted-foreground">
+                {log}
+              </div>
+            ))}
+          </div>
+
+          {/* Launch / Stop Buttons */}
+          <div className="flex gap-2">
+            {!isBotRunning ? (
+              <Button
+                onClick={launchBrowserBot}
+                disabled={!sessionPassword}
+                className="flex-1 gap-2 bg-green-600 hover:bg-green-700"
+              >
+                <Play className="w-4 h-4" />
+                LAUNCH BOT
+              </Button>
+            ) : (
+              <Button
+                onClick={stopBrowserBot}
+                className="flex-1 gap-2 bg-red-600 hover:bg-red-700"
+              >
+                <Square className="w-4 h-4" />
+                STOP BOT
+              </Button>
+            )}
+          </div>
         </div>
       )}
 
