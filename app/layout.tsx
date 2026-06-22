@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { WalletProvider } from '@/lib/wallet-context'
 import { NotificationProvider } from '@/lib/notification-context'
+import { SwipeableWalletSelector } from '@/components/swipeable-wallet-selector'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -73,7 +74,10 @@ export default function RootLayout({
       <body className="font-sans antialiased bg-background text-foreground">
         <WalletProvider>
           <NotificationProvider>
-            {children}
+            <SwipeableWalletSelector />
+            <div className="pt-20">
+              {children}
+            </div>
           </NotificationProvider>
         </WalletProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
