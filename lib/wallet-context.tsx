@@ -34,6 +34,7 @@ export interface WalletContextType {
   clearPasswordSession: (walletId: string) => void;
   passwordSessionType: PasswordSessionType;
   setPasswordSessionType: (type: PasswordSessionType) => void;
+  batchImportWallets: (entries: Array<{ privateKey: string; publicKey: string; accountName: string }>, password: string) => { successful: number; failed: number };
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -260,6 +261,43 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   }, []);
 
+  const batchImportWallets = useCallback((entries: Array<{ privateKey: string; publicKey: string; accountName: string }>, password: string) => {
+    let successful = 0;
+    let failed = 0;
+
+    entries.forEach(entry => {
+      try {
+        const encryptedSecret = encryptSecret(entry.privateKey, password);
+        const id = `wallet_${Date.now()}_${Math.random()}`;
+        
+        const newWallet: Wallet = {
+          id,
+          name: entry.accountName,
+          publicKey: entry.publicKey,
+          encryptedSecret,
+          balances: [],
+          poolShares: [],
+          createdAt: new Date(),
+        };
+
+        setWallets(prev => [...prev, newWallet]);
+        successful++;
+      } catch (error) {
+        failed++;
+      }
+    });
+
+    // Set active wallet to the first newly imported wallet if any succeeded
+    if (successful > 0) {
+      const newWallets = wallets;
+      if (newWallets.length > 0) {
+        setActiveWalletId(newWallets[newWallets.length - 1].id);
+      }
+    }
+
+    return { successful, failed };
+  }, [wallets]);
+
   return (
     <WalletContext.Provider
       value={{
@@ -279,6 +317,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         clearPasswordSession,
         passwordSessionType,
         setPasswordSessionType,
+        batchImportWallets,
       }}
     >
       {children}

@@ -8,7 +8,11 @@ import { AppMenu } from '@/components/app-menu';
 import { SettingsModal } from '@/components/settings-modal';
 import { NotificationBadge } from '@/components/notification-badge';
 
-export function Header() {
+interface HeaderProps {
+  onOpenBulkWallet?: () => void;
+}
+
+export function Header({ onOpenBulkWallet }: HeaderProps) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -94,6 +98,7 @@ export function Header() {
       <SettingsModal
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
+        onOpenBulkWallet={onOpenBulkWallet}
       />
     </>
   );
