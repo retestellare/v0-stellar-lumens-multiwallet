@@ -56,6 +56,7 @@ export default function ExchangePage() {
   const [txResult, setTxResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<{ type: 'buy' | 'sell'; price: string; amount: string } | null>(null);
+  const [pendingCancelOrderId, setPendingCancelOrderId] = useState<string | null>(null);
   const [password, setPassword] = useState('');
   const [isPasswordUnlocked, setIsPasswordUnlocked] = useState(false); // Track if password entered this session
   const [decryptedSecret, setDecryptedSecret] = useState<string | null>(null); // Store decrypted secret
@@ -580,7 +581,10 @@ export default function ExchangePage() {
   };
   
   const handleConfirmOrder = async () => {
-    if (!pendingOrder || !activeWallet || !password) return;
+    if (!activeWallet || !password) return;
+    
+    // Check if this is for an order submission or order cancellation
+    if (!pendingOrder && !pendingCancelOrderId) return;
     
     setShowPasswordModal(false);
     
@@ -591,23 +595,35 @@ export default function ExchangePage() {
       setIsPasswordUnlocked(true);
       setPassword(''); // Clear password from state
       
-      // Submit the order
-      await submitOrder(pendingOrder, secret);
+      // Handle order submission or cancellation
+      if (pendingOrder) {
+        await submitOrder(pendingOrder, secret);
+      } else if (pendingCancelOrderId) {
+        await proceedWithCancelOrder(pendingCancelOrderId);
+        setPendingCancelOrderId(null);
+      }
     } catch (error: any) {
       setTxResult({ success: false, message: 'Invalid password' });
       setPassword('');
       setPendingOrder(null);
+      setPendingCancelOrderId(null);
     }
   };
 
-  const handleCancelOrder = async (id: string) => {
+  const handleCancelOrder = (id: string) => {
     if (!decryptedSecret) {
-      setTxResult({ success: false, message: 'Please unlock wallet with password first' });
+      setPendingCancelOrderId(id);
+      setShowPasswordModal(true);
       return;
     }
     
+    // If already unlocked, proceed directly to cancel
+    proceedWithCancelOrder(id);
+  };
+
+  const proceedWithCancelOrder = async (id: string) => {
     const order = myOrders.find(o => o.id === id);
-    if (!order) return;
+    if (!order || !decryptedSecret) return;
     
     setIsSubmitting(true);
     try {
@@ -646,7 +662,7 @@ export default function ExchangePage() {
   };
 
   const tabs = [
-    { id: 'history', label: 'History', icon: '📊' },
+    { id: 'history', label: 'History', icon: '����' },
     { id: 'my-orders', label: 'My Orders', icon: '📋' },
     { id: 'filled', label: 'Filled', icon: '✅' },
     { id: 'charts', label: 'Charts', icon: '📈' },
@@ -882,19 +898,29 @@ export default function ExchangePage() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-card border border-primary/20 rounded-lg w-full max-w-md p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-foreground">Confirm Order</h3>
-              <button onClick={() => { setShowPasswordModal(false); setPendingOrder(null); setPassword(''); }}>
+              <h3 className="text-lg font-semibold text-foreground">
+                {pendingCancelOrderId ? 'Cancel Order' : 'Confirm Order'}
+              </h3>
+              <button onClick={() => { setShowPasswordModal(false); setPendingOrder(null); setPendingCancelOrderId(null); setPassword(''); }}>
                 <X className="w-5 h-5 text-muted-foreground hover:text-foreground" />
               </button>
             </div>
             
             <div className="space-y-2 text-sm">
-              <p className="text-muted-foreground">
-                {pendingOrder?.type === 'buy' ? 'BUY' : 'SELL'} {pendingOrder?.amount} {sellingAsset}
-              </p>
-              <p className="text-muted-foreground">
-                at {pendingOrder?.price} {buyingAsset} per {sellingAsset}
-              </p>
+              {pendingCancelOrderId ? (
+                <p className="text-muted-foreground">
+                  Are you sure you want to cancel this order? Enter your password to confirm.
+                </p>
+              ) : (
+                <>
+                  <p className="text-muted-foreground">
+                    {pendingOrder?.type === 'buy' ? 'BUY' : 'SELL'} {pendingOrder?.amount} {sellingAsset}
+                  </p>
+                  <p className="text-muted-foreground">
+                    at {pendingOrder?.price} {buyingAsset} per {sellingAsset}
+                  </p>
+                </>
+              )}
             </div>
             
             <div className="space-y-2">
@@ -912,7 +938,7 @@ export default function ExchangePage() {
             <div className="flex gap-3">
               <Button
                 variant="outline"
-                onClick={() => { setShowPasswordModal(false); setPendingOrder(null); setPassword(''); }}
+                onClick={() => { setShowPasswordModal(false); setPendingOrder(null); setPendingCancelOrderId(null); setPassword(''); }}
                 className="flex-1"
               >
                 Cancel
@@ -920,9 +946,15 @@ export default function ExchangePage() {
               <Button
                 onClick={handleConfirmOrder}
                 disabled={!password || isSubmitting}
-                className={`flex-1 ${pendingOrder?.type === 'buy' ? 'bg-primary' : 'bg-destructive'}`}
+                className={`flex-1 ${pendingCancelOrderId ? 'bg-destructive' : pendingOrder?.type === 'buy' ? 'bg-primary' : 'bg-destructive'}`}
               >
-                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm'}
+                {isSubmitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : pendingCancelOrderId ? (
+                  'Cancel Order'
+                ) : (
+                  'Confirm'
+                )}
               </Button>
             </div>
           </div>
