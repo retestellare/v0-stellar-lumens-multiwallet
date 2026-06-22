@@ -1,36 +1,28 @@
 'use client';
 
-import { useState } from 'react';
-import { SwipeableWalletSelector } from '@/components/swipeable-wallet-selector';
+import { useEffect } from 'react';
+import { Header } from '@/components/header';
 import { AppMenu } from '@/components/app-menu';
 import { SettingsModal } from '@/components/settings-modal';
+import { useNotifications } from '@/lib/notification-context';
 
 interface LayoutClientProps {
   children: React.ReactNode;
 }
 
 export function LayoutClient({ children }: LayoutClientProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const { registerNotification } = useNotifications();
+
+  useEffect(() => {
+    // Initialize notifications if needed
+  }, [registerNotification]);
 
   return (
     <>
-      <SwipeableWalletSelector onMenuOpen={() => setMenuOpen(true)} />
-      <div className="pt-24">
+      <Header />
+      <div className="min-h-screen">
         {children}
       </div>
-      <AppMenu
-        isOpen={menuOpen}
-        onClose={() => setMenuOpen(false)}
-        onOpenSettings={() => {
-          setMenuOpen(false);
-          setSettingsOpen(true);
-        }}
-      />
-      <SettingsModal
-        isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-      />
     </>
   );
 }
