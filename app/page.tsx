@@ -15,6 +15,9 @@ import { AssetItem } from '@/components/asset-item';
 const CreateWalletModal = dynamic(() => import('@/components/create-wallet-modal').then(mod => ({ default: mod.CreateWalletModal })), {
   loading: () => null,
 });
+const BulkWalletModal = dynamic(() => import('@/components/bulk-wallet-modal').then(mod => ({ default: mod.BulkWalletModal })), {
+  loading: () => null,
+});
 const SendModal = dynamic(() => import('@/components/send-modal').then(mod => ({ default: mod.SendModal })), {
   loading: () => null,
 });
@@ -25,6 +28,7 @@ const ReceiveModal = dynamic(() => import('@/components/receive-modal').then(mod
 export default function DashboardPage() {
   const { wallets, activeWalletId, setActiveWallet, removeWallet, updateBalances } = useWallet();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [isSendOpen, setIsSendOpen] = useState(false);
   const [isReceiveOpen, setIsReceiveOpen] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<{ code: string; issuer?: string; balance: string; domain?: string; image?: string; name?: string } | null>(null);
@@ -52,6 +56,14 @@ export default function DashboardPage() {
 
   const handleCloseModal = useCallback(() => {
     setIsModalOpen(false);
+  }, []);
+
+  const handleOpenBulkModal = useCallback(() => {
+    setIsBulkModalOpen(true);
+  }, []);
+
+  const handleCloseBulkModal = useCallback(() => {
+    setIsBulkModalOpen(false);
   }, []);
 
   const handleCloseSend = useCallback(() => {
@@ -98,8 +110,8 @@ export default function DashboardPage() {
   const activeWallet = wallets.find(w => w.id === activeWalletId);
 
   return (
-    <main className="min-h-screen bg-background">
-      <Header />
+    <main className="flex flex-col h-screen bg-gradient-to-b from-background to-background/95">
+      <Header onOpenBulkWallet={handleOpenBulkModal} />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {wallets.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20">
@@ -206,6 +218,7 @@ export default function DashboardPage() {
       </div>
 
       <CreateWalletModal isOpen={isModalOpen} onClose={handleCloseModal} />
+      <BulkWalletModal isOpen={isBulkModalOpen} onClose={handleCloseBulkModal} />
       <SendModal isOpen={isSendOpen} onClose={handleCloseSend} />
       <ReceiveModal isOpen={isReceiveOpen} onClose={handleCloseReceive} />
       <AssetDetailModal
