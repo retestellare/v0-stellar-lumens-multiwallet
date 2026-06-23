@@ -1,43 +1,44 @@
 'use client';
 
-import { useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { Header } from '@/components/header';
-import { TradingBotPanel } from '@/components/trading-bot-panel';
 import { Button } from '@/components/ui/button';
 
 export default function BotPage() {
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
       <Header />
       
-      <main className="w-full max-w-6xl mx-auto px-4 py-8">
+      <main className="flex flex-col w-full flex-1">
         {/* Back Button */}
-        <Link href="/">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="mb-6 flex items-center gap-2"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Dashboard
-          </Button>
-        </Link>
+        <div className="px-4 sm:px-6 lg:px-8 py-4 border-b border-border/50 flex-shrink-0">
+          <Link href="/">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="flex items-center gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Dashboard
+            </Button>
+          </Link>
+        </div>
 
-        {/* Trading Bot Panel - Full Page */}
-        <div className="space-y-6">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-2">
-              Trading Bot
-            </h1>
-            <p className="text-muted-foreground">
-              Configure and monitor your automated trading bot for Stellar assets.
-            </p>
-          </div>
-
-          {/* Bot Panel */}
-          <TradingBotPanel />
+        {/* Trading Console - Full Height Scrollable iframe */}
+        <div className="w-full overflow-y-auto">
+          <iframe
+            src="https://lumenspread-bot-ok.base44.app"
+            title="Trading Console"
+            className="w-full border-0"
+            style={{ 
+              display: 'block',
+              minHeight: 'calc(100vh - 140px)',
+              height: 'auto'
+            }}
+            allow="accelerometer; ambient-light-sensor; camera; encrypted-media; geolocation; gyroscope; magnetometer; microphone; payment; usb"
+            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation"
+          />
         </div>
       </main>
     </div>
