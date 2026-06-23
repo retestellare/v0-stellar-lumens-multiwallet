@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { Header } from '@/components/header';
 import { WalletCard } from '@/components/wallet-card';
 import { AssetDetailModal } from '@/components/asset-detail-modal';
 import { Button } from '@/components/ui/button';
@@ -109,7 +110,8 @@ export default function DashboardPage() {
   const activeWallet = wallets.find(w => w.id === activeWalletId);
 
   return (
-    <main className="flex flex-col min-h-screen bg-gradient-to-b from-background to-background/95">
+    <main className="flex flex-col h-screen bg-gradient-to-b from-background to-background/95">
+      <Header onOpenBulkWallet={handleOpenBulkModal} />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {wallets.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20">

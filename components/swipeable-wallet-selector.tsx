@@ -1,221 +1,160 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { ChevronDown, ChevronUp, Copy, Check, Zap, Bell } from 'lucide-react';
+import { useRef, useEffect, useState } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useWallet } from '@/lib/wallet-context';
-import { useNotifications } from '@/lib/notification-context';
-import { useRouter } from 'next/navigation';
-import { cn } from '@/lib/utils';
 
-interface SwipeableWalletSelectorProps {
-  onMenuOpen?: () => void;
+interface TouchState {
+  startY: number;
+  currentY: number;
+  isDragging: boolean;
 }
 
-export function SwipeableWalletSelector({ onMenuOpen }: SwipeableWalletSelectorProps) {
-  const { wallets, activeWallet, setActiveWallet } = useWallet();
-  const { unreadCount, markAllAsRead } = useNotifications();
-  const router = useRouter();
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+export function SwipeableWalletSelector() {
+  const { wallets, activeWallet, setActiveWallet, activeWalletId } = useWallet();
   const containerRef = useRef<HTMLDivElement>(null);
-  const startYRef = useRef<number>(0);
-  const startTimeRef = useRef<number>(0);
+  const [touchState, setTouchState] = useState<TouchState>({
+    startY: 0,
+    currentY: 0,
+    isDragging: false,
+  });
+  const [swipeDirection, setSwipeDirection] = useState<'up' | 'down' | null>(null);
+  const [showHint, setShowHint] = useState(false);
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsExpanded(false);
-      }
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchState({
+      startY: e.touches[0].clientY,
+      currentY: e.touches[0].clientY,
+      isDragging: true,
+    });
+    setSwipeDirection(null);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    setTouchState(prev => ({
+      ...prev,
+      currentY: e.touches[0].clientY,
+    }));
+  };
+
+  const handleTouchEnd = () => {
+    const { startY, currentY } = touchState;
+    const difference = startY - currentY; // Positive = swiped up, Negative = swiped down
+    const threshold = 50; // Minimum swipe distance
+
+    if (wallets.length <= 1) {
+      setTouchState({ startY: 0, currentY: 0, isDragging: false });
+      return;
     }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    startYRef.current = e.touches[0].clientY;
-    startTimeRef.current = Date.now();
-  }, []);
+    if (Math.abs(difference) > threshold) {
+      const currentIndex = wallets.findIndex(w => w.id === activeWalletId);
 
-  const handleTouchEnd = useCallback(
-    (e: React.TouchEvent) => {
-      const endY = e.changedTouches[0].clientY;
-      const deltaY = startYRef.current - endY;
-      const deltaTime = Date.now() - startTimeRef.current;
-      const velocity = Math.abs(deltaY) / deltaTime;
-
-      if (Math.abs(deltaY) > 30 && velocity > 0.3) {
-        if (deltaY > 0) {
-          setIsExpanded(true);
-        } else {
-          setIsExpanded(false);
-        }
-      }
-    },
-    []
-  );
-
-  const handleMouseWheel = useCallback((e: React.WheelEvent) => {
-    if (!containerRef.current?.contains(e.currentTarget)) return;
-    e.preventDefault();
-    e.stopPropagation();
-
-    const deltaY = e.deltaY;
-    if (Math.abs(deltaY) > 20) {
-      if (deltaY < 0) {
-        setIsExpanded(true);
+      if (difference > 0) {
+        // Swiped up - move to next wallet
+        setSwipeDirection('up');
+        const nextIndex = (currentIndex + 1) % wallets.length;
+        setActiveWallet(wallets[nextIndex].id);
       } else {
-        setIsExpanded(false);
+        // Swiped down - move to previous wallet
+        setSwipeDirection('down');
+        const prevIndex = currentIndex === 0 ? wallets.length - 1 : currentIndex - 1;
+        setActiveWallet(wallets[prevIndex].id);
       }
+
+      setTimeout(() => setSwipeDirection(null), 200);
     }
-  }, []);
 
-  const handleCopyAddress = async (e: React.MouseEvent, publicKey: string) => {
-    e.stopPropagation();
-    await navigator.clipboard.writeText(publicKey);
-    setCopiedId(publicKey);
-    setTimeout(() => setCopiedId(null), 2000);
+    setTouchState({ startY: 0, currentY: 0, isDragging: false });
   };
 
-  const handleSelectWallet = (walletId: string) => {
-    setActiveWallet(walletId);
-    setIsExpanded(false);
-  };
-
-  const handleNotificationClick = () => {
-    markAllAsRead();
-    router.push('/notifications');
-  };
-
-  const truncateKey = (key: string) => `${key.slice(0, 4)}...${key.slice(-4)}`;
+  // Show hint on first load if multiple wallets
+  useEffect(() => {
+    if (wallets.length > 1) {
+      setShowHint(true);
+      const timer = setTimeout(() => setShowHint(false), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [wallets.length]);
 
   if (!activeWallet || wallets.length === 0) {
     return null;
   }
 
+  const currentIndex = wallets.findIndex(w => w.id === activeWalletId);
+  const previousWallet = wallets[(currentIndex - 1 + wallets.length) % wallets.length];
+  const nextWallet = wallets[(currentIndex + 1) % wallets.length];
+
+  const truncateKey = (key: string) => `${key.slice(0, 6)}...${key.slice(-6)}`;
+
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 bg-background px-4 sm:px-6 lg:px-8 py-3">
-      <div className="max-w-7xl mx-auto">
-        {/* Main Header Box */}
-        <div
-          ref={containerRef}
-          className={cn(
-            'flex items-center gap-3 px-4 py-3 rounded-xl border transition-all duration-300',
-            isExpanded
-              ? 'bg-card border-primary/40'
-              : 'bg-card border-primary/20 hover:border-primary/30'
-          )}
-          onTouchStart={handleTouchStart}
-          onTouchEnd={handleTouchEnd}
-          onWheel={handleMouseWheel}
-        >
-          {/* Left: Menu Button */}
-          <button
-            onClick={onMenuOpen}
-            className="flex-shrink-0 p-2 rounded-lg hover:bg-background/50 transition-colors"
-            aria-label="Open menu"
-          >
-            <Zap className="w-5 h-5 text-primary" />
-          </button>
-
-          {/* Center: Wallet Selector */}
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="flex-1 flex items-center justify-between px-3 py-2 rounded-lg hover:bg-background/30 transition-colors min-w-0"
-          >
-            <div className="flex flex-col gap-0.5 min-w-0 text-left">
-              <p className="text-sm font-semibold text-foreground truncate">
-                {activeWallet.name || truncateKey(activeWallet.publicKey)}
-              </p>
-              <p className="text-xs text-muted-foreground truncate font-mono">
-                {truncateKey(activeWallet.publicKey)}
-              </p>
-            </div>
-            <div className="flex-shrink-0 ml-2">
-              {isExpanded ? (
-                <ChevronUp className="w-4 h-4 text-muted-foreground" />
-              ) : (
-                <ChevronDown className="w-4 h-4 text-muted-foreground" />
-              )}
-            </div>
-          </button>
-
-          {/* Right: Notification Badge */}
-          <button
-            onClick={handleNotificationClick}
-            className="flex-shrink-0 relative p-2 rounded-lg hover:bg-background/50 transition-colors"
-            aria-label={`${unreadCount} notifications`}
-          >
-            {unreadCount > 0 ? (
-              <>
-                <div className="absolute -top-1 -right-1 min-w-[20px] h-5 flex items-center justify-center px-1 rounded-full bg-primary text-white text-xs font-bold">
-                  {unreadCount > 99 ? '99+' : unreadCount}
-                </div>
-                <Bell className="w-5 h-5 text-primary" />
-              </>
-            ) : (
-              <Bell className="w-5 h-5 text-muted-foreground" />
-            )}
-          </button>
+    <div
+      ref={containerRef}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      className="relative w-full bg-gradient-to-r from-background/80 to-background/60 backdrop-blur-md border-b border-primary/20 touch-none select-none cursor-grab active:cursor-grabbing overflow-hidden"
+    >
+      {/* Swipe Hint */}
+      {showHint && wallets.length > 1 && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <div className="animate-pulse text-xs text-primary/60 font-medium">
+            Swipe to switch wallets
+          </div>
         </div>
+      )}
 
-        {/* Expanded Wallet List Dropdown */}
-        {isExpanded && (
-          <div className="mt-2 p-3 rounded-xl bg-card border border-primary/20 animate-in fade-in slide-in-from-top-2 duration-200 max-h-[60vh] overflow-y-auto">
-            <div className="grid gap-2">
-              {wallets.map((wallet) => {
-                const isActive = wallet.id === activeWallet.id || wallet.publicKey === activeWallet.publicKey;
-                return (
-                  <button
-                    key={wallet.id || wallet.publicKey}
-                    onClick={() => handleSelectWallet(wallet.id || wallet.publicKey)}
-                    className={cn(
-                      'flex items-center justify-between gap-2 p-2 rounded-lg transition-all text-left',
-                      isActive
-                        ? 'bg-primary/15 border border-primary/40'
-                        : 'bg-background/50 border border-transparent hover:bg-background/70'
-                    )}
-                  >
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
-                        <span className="text-xs font-bold text-primary">
-                          {wallet.name?.charAt(0) || '∞'}
-                        </span>
-                      </div>
-                      <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-                        <p className={cn('font-semibold truncate text-sm', isActive ? 'text-primary' : 'text-foreground')}>
-                          {wallet.name || 'Unnamed Wallet'}
-                        </p>
-                        <p className="text-xs text-muted-foreground font-mono truncate">
-                          {truncateKey(wallet.publicKey)}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={(e) => handleCopyAddress(e, wallet.publicKey)}
-                      className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-background rounded transition-colors flex-shrink-0"
-                      title="Copy address"
-                    >
-                      {copiedId === wallet.publicKey ? (
-                        <Check className="w-4 h-4 text-green-500" />
-                      ) : (
-                        <Copy className="w-3 h-3" />
-                      )}
-                    </button>
-                  </button>
-                );
-              })}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+        {/* Container for wallet carousel */}
+        <div className="space-y-2">
+          {/* Previous Wallet Hint */}
+          {wallets.length > 1 && (
+            <div className="text-xs text-muted-foreground/60 px-2 h-4 flex items-center gap-1">
+              <ChevronUp className="w-3 h-3" />
+              <span className="truncate">{previousWallet.name || truncateKey(previousWallet.publicKey)}</span>
+            </div>
+          )}
+
+          {/* Active Wallet Display */}
+          <div
+            className={`relative flex items-center justify-between px-4 py-3 rounded-lg border-2 bg-card/40 transition-all duration-200 ${
+              swipeDirection === 'up' || swipeDirection === 'down'
+                ? 'border-primary/40 scale-105'
+                : 'border-primary/20 hover:border-primary/40'
+            }`}
+          >
+            <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                {wallets.length > 1 ? 'Active Wallet' : 'Wallet'}
+              </span>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-semibold text-foreground truncate">
+                  {activeWallet.name || 'Unnamed Wallet'}
+                </span>
+                <span className="text-xs text-muted-foreground/70 font-mono truncate">
+                  {truncateKey(activeWallet.publicKey)}
+                </span>
+              </div>
             </div>
 
+            {/* Wallet Counter */}
             {wallets.length > 1 && (
-              <div className="mt-2 pt-2 border-t border-border/50">
-                <p className="text-xs text-muted-foreground text-center">
-                  <span className="font-semibold text-foreground">{wallets.length}</span> wallet{wallets.length !== 1 ? 's' : ''} • Swipe up/down
-                </p>
+              <div className="ml-3 text-right">
+                <div className="text-xs font-semibold text-primary">
+                  {currentIndex + 1}/{wallets.length}
+                </div>
               </div>
             )}
           </div>
-        )}
+
+          {/* Next Wallet Hint */}
+          {wallets.length > 1 && (
+            <div className="text-xs text-muted-foreground/60 px-2 h-4 flex items-center gap-1">
+              <ChevronDown className="w-3 h-3" />
+              <span className="truncate">{nextWallet.name || truncateKey(nextWallet.publicKey)}</span>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

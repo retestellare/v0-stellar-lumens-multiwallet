@@ -3,7 +3,6 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { WalletProvider } from '@/lib/wallet-context'
 import { NotificationProvider } from '@/lib/notification-context'
-import { LayoutClient } from '@/components/layout-client'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -74,9 +73,7 @@ export default function RootLayout({
       <body className="font-sans antialiased bg-background text-foreground">
         <WalletProvider>
           <NotificationProvider>
-            <LayoutClient>
-              {children}
-            </LayoutClient>
+            {children}
           </NotificationProvider>
         </WalletProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}

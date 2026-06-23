@@ -98,8 +98,13 @@ export function OrderBook({
   }));
 
   // Calculate max amounts for proportional depth visualization
+  // For bids, calculate FORGE amount: bid.amount / bid.price
   const maxAmountBids = bids.length > 0 
-    ? Math.max(...bids.map(b => parseFloat(b.amount) || 0), 1)
+    ? Math.max(...bids.map(b => {
+        const price = parseFloat(b.price) || 1;
+        const amount = parseFloat(b.amount) || 0;
+        return (amount / price) || 0;
+      }), 1)
     : 1;
   const maxAmountAsks = asks.length > 0
     ? Math.max(...asks.map(a => parseFloat(a.amount) || 0), 1)
@@ -164,10 +169,10 @@ export function OrderBook({
           <div className="bg-background/50 p-2 space-y-2">
             {/* Column Headers */}
             <div className="grid grid-cols-4 gap-0 text-[10px] sm:text-xs font-semibold text-muted-foreground px-2 py-2 border-b border-border/30">
-              <div className="text-left">Amount ({sellingAsset})</div>
+              <div className="text-left">Amount (FORGE)</div>
               <div className="text-right">Bid ({buyingAsset})</div>
               <div className="text-left">Ask ({buyingAsset})</div>
-              <div className="text-right">Amount ({sellingAsset})</div>
+              <div className="text-right">Amount (FORGE)</div>
             </div>
 
             {/* Spread Row - Center */}
@@ -181,7 +186,9 @@ export function OrderBook({
             <div className="max-h-[500px] overflow-y-auto space-y-0.5">
               {mergedOrders.map((row, idx) => {
                 // Calculate depth percentages based on actual max amounts
-                const bidDepthWidth = row.bid ? (parseFloat(row.bid.amount) / maxAmountBids) * 100 : 0;
+                // For bids, use calculated FORGE amount: bid.amount / bid.price
+                const bidForgeAmount = row.bid ? (parseFloat(row.bid.amount) / parseFloat(row.bid.price)) : 0;
+                const bidDepthWidth = row.bid ? (bidForgeAmount / maxAmountBids) * 100 : 0;
                 const askDepthWidth = row.ask ? (parseFloat(row.ask.amount) / maxAmountAsks) * 100 : 0;
 
                 return (
@@ -199,7 +206,7 @@ export function OrderBook({
                         onClick={() => row.bid && onBidClick?.(row.bid.price, row.bid.amount)}
                         title={row.bid ? `Price: ${row.bid.price}, Amount: ${row.bid.amount}` : undefined}
                       >
-                        {row.bid ? formatAmount(row.bid.amount) : '-'}
+                        {row.bid ? formatAmount((parseFloat(row.bid.amount) / parseFloat(row.bid.price)).toFixed(3)) : '-'}
                       </div>
 
                       {/* Bid Price */}
