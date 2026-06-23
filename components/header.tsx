@@ -7,7 +7,7 @@ import { Zap, Menu } from 'lucide-react';
 import { AppMenu } from '@/components/app-menu';
 import { SettingsModal } from '@/components/settings-modal';
 import { NotificationBadge } from '@/components/notification-badge';
-import { SwipeableWalletSelector } from '@/components/swipeable-wallet-selector';
+import { WalletSelectorDropdown } from '@/components/wallet-selector-dropdown';
 
 interface HeaderProps {
   onOpenBulkWallet?: () => void;
@@ -30,21 +30,26 @@ export function Header({ onOpenBulkWallet }: HeaderProps) {
     <>
       <header className="border-b border-primary/20 bg-background sticky top-0 z-40 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Mobile Layout (hidden on md:) */}
-          <div className="md:hidden flex items-center justify-between h-16 gap-2">
-            {/* Mobile Logo */}
+          {/* Mobile Layout (hidden on md:) - 3 Column Grid */}
+          <div className="md:hidden grid grid-cols-3 items-center h-16 gap-2">
+            {/* Left: Mobile Logo */}
             <button 
               onClick={() => setMenuOpen(true)}
-              className="flex items-center gap-2 group transition-all hover:opacity-80 flex-1"
+              className="flex items-center gap-1.5 group transition-all hover:opacity-80 justify-start"
             >
               <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-primary/80 to-primary shadow-lg flex-shrink-0">
                 <Zap className="w-5 h-5 text-primary-foreground" />
               </div>
-              <span className="font-bold text-sm text-foreground group-hover:text-primary transition-colors truncate">Stellar</span>
+              <span className="font-bold text-xs text-foreground group-hover:text-primary transition-colors truncate">Stellar</span>
             </button>
             
-            {/* Mobile Right Controls */}
-            <div className="flex items-center gap-2">
+            {/* Center: Wallet Selector Dropdown */}
+            <div className="flex justify-center px-1">
+              <WalletSelectorDropdown compact={true} />
+            </div>
+
+            {/* Right: Mobile Right Controls */}
+            <div className="flex items-center gap-2 justify-end">
               {/* Notification Badge */}
               <NotificationBadge />
 
@@ -113,9 +118,6 @@ export function Header({ onOpenBulkWallet }: HeaderProps) {
           </div>
         </div>
       </header>
-
-      {/* Swipeable Wallet Selector - Always Visible */}
-      <SwipeableWalletSelector />
 
       {/* App Menu */}
       <AppMenu
