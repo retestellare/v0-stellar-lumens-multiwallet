@@ -7,10 +7,10 @@ import { Button } from '@/components/ui/button';
 
 export default function BotPage() {
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col overflow-hidden">
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
       <Header />
       
-      <main className="flex-1 flex flex-col w-full h-full overflow-hidden">
+      <main className="flex flex-col w-full flex-1">
         {/* Back Button */}
         <div className="px-4 sm:px-6 lg:px-8 py-4 border-b border-border/50 flex-shrink-0">
           <Link href="/">
@@ -25,13 +25,17 @@ export default function BotPage() {
           </Link>
         </div>
 
-        {/* Trading Console - Full Screen iframe */}
-        <div className="flex-1 w-full h-full overflow-hidden">
+        {/* Trading Console - Full Height Scrollable iframe */}
+        <div className="w-full overflow-y-auto">
           <iframe
             src="https://lumenspread-bot-ok.base44.app"
             title="Trading Console"
-            className="w-full h-full border-0"
-            style={{ display: 'block' }}
+            className="w-full border-0"
+            style={{ 
+              display: 'block',
+              minHeight: 'calc(100vh - 140px)',
+              height: 'auto'
+            }}
             allow="accelerometer; ambient-light-sensor; camera; encrypted-media; geolocation; gyroscope; magnetometer; microphone; payment; usb"
             sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation"
           />
