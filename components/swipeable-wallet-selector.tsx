@@ -104,7 +104,39 @@ export function SwipeableWalletSelector() {
         </div>
       )}
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+      {/* Mobile Layout - Compact */}
+      <div className="md:hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
+        <div
+          className={`relative flex items-center justify-between px-3 py-2 rounded-md border border-primary/20 bg-card/30 transition-all duration-200 ${
+            swipeDirection === 'up' || swipeDirection === 'down'
+              ? 'border-primary/40 scale-105'
+              : 'border-primary/20 hover:border-primary/40'
+          }`}
+        >
+          <div className="flex flex-col gap-0 flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="font-semibold text-xs text-foreground truncate">
+                {activeWallet.name || 'Wallet'}
+              </span>
+              <span className="text-xs text-muted-foreground/70 font-mono truncate">
+                {truncateKey(activeWallet.publicKey)}
+              </span>
+            </div>
+          </div>
+
+          {/* Wallet Counter */}
+          {wallets.length > 1 && (
+            <div className="ml-2 text-right flex-shrink-0">
+              <div className="text-xs font-semibold text-primary">
+                {currentIndex + 1}/{wallets.length}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Desktop Layout - Full */}
+      <div className="hidden md:block max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
         {/* Container for wallet carousel */}
         <div className="space-y-2">
           {/* Previous Wallet Hint */}
