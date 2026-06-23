@@ -30,7 +30,36 @@ export function Header({ onOpenBulkWallet }: HeaderProps) {
     <>
       <header className="border-b border-primary/20 bg-background sticky top-0 z-40 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-20 gap-4">
+          {/* Mobile Layout (hidden on md:) */}
+          <div className="md:hidden flex items-center justify-between h-16 gap-2">
+            {/* Mobile Logo */}
+            <button 
+              onClick={() => setMenuOpen(true)}
+              className="flex items-center gap-2 group transition-all hover:opacity-80 flex-1"
+            >
+              <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-primary/80 to-primary shadow-lg flex-shrink-0">
+                <Zap className="w-5 h-5 text-primary-foreground" />
+              </div>
+              <span className="font-bold text-sm text-foreground group-hover:text-primary transition-colors truncate">Stellar</span>
+            </button>
+            
+            {/* Mobile Right Controls */}
+            <div className="flex items-center gap-2">
+              {/* Notification Badge */}
+              <NotificationBadge />
+
+              {/* Mobile Menu Button */}
+              <button
+                onClick={() => setMenuOpen(true)}
+                className="p-2 rounded-lg hover:bg-primary/10 transition-colors"
+              >
+                <Menu className="w-5 h-5 text-muted-foreground" />
+              </button>
+            </div>
+          </div>
+
+          {/* Desktop Layout (hidden on mobile) */}
+          <div className="hidden md:flex items-center justify-between h-20 gap-4">
             {/* Logo Section */}
             <button 
               onClick={() => setMenuOpen(true)}
@@ -46,7 +75,7 @@ export function Header({ onOpenBulkWallet }: HeaderProps) {
             </button>
             
             {/* Desktop Navigation */}
-            <nav className="hidden md:flex items-center gap-8">
+            <nav className="flex items-center gap-8">
               {navLinks.map((link) => (
                 <Link
                   key={link.href}
@@ -62,21 +91,21 @@ export function Header({ onOpenBulkWallet }: HeaderProps) {
               ))}
             </nav>
 
-            {/* Right Side Controls */}
+            {/* Desktop Right Side Controls */}
             <div className="flex items-center gap-4">
               {/* Notification Badge */}
               <NotificationBadge />
 
               {/* Live Status Indicator */}
-              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/30">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/30">
                 <span className="inline-block w-2 h-2 bg-primary rounded-full animate-pulse"></span>
                 <span className="text-xs font-medium text-primary">Live</span>
               </div>
 
-              {/* Mobile Menu Button */}
+              {/* Menu Button */}
               <button
                 onClick={() => setMenuOpen(true)}
-                className="md:hidden p-2 rounded-lg hover:bg-primary/10 transition-colors"
+                className="p-2 rounded-lg hover:bg-primary/10 transition-colors"
               >
                 <Menu className="w-5 h-5 text-muted-foreground" />
               </button>
