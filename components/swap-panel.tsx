@@ -126,6 +126,9 @@ export function SwapPanel() {
         to: receiveToken.code,
       });
 
+      // Format amount to 7 decimal places (Stellar requirement)
+      const formattedAmount = parseFloat(amount).toFixed(7);
+
       // Call server-side Stellar SDK path finding via API
       const response = await fetch('/api/stellar/swap-path', {
         method: 'POST',
@@ -135,7 +138,7 @@ export function SwapPanel() {
           sourceIssuer: sendToken.issuer,
           destCode: receiveToken.code,
           destIssuer: receiveToken.issuer,
-          sendAmount: amount,
+          sendAmount: formattedAmount,
         }),
       });
 

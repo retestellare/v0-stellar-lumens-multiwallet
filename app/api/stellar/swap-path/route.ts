@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Server, Asset } from '@stellar/stellar-sdk';
 
 const HORIZON_URL = 'https://horizon.stellar.org';
 
 /**
  * POST /api/stellar/swap-path
- * Server-side path finding using Stellar SDK strictSendPaths
+ * Server-side path finding using Stellar SDK strictSendPaths (v15+)
+ * 
+ * Accepts and returns amounts as strings with exactly 7 decimal places
  * 
  * Body:
  * {
@@ -12,18 +15,14 @@ const HORIZON_URL = 'https://horizon.stellar.org';
  *   sourceIssuer?: string,
  *   destCode: string,
  *   destIssuer?: string,
- *   sendAmount: string
+ *   sendAmount: string (format: "10.0000000")
  * }
  */
 export async function POST(request: NextRequest) {
   try {
-    // Dynamic import to work around Turbopack bundling issues
-    const SDK = await import('stellar-sdk');
-    const Asset = SDK.Asset;
-    const Server = SDK.Horizon.Server;
 
     const body = await request.json();
-    const { sourceCode, sourceIssuer, destCode, destIssuer, sendAmount } = body;
+    let { sourceCode, sourceIssuer, destCode, destIssuer, sendAmount } = body;
 
     // Validate inputs
     if (!sourceCode || !destCode || !sendAmount) {
@@ -33,12 +32,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Ensure sendAmount is formatted as string with exactly 7 decimal places (Stellar requirement)
+    const formattedSendAmount = parseFloat(sendAmount).toFixed(7);
+
     console.log('[v0-api] Path finding request:', {
       sourceCode,
       sourceIssuer,
       destCode,
       destIssuer,
-      sendAmount,
+      sendAmount: formattedSendAmount,
     });
 
     const server = new Server(HORIZON_URL);
@@ -71,11 +73,11 @@ export async function POST(request: NextRequest) {
     console.log('[v0-api] Calling server.strictSendPaths():', {
       source: sourceAsset.code + (sourceAsset.issuer ? `:${sourceAsset.issuer}` : ''),
       destinations: destinationAssets.map(a => a.code + (a.issuer ? `:${a.issuer}` : '')),
-      amount: sendAmount,
+      amount: formattedSendAmount,
     });
 
     // Query using strictSendPaths: we specify the source amount, Horizon finds destination amount
-    let pathsResponse = await server.strictSendPaths(sourceAsset, sendAmount, destinationAssets).call();
+    let pathsResponse = await server.strictSendPaths(sourceAsset, formattedSendAmount, destinationAssets).call();
     let paths = pathsResponse.records || [];
 
     console.log(`[v0-api] strictSendPaths returned ${paths.length} path(s)`);
@@ -84,8 +86,8 @@ export async function POST(request: NextRequest) {
     if (paths.length === 0) {
       console.warn('[v0-api] strictSendPaths returned no results. Trying strictReceivePaths fallback...');
       
-      // For strict receive, estimate destination amount using send amount
-      const estimatedDestAmount = sendAmount;
+      // For strict receive, estimate destination amount using send amount (formatted)
+      const estimatedDestAmount = formattedSendAmount;
 
       console.log('[v0-api] Calling server.strictReceivePaths() with estimated destination:', estimatedDestAmount);
 
@@ -147,15 +149,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Ensure destination amount is formatted with exactly 7 decimal places
+    const formattedDestAmount = parseFloat(bestPath.destination_amount).toFixed(7);
+
     // Calculate price impact
-    const actualRate = parseFloat(bestPath.destination_amount) / parseFloat(sendAmount);
+    const actualRate = parseFloat(formattedDestAmount) / parseFloat(formattedSendAmount);
     const priceImpact = Math.abs(((actualRate - 1) / 1) * 100);
 
     console.log('[v0-api] Swap path details:', {
       source: sourceCode + (sourceIssuer ? `:${sourceIssuer}` : ''),
       destination: destCode + (destIssuer ? `:${destIssuer}` : ''),
-      sendAmount,
-      destinationAmount: bestPath.destination_amount,
+      sendAmount: formattedSendAmount,
+      destinationAmount: formattedDestAmount,
       exchangeRate: actualRate.toFixed(7),
       priceImpact: priceImpact.toFixed(2),
       intermediateHops: pathSequence.length,
@@ -163,7 +168,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       path: pathSequence,
-      destinationAmount: bestPath.destination_amount,
+      destinationAmount: formattedDestAmount,
       priceImpact: parseFloat(priceImpact.toFixed(2)),
     });
   } catch (error: any) {

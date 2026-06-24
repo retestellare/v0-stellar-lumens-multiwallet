@@ -1049,13 +1049,17 @@ export const executeSwap = async (
   slippageTolerance: number = 1
 ): Promise<{ success: boolean; hash?: string; error?: string }> => {
   try {
+    // Ensure all amounts are formatted with exactly 7 decimal places (Stellar requirement)
+    const formattedSendMax = parseFloat(sendMax).toFixed(7);
+    const formattedDestAmount = parseFloat(destAmount).toFixed(7);
+
     console.log('[v0] Starting swap execution with:', {
       sendCode,
       sendIssuer,
-      sendMax,
+      sendMax: formattedSendMax,
       destCode,
       destIssuer,
-      destAmount,
+      destAmount: formattedDestAmount,
       slippageTolerance,
       pathLength: path.length,
     });
@@ -1109,21 +1113,21 @@ export const executeSwap = async (
       });
 
     // Calculate minimum destination amount with slippage tolerance
-    // 1% slippage margin applied
+    // Apply slippage tolerance percentage and format to 7 decimals
     const slippageMultiplier = 1 - (slippageTolerance / 100);
-    const minDestAmount = (parseFloat(destAmount) * slippageMultiplier).toFixed(7);
+    const minDestAmount = (parseFloat(formattedDestAmount) * slippageMultiplier).toFixed(7);
 
     console.log('[v0] Swap parameters:', {
       sendAsset: `${sendAsset.code}${sendAsset.issuer ? `:${sendAsset.issuer}` : ''}`,
-      sendMax: sendMax,
+      sendMax: formattedSendMax,
       destAsset: `${destAsset.code}${destAsset.issuer ? `:${destAsset.issuer}` : ''}`,
-      expectedDestAmount: destAmount,
+      expectedDestAmount: formattedDestAmount,
       minDestAmount: minDestAmount,
       slippagePercentage: slippageTolerance,
       intermediatePathLength: pathAssets.length,
     });
 
-    // Build pathPaymentStrictSend operation
+    // Build pathPaymentStrictSend operation with properly formatted amounts
     const transaction = new TransactionBuilder(account, {
       fee: BASE_FEE,
       networkPassphrase: NETWORK_PASSPHRASE,
@@ -1131,7 +1135,7 @@ export const executeSwap = async (
       .addOperation(
         Operation.pathPaymentStrictSend({
           sendAsset: sendAsset,
-          sendMax: sendMax,
+          sendMax: formattedSendMax,
           destination: sourcePublicKey,
           destAsset: destAsset,
           destAmount: minDestAmount,
