@@ -1011,6 +1011,14 @@ export const executeSwap = async (
     });
 
     // Build pathPaymentStrictSend transaction
+    // Filter out the send and receive assets from the path to get intermediate assets only
+    const intermediatePath = pathAssets.filter(asset => {
+      const assetStr = asset.code === 'native' ? 'XLM' : `${asset.code}:${asset.issuer}`;
+      const sendStr = sendAsset.code === 'native' ? 'XLM' : `${sendAsset.code}:${sendAsset.issuer}`;
+      const destStr = destAsset.code === 'native' ? 'XLM' : `${destAsset.code}:${destAsset.issuer}`;
+      return assetStr !== sendStr && assetStr !== destStr;
+    });
+
     const transaction = new TransactionBuilder(account, {
       fee: BASE_FEE,
       networkPassphrase: NETWORK_PASSPHRASE,
@@ -1022,7 +1030,7 @@ export const executeSwap = async (
           destination: sourcePublicKey,
           destAsset,
           destAmount: minDestAmount,
-          path: pathAssets,
+          path: intermediatePath,
         })
       )
       .setTimeout(180)
