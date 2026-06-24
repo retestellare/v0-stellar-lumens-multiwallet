@@ -33,6 +33,7 @@ export function AppMenu({ isOpen, onClose, onOpenSettings }: AppMenuProps) {
   const menuItems = [
     { icon: Home, label: 'Home', href: '/' },
     { icon: Search, label: 'Search Tokens', href: '/token-search' },
+    { icon: ArrowRightLeft, label: 'Swap', href: '/swap' },
     { icon: ArrowRightLeft, label: 'Exchange', href: '/exchange' },
     { icon: Droplets, label: 'Pools', href: '/pools' },
     { icon: TrendingUp, label: 'Portfolio', href: '/portfolio' },
