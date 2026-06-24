@@ -50,6 +50,7 @@ export function SwapPanel() {
   const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
 
   const debounceTimer = useRef<NodeJS.Timeout>();
+  const sendInputRef = useRef<HTMLInputElement>(null);
 
   // Load wallet tokens when active wallet changes
   useEffect(() => {
@@ -339,6 +340,9 @@ export function SwapPanel() {
                         setSendAmount('');
                         setBestPath(null);
                         setReceiveAmount('');
+                        setError(null);
+                        // Focus input after selection
+                        setTimeout(() => sendInputRef.current?.focus(), 0);
                       }}
                       className="w-full text-left px-4 py-2 hover:bg-primary/20 border-b border-border/20 last:border-b-0 transition-colors"
                     >
@@ -354,10 +358,15 @@ export function SwapPanel() {
 
             {/* Amount Input */}
             <Input
+              ref={sendInputRef}
               type="number"
               placeholder="0.00"
               value={sendAmount}
               onChange={handleSendAmountChange}
+              onFocus={() => {
+                setShowSendDropdown(false);
+                setShowReceiveDropdown(false);
+              }}
               className="w-24"
             />
           </div>
@@ -405,6 +414,13 @@ export function SwapPanel() {
                         setShowReceiveDropdown(false);
                         setBestPath(null);
                         setReceiveAmount('');
+                        setError(null);
+                        // Trigger path finding if we have amounts
+                        if (sendAmount) {
+                          setTimeout(() => debouncedCalculate(sendAmount), 100);
+                        }
+                        // Focus input after selection
+                        setTimeout(() => sendInputRef.current?.focus(), 0);
                       }}
                       className="w-full text-left px-4 py-2 hover:bg-primary/20 border-b border-border/20 last:border-b-0 transition-colors"
                     >
@@ -482,14 +498,11 @@ export function SwapPanel() {
       {/* Confirm Swap Button */}
       <Button
         onClick={() => setShowPasswordPrompt(!showPasswordPrompt)}
-        disabled={!sendAmount || !bestPath || !receiveToken || loading}
+        disabled={!sendAmount || !bestPath || !receiveToken || showPasswordPrompt}
         className="w-full py-3 text-base font-semibold"
       >
-        {loading ? (
-          <div className="flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Processing...
-          </div>
+        {showPasswordPrompt ? (
+          'Enter Password Below'
         ) : (
           'Confirm Swap on Mainnet'
         )}
@@ -507,12 +520,14 @@ export function SwapPanel() {
             type="password"
             placeholder="Wallet password"
             value={walletPassword}
+            disabled={loading}
+            autoFocus
             onChange={(e) => {
               setWalletPassword(e.target.value);
               setError(null);
             }}
             onKeyPress={(e) => {
-              if (e.key === 'Enter') {
+              if (e.key === 'Enter' && !loading && walletPassword) {
                 handleExecuteSwap();
               }
             }}
@@ -524,7 +539,14 @@ export function SwapPanel() {
               disabled={!walletPassword || loading}
               className="flex-1 bg-primary hover:bg-primary/90"
             >
-              {loading ? 'Executing...' : 'Execute Swap'}
+              {loading ? (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Executing...
+                </div>
+              ) : (
+                'Execute Swap'
+              )}
             </Button>
             <Button
               onClick={() => {
@@ -533,6 +555,7 @@ export function SwapPanel() {
               }}
               variant="outline"
               className="flex-1"
+              disabled={loading}
             >
               Cancel
             </Button>
