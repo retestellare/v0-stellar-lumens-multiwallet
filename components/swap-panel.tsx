@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { executeSwap, decryptSecret } from '@/lib/stellar-utils';
 import { useWallet } from '@/lib/wallet-context';
+import { findLobstrSwapPath, calculateLobstrSlippageAmount } from '@/lib/lobstr-swap';
 
 interface Token {
   code: string;
@@ -101,7 +102,7 @@ export function SwapPanel() {
     }
   }, [activeWallet]);
 
-  // Real path calculation using Stellar SDK's PathPaymentStrictSend
+  // LOBSTR-style real-time path finding using direct Horizon fetch
   const calculateBestPath = useCallback(async (amount: string) => {
     if (!amount || parseFloat(amount) <= 0 || !sendToken || !receiveToken) {
       setBestPath(null);
@@ -121,45 +122,42 @@ export function SwapPanel() {
     setError(null);
 
     try {
-      console.log('[v0] Finding best swap path:', {
-        from: `${amount} ${sendToken.code}`,
-        to: receiveToken.code,
-      });
-
-      // Format amount to 7 decimal places (Stellar requirement)
+      // Format amount to exactly 7 decimal places (Stellar requirement)
       const formattedAmount = parseFloat(amount).toFixed(7);
 
-      // Call server-side Stellar SDK path finding via API
-      const response = await fetch('/api/stellar/swap-path', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sourceCode: sendToken.code,
-          sourceIssuer: sendToken.issuer,
-          destCode: receiveToken.code,
-          destIssuer: receiveToken.issuer,
-          sendAmount: formattedAmount,
-        }),
+      console.log('[v0] Finding LOBSTR-style swap path:', {
+        from: `${formattedAmount} ${sendToken.code}${sendToken.issuer ? `:${sendToken.issuer}` : ''}`,
+        to: `${receiveToken.code}${receiveToken.issuer ? `:${receiveToken.issuer}` : ''}`,
       });
 
-      if (response.ok) {
-        const result = await response.json();
-        console.log('[v0] Best path found:', result);
-        
+      // Direct Horizon fetch - no SDK constructors, LOBSTR approach
+      const result = await findLobstrSwapPath(
+        sendToken.code,
+        sendToken.issuer,
+        receiveToken.code,
+        receiveToken.issuer,
+        formattedAmount
+      );
+
+      if (result && result.destinationAmount) {
+        console.log('[v0] Swap quote received:', {
+          destinationAmount: result.destinationAmount,
+          priceImpact: result.priceImpact,
+        });
+
         setBestPath(result);
-        setReceiveAmount(result.destinationAmount);
+        // Display destination amount with proper formatting
+        setReceiveAmount(parseFloat(result.destinationAmount).toFixed(7));
         setPriceImpactWarning(result.priceImpact > 1.5);
         setError(null);
       } else {
-        const errorData = await response.json();
-        console.error('[v0] Path finding error:', errorData.error);
-        setError(errorData.error || 'No swap path found on Mainnet. Check if both tokens are available.');
+        setError('No liquidity available. Try a different pair or amount.');
         setBestPath(null);
         setReceiveAmount('');
       }
     } catch (err: any) {
       console.error('[v0] Path calculation error:', err);
-      setError(err.message || 'Failed to calculate best path');
+      setError(err.message || 'Failed to find swap path on Horizon');
       setBestPath(null);
       setReceiveAmount('');
     } finally {
@@ -228,19 +226,25 @@ export function SwapPanel() {
         return;
       }
 
-      // Validate amounts are properly formatted with 7 decimals
+      // Format amounts with exactly 7 decimal places (Stellar requirement)
       const formattedSendAmount = parseFloat(sendAmount).toFixed(7);
-      const formattedReceiveAmount = parseFloat(receiveAmount).toFixed(7);
+      
+      // LOBSTR-style slippage protection: multiply by 0.99 for 1% buffer (or user selection)
+      const slippageProtectedAmount = calculateLobstrSlippageAmount(
+        receiveAmount,
+        selectedSlippage
+      );
 
-      console.log('[v0] Executing swap on Mainnet Stellar:', {
+      console.log('[v0] Executing LOBSTR-style swap on Mainnet:', {
         wallet: activeWallet.name,
         from: `${formattedSendAmount} ${sendToken.code}${sendToken.issuer ? `:${sendToken.issuer}` : ''}`,
-        to: `${formattedReceiveAmount} ${receiveToken.code}${receiveToken.issuer ? `:${receiveToken.issuer}` : ''}`,
-        path: bestPath.path,
+        to: `${receiveAmount} ${receiveToken.code}${receiveToken.issuer ? `:${receiveToken.issuer}` : ''}`,
+        slippageProtected: slippageProtectedAmount,
         slippageTolerance: `${selectedSlippage}%`,
+        path: bestPath.path,
       });
 
-      // Execute the swap on Mainnet with proper formatting
+      // Execute the swap on Mainnet with LOBSTR slippage protection
       const result = await executeSwap(
         decryptedSecret,
         sendToken.code,
@@ -248,7 +252,7 @@ export function SwapPanel() {
         formattedSendAmount,
         receiveToken.code,
         receiveToken.issuer,
-        formattedReceiveAmount,
+        slippageProtectedAmount,
         bestPath.path,
         selectedSlippage
       );
