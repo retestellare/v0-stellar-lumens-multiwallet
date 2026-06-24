@@ -867,12 +867,14 @@ export const getAccountTrades = async (
 };
 
 /**
- * Find the best swap path using Stellar's PathPaymentStrictSend
- * This queries both DEX order books and liquidity pools for optimal routing
- * @param sourceAsset - Asset being sent
- * @param destAsset - Asset being received
- * @param sendAmount - Amount of source asset to send
- * @returns Best path with destination amount and route
+ * Find the best swap path using Stellar's strictSendPaths API with fallback to strictReceivePaths
+ * Uses proper Stellar SDK Asset objects and implements robust path finding
+ * @param sourceCode - Code of asset being sent
+ * @param sourceIssuer - Issuer of asset being sent (undefined for XLM)
+ * @param destCode - Code of asset being received
+ * @param destIssuer - Issuer of asset being received (undefined for XLM)
+ * @param sendAmount - Amount of source asset to send (string)
+ * @returns Best path with destination amount and route, or null if no paths found
  */
 export const findBestSwapPath = async (
   sourceCode: string,
@@ -886,71 +888,107 @@ export const findBestSwapPath = async (
   priceImpact: number;
 } | null> => {
   try {
-    // Build source and destination assets for Horizon API
-    const sourceType = sourceCode === 'XLM' ? 'native' : (sourceCode.length <= 4 ? 'credit_alphanum4' : 'credit_alphanum12');
-    const destType = destCode === 'XLM' ? 'native' : (destCode.length <= 4 ? 'credit_alphanum4' : 'credit_alphanum12');
+    const server = new Server(HORIZON_URL);
 
-    // Build query params for /paths endpoint (PathPaymentStrictSend equivalent)
-    const params = new URLSearchParams();
-    
-    // Source asset parameters
-    params.append('source_asset_type', sourceType);
-    if (sourceType !== 'native') {
-      params.append('source_asset_code', sourceCode);
-      if (sourceIssuer) params.append('source_asset_issuer', sourceIssuer);
-    }
-    
-    // Destination asset parameters
-    params.append('destination_asset_type', destType);
-    if (destType !== 'native') {
-      params.append('destination_asset_code', destCode);
-      if (destIssuer) params.append('destination_asset_issuer', destIssuer);
-    }
-    
-    // Amount to send (strict send means we specify source amount, get destination amount)
-    params.append('destination_amount', sendAmount);
+    // Create proper SDK Asset instances for source
+    const sourceAsset = sourceCode === 'XLM' 
+      ? Asset.native() 
+      : new Asset(sourceCode, sourceIssuer!);
 
-    const url = `${HORIZON_URL}/paths/strict-send?${params}`;
-    console.log('[v0] Fetching best swap path:', url);
-    
-    const response = await fetch(url);
-    if (!response.ok) {
-      console.error('[v0] Path finding failed:', response.status);
-      return null;
-    }
+    // Create proper SDK Asset instances for destination
+    const destAsset = destCode === 'XLM' 
+      ? Asset.native() 
+      : new Asset(destCode, destIssuer!);
 
-    const data = await response.json();
-    const paths = data._embedded?.records || [];
-    
-    if (paths.length === 0) {
-      console.warn('[v0] No swap paths found');
-      return null;
-    }
-
-    // Get the best path (first one returned by Horizon is optimal)
-    const bestPath = paths[0];
-    
-    console.log('[v0] Raw Horizon path response:', {
-      destination_amount: bestPath.destination_amount,
-      path: bestPath.path,
+    console.log('[v0] Path Finding - Source Asset:', {
+      code: sourceAsset.code,
+      issuer: sourceAsset.issuer,
+      isNative: sourceAsset.isNative(),
+      serialized: JSON.stringify(sourceAsset),
     });
-    
-    // Extract path sequence with proper Asset creation for each hop
+
+    console.log('[v0] Path Finding - Destination Asset:', {
+      code: destAsset.code,
+      issuer: destAsset.issuer,
+      isNative: destAsset.isNative(),
+      serialized: JSON.stringify(destAsset),
+    });
+
+    // Destination assets MUST be passed as an array
+    const destinationAssets = [destAsset];
+
+    console.log('[v0] Calling server.strictSendPaths():', {
+      sourceAsset: sourceAsset.code + (sourceAsset.issuer ? `:${sourceAsset.issuer}` : ''),
+      destinationAssets: destinationAssets.map(a => a.code + (a.issuer ? `:${a.issuer}` : '')),
+      sendAmount: sendAmount,
+    });
+
+    // Query using strictSendPaths: we specify the source amount, Horizon finds the destination amount
+    let pathsResponse = await server.strictSendPaths(sourceAsset, sendAmount, destinationAssets).call();
+    let paths = pathsResponse.records || [];
+
+    console.log('[v0] strictSendPaths returned', paths.length, 'path(s)');
+
+    // Fallback: if strictSendPaths returns no paths, try strictReceivePaths
+    if (paths.length === 0) {
+      console.warn('[v0] strictSendPaths returned no results. Trying strictReceivePaths fallback...');
+      
+      // For strict receive, we need to estimate a destination amount
+      // Use the send amount as a starting point (1:1 ratio assumption)
+      const estimatedDestAmount = sendAmount;
+
+      console.log('[v0] Calling server.strictReceivePaths() with estimated destination:', estimatedDestAmount);
+
+      try {
+        pathsResponse = await server.strictReceivePaths(destinationAssets, estimatedDestAmount, [sourceAsset]).call();
+        paths = pathsResponse.records || [];
+        console.log('[v0] strictReceivePaths returned', paths.length, 'path(s)');
+      } catch (receivePathError) {
+        console.error('[v0] strictReceivePaths also failed:', receivePathError);
+      }
+    }
+
+    // If still no paths found, log debugging info and return null
+    if (paths.length === 0) {
+      console.error('[v0] No swap paths found from either strictSendPaths or strictReceivePaths');
+      console.error('[v0] Debugging Swap Assets:', 
+        'Source:', JSON.stringify(sourceAsset), 
+        'Destination:', JSON.stringify(destAsset)
+      );
+      return null;
+    }
+
+    // Get the best path (first one is optimal according to Stellar)
+    const bestPath = paths[0];
+
+    console.log('[v0] Best path selected:', {
+      destination_amount: bestPath.destination_amount,
+      path_length: bestPath.path?.length || 0,
+      full_path: bestPath.path,
+    });
+
+    // Extract path sequence from Horizon response
+    // Each item in the path is an intermediate asset needed for the swap
     const pathSequence: Array<{ code: string; issuer?: string }> = [];
+    
     if (bestPath.path && Array.isArray(bestPath.path)) {
       for (const pathAsset of bestPath.path) {
-        // Handle native XLM
+        // Handle native XLM in path
         if (pathAsset.asset_type === 'native') {
           pathSequence.push({
             code: 'XLM',
             issuer: undefined,
           });
+          console.log('[v0] Path hop: XLM (native)');
         } else {
-          // Handle credit assets (alphanum4 and alphanum12)
+          // Handle credit assets in path
+          const assetCode = pathAsset.asset_code || 'UNKNOWN';
+          const assetIssuer = pathAsset.asset_issuer;
           pathSequence.push({
-            code: pathAsset.asset_code || 'UNKNOWN',
-            issuer: pathAsset.asset_issuer || undefined,
+            code: assetCode,
+            issuer: assetIssuer,
           });
+          console.log('[v0] Path hop:', assetCode, 'issuer:', assetIssuer);
         }
       }
     }
@@ -961,13 +999,13 @@ export const findBestSwapPath = async (
     const priceImpact = Math.abs(((actualRate - directRate) / directRate) * 100);
 
     console.log('[v0] Best swap path found:', {
-      sourceToken: `${sourceCode}${sourceIssuer ? `:${sourceIssuer}` : ''}`,
-      destToken: `${destCode}${destIssuer ? `:${destIssuer}` : ''}`,
+      sourceToken: sourceCode + (sourceIssuer ? `:${sourceIssuer}` : ''),
+      destToken: destCode + (destIssuer ? `:${destIssuer}` : ''),
       sendAmount: sendAmount,
       destination_amount: bestPath.destination_amount,
-      rate: actualRate.toFixed(7),
-      priceImpact: priceImpact.toFixed(2) + '%',
-      pathLength: pathSequence.length,
+      exchange_rate: actualRate.toFixed(7),
+      price_impact: priceImpact.toFixed(2) + '%',
+      intermediate_hops: pathSequence.length,
       path: pathSequence,
     });
 
@@ -976,8 +1014,12 @@ export const findBestSwapPath = async (
       destinationAmount: bestPath.destination_amount,
       priceImpact: parseFloat(priceImpact.toFixed(2)),
     };
-  } catch (error) {
-    console.error('[v0] Error finding swap path:', error);
+  } catch (error: any) {
+    console.error('[v0] Error finding swap path:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+    });
     return null;
   }
 };

@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { ChevronDown, ArrowRightLeft, AlertCircle, Loader2, Lock, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { findBestSwapPath, executeSwap, decryptSecret } from '@/lib/stellar-utils';
+import { executeSwap, decryptSecret } from '@/lib/stellar-utils';
 import { useWallet } from '@/lib/wallet-context';
 
 interface Token {
@@ -126,16 +126,21 @@ export function SwapPanel() {
         to: receiveToken.code,
       });
 
-      // Call real Stellar SDK path finding for Mainnet
-      const result = await findBestSwapPath(
-        sendToken.code,
-        sendToken.issuer,
-        receiveToken.code,
-        receiveToken.issuer,
-        amount
-      );
+      // Call server-side Stellar SDK path finding via API
+      const response = await fetch('/api/stellar/swap-path', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceCode: sendToken.code,
+          sourceIssuer: sendToken.issuer,
+          destCode: receiveToken.code,
+          destIssuer: receiveToken.issuer,
+          sendAmount: amount,
+        }),
+      });
 
-      if (result) {
+      if (response.ok) {
+        const result = await response.json();
         console.log('[v0] Best path found:', result);
         
         setBestPath(result);
@@ -143,7 +148,9 @@ export function SwapPanel() {
         setPriceImpactWarning(result.priceImpact > 1.5);
         setError(null);
       } else {
-        setError('No swap path found on Mainnet. Check if both tokens are available.');
+        const errorData = await response.json();
+        console.error('[v0] Path finding error:', errorData.error);
+        setError(errorData.error || 'No swap path found on Mainnet. Check if both tokens are available.');
         setBestPath(null);
         setReceiveAmount('');
       }
