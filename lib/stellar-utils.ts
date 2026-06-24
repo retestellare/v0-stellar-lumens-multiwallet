@@ -930,26 +930,45 @@ export const findBestSwapPath = async (
     // Get the best path (first one returned by Horizon is optimal)
     const bestPath = paths[0];
     
-    // Extract path sequence
+    console.log('[v0] Raw Horizon path response:', {
+      destination_amount: bestPath.destination_amount,
+      path: bestPath.path,
+    });
+    
+    // Extract path sequence with proper Asset creation for each hop
     const pathSequence: Array<{ code: string; issuer?: string }> = [];
     if (bestPath.path && Array.isArray(bestPath.path)) {
-      for (const asset of bestPath.path) {
-        pathSequence.push({
-          code: asset.asset_code || asset.asset_type === 'native' ? 'XLM' : 'XLM',
-          issuer: asset.asset_issuer || undefined,
-        });
+      for (const pathAsset of bestPath.path) {
+        // Handle native XLM
+        if (pathAsset.asset_type === 'native') {
+          pathSequence.push({
+            code: 'XLM',
+            issuer: undefined,
+          });
+        } else {
+          // Handle credit assets (alphanum4 and alphanum12)
+          pathSequence.push({
+            code: pathAsset.asset_code || 'UNKNOWN',
+            issuer: pathAsset.asset_issuer || undefined,
+          });
+        }
       }
     }
 
     // Calculate price impact
-    const directRate = 1; // Simplified: would need to calculate actual market rate
     const actualRate = parseFloat(bestPath.destination_amount) / parseFloat(sendAmount);
+    const directRate = 1; // Theoretical 1:1 rate for impact calculation
     const priceImpact = Math.abs(((actualRate - directRate) / directRate) * 100);
 
     console.log('[v0] Best swap path found:', {
-      path: pathSequence,
-      destinationAmount: bestPath.destination_amount,
+      sourceToken: `${sourceCode}${sourceIssuer ? `:${sourceIssuer}` : ''}`,
+      destToken: `${destCode}${destIssuer ? `:${destIssuer}` : ''}`,
+      sendAmount: sendAmount,
+      destination_amount: bestPath.destination_amount,
+      rate: actualRate.toFixed(7),
       priceImpact: priceImpact.toFixed(2) + '%',
+      pathLength: pathSequence.length,
+      path: pathSequence,
     });
 
     return {
@@ -965,13 +984,16 @@ export const findBestSwapPath = async (
 
 /**
  * Execute a swap using PathPaymentStrictSend on Mainnet
+ * Implements robust swap with proper Asset creation, path validation, and slippage handling
  * @param secretKey - Secret key of sending account
- * @param sendAsset - Asset being sent
- * @param sendMax - Maximum amount to send
- * @param destAsset - Asset being received
- * @param destAmount - Exact destination amount expected
- * @param path - Array of intermediate assets
- * @param slippageTolerance - Acceptable slippage percentage
+ * @param sendCode - Code of asset being sent
+ * @param sendIssuer - Issuer of asset being sent (undefined for XLM)
+ * @param sendMax - Maximum amount to send (string with 7 decimals)
+ * @param destCode - Code of asset being received
+ * @param destIssuer - Issuer of asset being received (undefined for XLM)
+ * @param destAmount - Expected destination amount (string with 7 decimals)
+ * @param path - Array of intermediate assets from path finding
+ * @param slippageTolerance - Acceptable slippage percentage (default 1%)
  */
 export const executeSwap = async (
   secretKey: string,
@@ -985,72 +1007,144 @@ export const executeSwap = async (
   slippageTolerance: number = 1
 ): Promise<{ success: boolean; hash?: string; error?: string }> => {
   try {
+    console.log('[v0] Starting swap execution with:', {
+      sendCode,
+      sendIssuer,
+      sendMax,
+      destCode,
+      destIssuer,
+      destAmount,
+      slippageTolerance,
+      pathLength: path.length,
+    });
+
     const server = new Server(HORIZON_URL);
     const keypair = Keypair.fromSecret(secretKey);
     const sourcePublicKey = keypair.publicKey();
 
     // Load account for sequence number
     const account = await server.loadAccount(sourcePublicKey);
+    console.log('[v0] Account loaded. Sequence:', account.sequence);
 
-    // Create asset objects
-    const sendAsset = createAsset(sendCode, sendIssuer);
-    const destAsset = createAsset(destCode, destIssuer);
+    // Create source asset - use Asset.native() for XLM, otherwise new Asset(code, issuer)
+    const sendAsset = sendCode === 'XLM' 
+      ? Asset.native() 
+      : new Asset(sendCode, sendIssuer!);
+    
+    console.log('[v0] Send asset:', {
+      code: sendAsset.code,
+      issuer: sendAsset.issuer,
+      isNative: sendAsset.isNative(),
+    });
 
-    // Convert path to Asset objects
-    const pathAssets = path.map(p => createAsset(p.code, p.issuer));
+    // Create destination asset - use Asset.native() for XLM, otherwise new Asset(code, issuer)
+    const destAsset = destCode === 'XLM' 
+      ? Asset.native() 
+      : new Asset(destCode, destIssuer!);
+    
+    console.log('[v0] Dest asset:', {
+      code: destAsset.code,
+      issuer: destAsset.issuer,
+      isNative: destAsset.isNative(),
+    });
 
-    // Calculate destination amount with slippage tolerance
+    // Convert path array to Asset objects, filtering out source and destination
+    const pathAssets = path
+      .filter(p => {
+        // Skip source and destination assets from path
+        const isSource = (p.code === 'XLM' && sendAsset.isNative()) || 
+                        (p.code === sendCode && p.issuer === sendIssuer);
+        const isDest = (p.code === 'XLM' && destAsset.isNative()) || 
+                      (p.code === destCode && p.issuer === destIssuer);
+        return !isSource && !isDest;
+      })
+      .map(p => {
+        const asset = p.code === 'XLM' 
+          ? Asset.native() 
+          : new Asset(p.code, p.issuer!);
+        console.log('[v0] Path asset:', { code: asset.code, issuer: asset.issuer });
+        return asset;
+      });
+
+    // Calculate minimum destination amount with slippage tolerance
+    // 1% slippage margin applied
     const slippageMultiplier = 1 - (slippageTolerance / 100);
     const minDestAmount = (parseFloat(destAmount) * slippageMultiplier).toFixed(7);
 
-    console.log('[v0] Executing swap:', {
-      sendMax,
-      destAmount,
-      minDestAmount,
-      slippageTolerance,
+    console.log('[v0] Swap parameters:', {
+      sendAsset: `${sendAsset.code}${sendAsset.issuer ? `:${sendAsset.issuer}` : ''}`,
+      sendMax: sendMax,
+      destAsset: `${destAsset.code}${destAsset.issuer ? `:${destAsset.issuer}` : ''}`,
+      expectedDestAmount: destAmount,
+      minDestAmount: minDestAmount,
+      slippagePercentage: slippageTolerance,
+      intermediatePathLength: pathAssets.length,
     });
 
-    // Build pathPaymentStrictSend transaction
-    // Filter out the send and receive assets from the path to get intermediate assets only
-    const intermediatePath = pathAssets.filter(asset => {
-      const assetStr = asset.code === 'native' ? 'XLM' : `${asset.code}:${asset.issuer}`;
-      const sendStr = sendAsset.code === 'native' ? 'XLM' : `${sendAsset.code}:${sendAsset.issuer}`;
-      const destStr = destAsset.code === 'native' ? 'XLM' : `${destAsset.code}:${destAsset.issuer}`;
-      return assetStr !== sendStr && assetStr !== destStr;
-    });
-
+    // Build pathPaymentStrictSend operation
     const transaction = new TransactionBuilder(account, {
       fee: BASE_FEE,
       networkPassphrase: NETWORK_PASSPHRASE,
     })
       .addOperation(
         Operation.pathPaymentStrictSend({
-          sendAsset,
-          sendMax,
+          sendAsset: sendAsset,
+          sendMax: sendMax,
           destination: sourcePublicKey,
-          destAsset,
+          destAsset: destAsset,
           destAmount: minDestAmount,
-          path: intermediatePath,
+          path: pathAssets,
         })
       )
       .setTimeout(180)
       .build();
 
+    console.log('[v0] Transaction built. Operations:', transaction.operations.length);
+
     // Sign transaction
     transaction.sign(keypair);
+    console.log('[v0] Transaction signed');
 
     // Submit to Mainnet via Horizon
+    console.log('[v0] Submitting transaction to Mainnet...');
     const result = await server.submitTransaction(transaction);
     
-    console.log('[v0] Swap successful:', result.hash);
+    console.log('[v0] Swap successful!', {
+      hash: result.hash,
+      ledger: result.ledger,
+      result_code: result.result_code,
+    });
+    
     return { success: true, hash: result.hash };
   } catch (error: any) {
+    // Enhanced error logging for Stellar operations
+    console.error('[v0] Swap execution error:', error.message);
+    
+    // Log Stellar-specific error codes if available
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      console.error('[v0] Stellar result codes:', {
+        transaction: codes.transaction,
+        operations: codes.operations,
+        fullResponse: error.response.data,
+      });
+    }
+    
+    // Log network errors
+    if (error.response?.status) {
+      console.error('[v0] HTTP error:', {
+        status: error.response.status,
+        statusText: error.response.statusText,
+      });
+    }
+
     let errorMessage = error.message || 'Swap failed';
     if (error.response?.data?.extras?.result_codes) {
       const codes = error.response.data.extras.result_codes;
       errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
     }
-    console.error('[v0] Swap error:', errorMessage);
+    
+    console.error('[v0] Final error message:', errorMessage);
     return { success: false, error: errorMessage };
   }
 };

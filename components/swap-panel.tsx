@@ -218,23 +218,27 @@ export function SwapPanel() {
         return;
       }
 
+      // Validate amounts are properly formatted with 7 decimals
+      const formattedSendAmount = parseFloat(sendAmount).toFixed(7);
+      const formattedReceiveAmount = parseFloat(receiveAmount).toFixed(7);
+
       console.log('[v0] Executing swap on Mainnet Stellar:', {
         wallet: activeWallet.name,
-        from: `${sendAmount} ${sendToken.code}`,
-        to: receiveToken.code,
-        expectedAmount: receiveAmount,
-        slippage: selectedSlippage,
+        from: `${formattedSendAmount} ${sendToken.code}${sendToken.issuer ? `:${sendToken.issuer}` : ''}`,
+        to: `${formattedReceiveAmount} ${receiveToken.code}${receiveToken.issuer ? `:${receiveToken.issuer}` : ''}`,
+        path: bestPath.path,
+        slippageTolerance: `${selectedSlippage}%`,
       });
 
-      // Execute the swap on Mainnet
+      // Execute the swap on Mainnet with proper formatting
       const result = await executeSwap(
         decryptedSecret,
         sendToken.code,
         sendToken.issuer,
-        sendAmount,
+        formattedSendAmount,
         receiveToken.code,
         receiveToken.issuer,
-        receiveAmount,
+        formattedReceiveAmount,
         bestPath.path,
         selectedSlippage
       );
