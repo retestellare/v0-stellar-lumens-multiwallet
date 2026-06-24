@@ -1,4 +1,4 @@
-import { Keypair, Networks, TransactionBuilder, BASE_FEE, Asset, Operation, Account, Memo, Horizon } from '@stellar/stellar-sdk';
+import { Keypair, Networks, TransactionBuilder, BASE_FEE, Asset, Operation, Account, Memo, Horizon, Server } from '@stellar/stellar-sdk';
 import nacl from 'tweetnacl';
 
 export const HORIZON_URL = 'https://horizon.stellar.org';
@@ -856,15 +856,194 @@ export const getAccountTrades = async (
   limit: number = 50
 ): Promise<any[]> => {
   try {
-    const url = `${HORIZON_URL}/accounts/${publicKey}/trades?limit=${limit}&order=desc`;
+    const url = `${HORIZON_URL}/accounts/${publicKey}/trades?order=desc&limit=${limit}`;
     const response = await fetch(url);
-    
     if (!response.ok) return [];
-    
     const data = await response.json();
     return data._embedded?.records || [];
   } catch {
     return [];
+  }
+};
+
+/**
+ * Find the best swap path using Stellar's PathPaymentStrictSend
+ * This queries both DEX order books and liquidity pools for optimal routing
+ * @param sourceAsset - Asset being sent
+ * @param destAsset - Asset being received
+ * @param sendAmount - Amount of source asset to send
+ * @returns Best path with destination amount and route
+ */
+export const findBestSwapPath = async (
+  sourceCode: string,
+  sourceIssuer: string | undefined,
+  destCode: string,
+  destIssuer: string | undefined,
+  sendAmount: string
+): Promise<{
+  path: Array<{ code: string; issuer?: string }>;
+  destinationAmount: string;
+  priceImpact: number;
+} | null> => {
+  try {
+    // Build source and destination assets for Horizon API
+    const sourceType = sourceCode === 'XLM' ? 'native' : (sourceCode.length <= 4 ? 'credit_alphanum4' : 'credit_alphanum12');
+    const destType = destCode === 'XLM' ? 'native' : (destCode.length <= 4 ? 'credit_alphanum4' : 'credit_alphanum12');
+
+    // Build query params for /paths endpoint (PathPaymentStrictSend equivalent)
+    const params = new URLSearchParams();
+    
+    // Source asset parameters
+    params.append('source_asset_type', sourceType);
+    if (sourceType !== 'native') {
+      params.append('source_asset_code', sourceCode);
+      if (sourceIssuer) params.append('source_asset_issuer', sourceIssuer);
+    }
+    
+    // Destination asset parameters
+    params.append('destination_asset_type', destType);
+    if (destType !== 'native') {
+      params.append('destination_asset_code', destCode);
+      if (destIssuer) params.append('destination_asset_issuer', destIssuer);
+    }
+    
+    // Amount to send (strict send means we specify source amount, get destination amount)
+    params.append('destination_amount', sendAmount);
+
+    const url = `${HORIZON_URL}/paths/strict-send?${params}`;
+    console.log('[v0] Fetching best swap path:', url);
+    
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.error('[v0] Path finding failed:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    const paths = data._embedded?.records || [];
+    
+    if (paths.length === 0) {
+      console.warn('[v0] No swap paths found');
+      return null;
+    }
+
+    // Get the best path (first one returned by Horizon is optimal)
+    const bestPath = paths[0];
+    
+    // Extract path sequence
+    const pathSequence: Array<{ code: string; issuer?: string }> = [];
+    if (bestPath.path && Array.isArray(bestPath.path)) {
+      for (const asset of bestPath.path) {
+        pathSequence.push({
+          code: asset.asset_code || asset.asset_type === 'native' ? 'XLM' : 'XLM',
+          issuer: asset.asset_issuer || undefined,
+        });
+      }
+    }
+
+    // Calculate price impact
+    const directRate = 1; // Simplified: would need to calculate actual market rate
+    const actualRate = parseFloat(bestPath.destination_amount) / parseFloat(sendAmount);
+    const priceImpact = Math.abs(((actualRate - directRate) / directRate) * 100);
+
+    console.log('[v0] Best swap path found:', {
+      path: pathSequence,
+      destinationAmount: bestPath.destination_amount,
+      priceImpact: priceImpact.toFixed(2) + '%',
+    });
+
+    return {
+      path: pathSequence,
+      destinationAmount: bestPath.destination_amount,
+      priceImpact: parseFloat(priceImpact.toFixed(2)),
+    };
+  } catch (error) {
+    console.error('[v0] Error finding swap path:', error);
+    return null;
+  }
+};
+
+/**
+ * Execute a swap using PathPaymentStrictSend on Mainnet
+ * @param secretKey - Secret key of sending account
+ * @param sendAsset - Asset being sent
+ * @param sendMax - Maximum amount to send
+ * @param destAsset - Asset being received
+ * @param destAmount - Exact destination amount expected
+ * @param path - Array of intermediate assets
+ * @param slippageTolerance - Acceptable slippage percentage
+ */
+export const executeSwap = async (
+  secretKey: string,
+  sendCode: string,
+  sendIssuer: string | undefined,
+  sendMax: string,
+  destCode: string,
+  destIssuer: string | undefined,
+  destAmount: string,
+  path: Array<{ code: string; issuer?: string }>,
+  slippageTolerance: number = 1
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    const server = new Server(HORIZON_URL);
+    const keypair = Keypair.fromSecret(secretKey);
+    const sourcePublicKey = keypair.publicKey();
+
+    // Load account for sequence number
+    const account = await server.loadAccount(sourcePublicKey);
+
+    // Create asset objects
+    const sendAsset = createAsset(sendCode, sendIssuer);
+    const destAsset = createAsset(destCode, destIssuer);
+
+    // Convert path to Asset objects
+    const pathAssets = path.map(p => createAsset(p.code, p.issuer));
+
+    // Calculate destination amount with slippage tolerance
+    const slippageMultiplier = 1 - (slippageTolerance / 100);
+    const minDestAmount = (parseFloat(destAmount) * slippageMultiplier).toFixed(7);
+
+    console.log('[v0] Executing swap:', {
+      sendMax,
+      destAmount,
+      minDestAmount,
+      slippageTolerance,
+    });
+
+    // Build pathPaymentStrictSend transaction
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.pathPaymentStrictSend({
+          sendAsset,
+          sendMax,
+          destination: sourcePublicKey,
+          destAsset,
+          destAmount: minDestAmount,
+          path: pathAssets,
+        })
+      )
+      .setTimeout(180)
+      .build();
+
+    // Sign transaction
+    transaction.sign(keypair);
+
+    // Submit to Mainnet via Horizon
+    const result = await server.submitTransaction(transaction);
+    
+    console.log('[v0] Swap successful:', result.hash);
+    return { success: true, hash: result.hash };
+  } catch (error: any) {
+    let errorMessage = error.message || 'Swap failed';
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+    console.error('[v0] Swap error:', errorMessage);
+    return { success: false, error: errorMessage };
   }
 };
 
