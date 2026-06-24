@@ -1,7 +1,7 @@
 'use client';
 
 import { Wallet } from '@/lib/wallet-context';
-import { Copy, Trash2 } from 'lucide-react';
+import { Copy, Trash2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 
@@ -74,9 +74,16 @@ export function WalletCard({ wallet, isActive, onSelect, onDelete }: WalletCardP
         </div>
 
         <div className="space-y-2 bg-background/30 p-2 rounded border border-border/50">
-          <p className="text-lg font-bold text-primary">
-            {totalBalance.toFixed(2)} XLM
-          </p>
+          {wallet.fetchError ? (
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+              <p className="text-sm font-medium text-red-500">{wallet.fetchError}</p>
+            </div>
+          ) : (
+            <p className="text-lg font-bold text-primary">
+              {totalBalance.toFixed(2)} XLM
+            </p>
+          )}
           <div className="flex items-start gap-2">
             <code className="text-xs text-muted-foreground break-all font-mono flex-1">
               {wallet.publicKey}

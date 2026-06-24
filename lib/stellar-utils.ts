@@ -143,6 +143,43 @@ export const getAccountBalances = async (publicKey: string) => {
   }
 };
 
+// Batched balance fetching for multiple wallets with rate limiting protection
+export const getMultipleWalletBalances = async (
+  publicKeys: string[],
+  batchSize: number = 5,
+  delayMs: number = 150
+): Promise<Record<string, { balances: any[]; error?: string }>> => {
+  const results: Record<string, { balances: any[]; error?: string }> = {};
+  
+  // Process wallets in batches
+  for (let i = 0; i < publicKeys.length; i += batchSize) {
+    const batch = publicKeys.slice(i, i + batchSize);
+    
+    // Fetch balances for this batch in parallel
+    const batchPromises = batch.map(async (publicKey) => {
+      try {
+        const balances = await getAccountBalances(publicKey);
+        results[publicKey] = { balances };
+      } catch (error) {
+        results[publicKey] = { 
+          balances: [], 
+          error: error instanceof Error ? error.message : 'Failed to fetch balances'
+        };
+      }
+    });
+    
+    // Wait for all promises in batch to complete
+    await Promise.all(batchPromises);
+    
+    // Add delay between batches (except after the last batch)
+    if (i + batchSize < publicKeys.length) {
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+  
+  return results;
+};
+
 // Fetch account balances, deduplicated (excludes LP shares)
 export const getAccountBalancesClean = async (publicKey: string) => {
   try {
