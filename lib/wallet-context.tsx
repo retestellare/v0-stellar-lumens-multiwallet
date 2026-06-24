@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
-import { encryptSecret, decryptSecret, generateKeyPair, getPublicKeyFromSecret, getAccountBalances, parseWalletBalances } from '@/lib/stellar-utils';
+import { encryptSecret, decryptSecret, generateKeyPair, getPublicKeyFromSecret, getAccountBalances, getMultipleWalletBalances, parseWalletBalances } from '@/lib/stellar-utils';
 
 export interface Wallet {
   id: string;
@@ -13,6 +13,7 @@ export interface Wallet {
   createdAt: Date;
   federationName?: string;
   homeDomain?: string;
+  fetchError?: string; // Error message if balance fetch failed
 }
 
 export type PasswordSessionType = 'everytime' | 'after_hour' | 'never';
@@ -53,28 +54,60 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return wallets.find(w => w.id === activeWalletId || w.publicKey === activeWalletId) || null;
   }, [wallets, activeWalletId]);
 
-  // Load wallets from localStorage on mount
+  // Load wallets from localStorage on mount and fetch balances with batching
   useEffect(() => {
-    const stored = localStorage.getItem('stellar_wallets');
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        // Clean up balances when loading from storage to remove duplicates
-        const cleanedWallets = parsed.map((wallet: any) => {
-          if (wallet.balances && Array.isArray(wallet.balances)) {
-            const { assets, poolShares } = parseWalletBalances(wallet.balances);
-            return { ...wallet, balances: assets, poolShares: poolShares || [] };
+    const loadWallets = async () => {
+      const stored = localStorage.getItem('stellar_wallets');
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          // Clean up balances when loading from storage to remove duplicates
+          const cleanedWallets = parsed.map((wallet: any) => {
+            if (wallet.balances && Array.isArray(wallet.balances)) {
+              const { assets, poolShares } = parseWalletBalances(wallet.balances);
+              return { ...wallet, balances: assets, poolShares: poolShares || [] };
+            }
+            return { ...wallet, poolShares: wallet.poolShares || [] };
+          });
+          setWallets(cleanedWallets);
+          if (cleanedWallets.length > 0) {
+            setActiveWalletId(cleanedWallets[0].id || cleanedWallets[0].publicKey);
           }
-          return { ...wallet, poolShares: wallet.poolShares || [] };
-        });
-        setWallets(cleanedWallets);
-        if (cleanedWallets.length > 0) {
-          setActiveWalletId(cleanedWallets[0].id || cleanedWallets[0].publicKey);
+
+          // Batch fetch balances for all wallets in the background
+          if (cleanedWallets.length > 0) {
+            const publicKeys = cleanedWallets.map((w: any) => w.publicKey);
+            try {
+              const batchResults = await getMultipleWalletBalances(publicKeys, 5, 150);
+              
+              // Update wallets with fetched balances
+              setWallets(prevWallets =>
+                prevWallets.map(wallet => {
+                  const result = batchResults[wallet.publicKey];
+                  if (result) {
+                    if (result.error) {
+                      // Mark wallet with error state instead of crashing
+                      return { ...wallet, fetchError: result.error };
+                    } else {
+                      const { assets, poolShares } = parseWalletBalances(result.balances);
+                      return { ...wallet, balances: assets, poolShares: poolShares || [], fetchError: undefined };
+                    }
+                  }
+                  return wallet;
+                })
+              );
+            } catch (error) {
+              console.error('[v0] Error batch fetching wallets:', error);
+              // Silently fail - wallets remain with cached balances
+            }
+          }
+        } catch (error) {
+          // Silent fail
         }
-      } catch (error) {
-        // Silent fail
       }
-    }
+    };
+
+    loadWallets();
   }, []);
 
   // Save wallets to localStorage whenever they change
@@ -240,7 +273,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const wallet = prev.find(w => w.id === walletId || w.publicKey === walletId);
       if (!wallet) return prev;
       
-      // Fetch balances asynchronously
+      // Fetch balances asynchronously with error handling
       getAccountBalances(wallet.publicKey)
         .then(rawBalances => {
           // Parse balances to separate regular assets from pool shares
@@ -248,13 +281,20 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           setWallets(current =>
             current.map(w =>
               (w.id === walletId || w.publicKey === walletId) 
-                ? { ...w, balances: assets, poolShares } 
+                ? { ...w, balances: assets, poolShares, fetchError: undefined } 
                 : w
             )
           );
         })
-        .catch(() => {
-          // Account may not exist yet - keep existing balances
+        .catch((error) => {
+          // Store error but keep existing balances instead of losing data
+          setWallets(current =>
+            current.map(w =>
+              (w.id === walletId || w.publicKey === walletId)
+                ? { ...w, fetchError: 'Network Error' }
+                : w
+            )
+          );
         });
       
       return prev;
