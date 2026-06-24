@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { ChevronDown, ArrowRightLeft, AlertCircle, Loader2, Lock } from 'lucide-react';
+import { ChevronDown, ArrowRightLeft, AlertCircle, Loader2, Lock, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { findBestSwapPath, executeSwap, decryptSecret } from '@/lib/stellar-utils';
@@ -11,10 +11,11 @@ interface Token {
   code: string;
   issuer?: string;
   balance?: string;
+  displayBalance?: string;
 }
 
 interface SwapPath {
-  path: string[];
+  path: Array<{ code: string; issuer?: string }>;
   destinationAmount: string;
   priceImpact: number;
 }
@@ -38,6 +39,7 @@ export function SwapPanel() {
   const [bestPath, setBestPath] = useState<SwapPath | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   
   // UI states
   const [showSendDropdown, setShowSendDropdown] = useState(false);
@@ -46,44 +48,57 @@ export function SwapPanel() {
   const [priceImpactWarning, setPriceImpactWarning] = useState(false);
   const [walletPassword, setWalletPassword] = useState('');
   const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
-  const [executableSwap, setExecutableSwap] = useState(false);
 
   const debounceTimer = useRef<NodeJS.Timeout>();
 
   // Load wallet tokens when active wallet changes
   useEffect(() => {
-    if (activeWallet && activeWallet.balances) {
+    if (activeWallet) {
+      console.log('[v0] Loading wallet tokens from:', activeWallet.name, activeWallet.balances);
+      
       const tokens: Token[] = [];
       
-      // Add XLM (native)
-      tokens.push({
-        code: 'XLM',
-        balance: activeWallet.balances.find((b: any) => b.asset_type === 'native')?.balance || '0',
-      });
-      
-      // Add other assets
-      for (const balance of activeWallet.balances) {
-        if (balance.asset_type !== 'native' && balance.asset_type !== 'liquidity_pool_shares') {
-          tokens.push({
-            code: balance.asset_code,
-            issuer: balance.asset_issuer,
-            balance: balance.balance,
-          });
+      if (activeWallet.balances && Array.isArray(activeWallet.balances)) {
+        // Add XLM (native)
+        const xlmBalance = activeWallet.balances.find((b: any) => 
+          b.asset_type === 'native' || b.balance_type === 'native'
+        )?.balance || '0';
+        
+        tokens.push({
+          code: 'XLM',
+          balance: xlmBalance,
+          displayBalance: parseFloat(xlmBalance).toFixed(7),
+        });
+        
+        // Add other assets (skip pool shares and native)
+        for (const balance of activeWallet.balances) {
+          const isNative = balance.asset_type === 'native' || balance.balance_type === 'native';
+          const isPoolShare = balance.asset_type === 'liquidity_pool_shares' || balance.balance_type === 'liquidity_pool_shares';
+          
+          if (!isNative && !isPoolShare && balance.asset_code) {
+            tokens.push({
+              code: balance.asset_code,
+              issuer: balance.asset_issuer,
+              balance: balance.balance,
+              displayBalance: parseFloat(balance.balance || '0').toFixed(7),
+            });
+          }
         }
       }
       
+      console.log('[v0] Loaded tokens:', tokens);
       setWalletTokens(tokens);
       
       // Auto-select first token as send token
-      if (tokens.length > 0 && !sendToken) {
+      if (tokens.length > 0) {
         setSendToken(tokens[0]);
-      }
-      // Auto-select second token as receive token if available
-      if (tokens.length > 1 && !receiveToken) {
-        setReceiveToken(tokens[1]);
+        // Auto-select second token as receive token if available
+        if (tokens.length > 1) {
+          setReceiveToken(tokens[1]);
+        }
       }
     }
-  }, [activeWallet, sendToken, receiveToken]);
+  }, [activeWallet]);
 
   // Real path calculation using Stellar SDK's PathPaymentStrictSend
   const calculateBestPath = useCallback(async (amount: string) => {
@@ -95,8 +110,9 @@ export function SwapPanel() {
     // Check if send amount exceeds wallet balance
     const balance = parseFloat(sendToken.balance || '0');
     if (parseFloat(amount) > balance) {
-      setError(`Insufficient balance. You have ${balance} ${sendToken.code}`);
+      setError(`Insufficient balance. You have ${balance.toFixed(7)} ${sendToken.code}`);
       setBestPath(null);
+      setReceiveAmount('');
       return;
     }
 
@@ -104,6 +120,11 @@ export function SwapPanel() {
     setError(null);
 
     try {
+      console.log('[v0] Finding best swap path:', {
+        from: `${amount} ${sendToken.code}`,
+        to: receiveToken.code,
+      });
+
       // Call real Stellar SDK path finding for Mainnet
       const result = await findBestSwapPath(
         sendToken.code,
@@ -114,28 +135,22 @@ export function SwapPanel() {
       );
 
       if (result) {
-        // Convert path to string format for display
-        const pathDisplay = result.path.map(p => p.code).join(' → ');
+        console.log('[v0] Best path found:', result);
         
-        setBestPath({
-          path: [pathDisplay],
-          destinationAmount: result.destinationAmount,
-          priceImpact: result.priceImpact,
-        });
-        
+        setBestPath(result);
         setReceiveAmount(result.destinationAmount);
         setPriceImpactWarning(result.priceImpact > 1.5);
-        setExecutableSwap(true);
+        setError(null);
       } else {
-        setError('No swap path found. Check if both tokens are available on Mainnet.');
+        setError('No swap path found on Mainnet. Check if both tokens are available.');
         setBestPath(null);
-        setExecutableSwap(false);
+        setReceiveAmount('');
       }
     } catch (err: any) {
       console.error('[v0] Path calculation error:', err);
       setError(err.message || 'Failed to calculate best path');
       setBestPath(null);
-      setExecutableSwap(false);
+      setReceiveAmount('');
     } finally {
       setLoading(false);
     }
@@ -149,7 +164,7 @@ export function SwapPanel() {
     
     debounceTimer.current = setTimeout(() => {
       calculateBestPath(amount);
-    }, 300); // 300ms debounce
+    }, 300);
   }, [calculateBestPath]);
 
   // Handle send amount change
@@ -162,10 +177,10 @@ export function SwapPanel() {
     } else {
       setBestPath(null);
       setReceiveAmount('');
-      setExecutableSwap(false);
     }
   };
 
+  // Swap send and receive tokens
   const handleSwapTokens = () => {
     const temp = sendToken;
     setSendToken(receiveToken);
@@ -173,21 +188,17 @@ export function SwapPanel() {
     setSendAmount('');
     setReceiveAmount('');
     setBestPath(null);
-    setExecutableSwap(false);
   };
 
-  const handleConfirmSwap = () => {
+  // Execute swap after password confirmation
+  const handleExecuteSwap = async () => {
     if (!activeWallet || !sendToken || !receiveToken || !sendAmount || !bestPath) {
-      setError('Invalid swap parameters');
+      setError('Please complete all fields');
       return;
     }
 
-    setShowPasswordPrompt(true);
-  };
-
-  const executeSwapTransaction = async () => {
-    if (!activeWallet || !sendToken || !receiveToken || !sendAmount || !bestPath || !walletPassword) {
-      setError('Missing required swap parameters');
+    if (!walletPassword) {
+      setError('Please enter your wallet password');
       return;
     }
 
@@ -195,10 +206,11 @@ export function SwapPanel() {
     setError(null);
 
     try {
-      // Decrypt wallet secret key with password
+      // Decrypt the secret key
       let decryptedSecret: string;
       try {
         decryptedSecret = decryptSecret(activeWallet.encryptedSecret, walletPassword);
+        console.log('[v0] Secret decrypted successfully');
       } catch (err) {
         setError('Invalid password. Please try again.');
         setLoading(false);
@@ -222,30 +234,29 @@ export function SwapPanel() {
         receiveToken.code,
         receiveToken.issuer,
         receiveAmount,
-        bestPath.path.map(p => {
-          const code = p.split(' ')[0];
-          const token = walletTokens.find(t => t.code === code);
-          return {
-            code,
-            issuer: token?.issuer,
-          };
-        }),
+        bestPath.path,
         selectedSlippage
       );
 
       if (result.success) {
+        console.log('[v0] Swap successful:', result.hash);
         setError(null);
+        setSuccessMessage(`Swap successful! Transaction: ${result.hash}`);
+        
+        // Reset form
         setSendAmount('');
         setReceiveAmount('');
         setBestPath(null);
-        setExecutableSwap(false);
         setShowPasswordPrompt(false);
         setWalletPassword('');
-        alert(`Swap successful! Transaction: ${result.hash}`);
+        
+        // Clear success message after 5 seconds
+        setTimeout(() => setSuccessMessage(null), 5000);
       } else {
         setError(result.error || 'Swap failed on Mainnet');
       }
     } catch (err: any) {
+      console.error('[v0] Swap execution error:', err);
       setError(err.message || 'Failed to execute swap on Mainnet');
     } finally {
       setLoading(false);
@@ -260,6 +271,14 @@ export function SwapPanel() {
     );
   }
 
+  if (walletTokens.length === 0) {
+    return (
+      <div className="p-6 rounded-lg border border-border/50 bg-card/30 text-center">
+        <p className="text-muted-foreground">Loading wallet tokens...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-2xl mx-auto space-y-6">
       {/* Header */}
@@ -269,6 +288,14 @@ export function SwapPanel() {
           Trading wallet: <span className="font-semibold text-primary">{activeWallet.name}</span>
         </p>
       </div>
+
+      {/* Success Message */}
+      {successMessage && (
+        <div className="p-4 rounded-lg border border-green-500/30 bg-green-500/10 flex items-start gap-3">
+          <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-green-500">{successMessage}</p>
+        </div>
+      )}
 
       {/* Error Display */}
       {error && (
@@ -291,9 +318,12 @@ export function SwapPanel() {
                   setShowSendDropdown(!showSendDropdown);
                   setShowReceiveDropdown(false);
                 }}
-                className="w-full flex items-center gap-2 px-4 py-3 rounded-lg border border-border/50 bg-background/50 hover:border-primary/50 transition-colors text-foreground"
+                className="w-full flex items-center justify-between px-4 py-3 rounded-lg border border-border/50 bg-background/50 hover:border-primary/50 transition-colors text-foreground"
               >
-                <span className="font-semibold">{sendToken?.code}</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">{sendToken?.code}</span>
+                  <span className="text-xs text-muted-foreground">({sendToken?.displayBalance})</span>
+                </div>
                 <ChevronDown className="w-4 h-4 text-muted-foreground" />
               </button>
 
@@ -308,13 +338,13 @@ export function SwapPanel() {
                         setShowSendDropdown(false);
                         setSendAmount('');
                         setBestPath(null);
-                        setExecutableSwap(false);
+                        setReceiveAmount('');
                       }}
                       className="w-full text-left px-4 py-2 hover:bg-primary/20 border-b border-border/20 last:border-b-0 transition-colors"
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-semibold text-foreground">{token.code}</span>
-                        <span className="text-xs text-muted-foreground">{parseFloat(token.balance || '0').toFixed(4)}</span>
+                        <span className="text-xs text-muted-foreground">{token.displayBalance}</span>
                       </div>
                     </button>
                   ))}
@@ -328,21 +358,17 @@ export function SwapPanel() {
               placeholder="0.00"
               value={sendAmount}
               onChange={handleSendAmountChange}
-              className="flex-1"
+              className="w-24"
             />
           </div>
-          {sendToken && (
-            <p className="text-xs text-muted-foreground text-right">
-              Balance: {parseFloat(sendToken.balance || '0').toFixed(7)} {sendToken.code}
-            </p>
-          )}
         </div>
 
-        {/* Swap Direction Toggle */}
+        {/* Swap Button */}
         <div className="flex justify-center">
           <button
             onClick={handleSwapTokens}
-            className="p-2 rounded-full hover:bg-primary/20 transition-colors"
+            disabled={!sendToken || !receiveToken}
+            className="p-2 rounded-full border border-border/50 bg-background/50 hover:bg-primary/10 disabled:opacity-50 transition-colors"
           >
             <ArrowRightLeft className="w-5 h-5 text-primary" />
           </button>
@@ -359,9 +385,12 @@ export function SwapPanel() {
                   setShowReceiveDropdown(!showReceiveDropdown);
                   setShowSendDropdown(false);
                 }}
-                className="w-full flex items-center gap-2 px-4 py-3 rounded-lg border border-border/50 bg-background/50 hover:border-primary/50 transition-colors text-foreground"
+                className="w-full flex items-center justify-between px-4 py-3 rounded-lg border border-border/50 bg-background/50 hover:border-primary/50 transition-colors text-foreground"
               >
-                <span className="font-semibold">{receiveToken?.code}</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">{receiveToken?.code || 'Select'}</span>
+                  <span className="text-xs text-muted-foreground">({receiveToken?.displayBalance || '0'})</span>
+                </div>
                 <ChevronDown className="w-4 h-4 text-muted-foreground" />
               </button>
 
@@ -370,19 +399,18 @@ export function SwapPanel() {
                 <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border/50 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
                   {walletTokens.map((token) => (
                     <button
-                      key={`${token.code}_${token.issuer || 'native'}`}
+                      key={`${token.code}_${token.issuer || 'native'}_receive`}
                       onClick={() => {
                         setReceiveToken(token);
                         setShowReceiveDropdown(false);
-                        setSendAmount('');
                         setBestPath(null);
-                        setExecutableSwap(false);
+                        setReceiveAmount('');
                       }}
                       className="w-full text-left px-4 py-2 hover:bg-primary/20 border-b border-border/20 last:border-b-0 transition-colors"
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-semibold text-foreground">{token.code}</span>
-                        <span className="text-xs text-muted-foreground">{parseFloat(token.balance || '0').toFixed(4)}</span>
+                        <span className="text-xs text-muted-foreground">{token.displayBalance}</span>
                       </div>
                     </button>
                   ))}
@@ -390,35 +418,44 @@ export function SwapPanel() {
               )}
             </div>
 
-            {/* Amount Display */}
-            <div className="flex-1 px-4 py-3 rounded-lg border border-border/50 bg-background/50 flex items-center justify-between">
-              <span className="text-foreground">
-                {receiveAmount ? parseFloat(receiveAmount).toFixed(7) : '0.00'}
-              </span>
-              <span className="text-xs text-muted-foreground">{receiveToken?.code}</span>
+            {/* Receive Amount Display */}
+            <div className="w-24 px-4 py-3 rounded-lg border border-border/50 bg-background/50 text-foreground font-semibold flex items-center justify-end">
+              {loading ? '...' : parseFloat(receiveAmount || '0').toFixed(4)}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Best Path Information */}
+      {/* Best Path Info */}
       {bestPath && (
         <div className="p-4 rounded-lg border border-primary/30 bg-primary/5 space-y-3">
-          <h3 className="font-semibold text-foreground">Trading Path</h3>
-          <p className="text-sm text-muted-foreground">{bestPath.path.join('')}</p>
-          
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-3 rounded bg-background/50 border border-border/30">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Estimated Amount</p>
+              <p className="text-lg font-semibold text-foreground">{parseFloat(bestPath.destinationAmount).toFixed(7)} {receiveToken?.code}</p>
+            </div>
+            <div>
               <p className="text-xs text-muted-foreground mb-1">Price Impact</p>
-              <p className={`font-semibold ${priceImpactWarning ? 'text-yellow-500' : 'text-green-500'}`}>
+              <p className={`text-lg font-semibold ${priceImpactWarning ? 'text-yellow-500' : 'text-green-500'}`}>
                 {bestPath.priceImpact.toFixed(2)}%
               </p>
             </div>
-            <div className="p-3 rounded bg-background/50 border border-border/30">
-              <p className="text-xs text-muted-foreground mb-1">You Receive</p>
-              <p className="font-semibold text-foreground">{parseFloat(receiveAmount).toFixed(7)}</p>
-            </div>
           </div>
+          
+          {bestPath.path && bestPath.path.length > 0 && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">Optimized Trading Path</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="px-2 py-1 rounded bg-primary/20 text-xs font-semibold text-primary">{sendToken?.code}</span>
+                {bestPath.path.map((asset, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span className="text-primary">→</span>
+                    <span className="px-2 py-1 rounded bg-primary/20 text-xs font-semibold text-primary">{asset.code}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -430,9 +467,9 @@ export function SwapPanel() {
             <button
               key={option}
               onClick={() => setSelectedSlippage(option)}
-              className={`flex-1 py-2 px-3 rounded-lg border transition-all ${
+              className={`flex-1 py-2 rounded-lg border transition-colors ${
                 selectedSlippage === option
-                  ? 'border-primary bg-primary/20 text-primary'
+                  ? 'border-primary bg-primary/20 text-primary font-semibold'
                   : 'border-border/50 bg-background/50 text-muted-foreground hover:border-primary/50'
               }`}
             >
@@ -444,60 +481,61 @@ export function SwapPanel() {
 
       {/* Confirm Swap Button */}
       <Button
-        onClick={handleConfirmSwap}
-        disabled={!sendAmount || loading || !bestPath || !executableSwap}
+        onClick={() => setShowPasswordPrompt(!showPasswordPrompt)}
+        disabled={!sendAmount || !bestPath || !receiveToken || loading}
         className="w-full py-3 text-base font-semibold"
       >
         {loading ? (
           <div className="flex items-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin" />
-            Finding Best Path...
+            Processing...
           </div>
         ) : (
           'Confirm Swap on Mainnet'
         )}
       </Button>
 
-      {/* Password Prompt Modal */}
+      {/* Password Prompt */}
       {showPasswordPrompt && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-card border border-border/50 rounded-lg p-6 max-w-sm w-full space-y-4">
-            <div className="flex items-center gap-3">
-              <Lock className="w-5 h-5 text-primary" />
-              <h3 className="text-lg font-semibold text-foreground">Confirm Swap</h3>
-            </div>
-            
-            <p className="text-sm text-muted-foreground">
-              Enter your wallet password to execute the swap on Mainnet.
-            </p>
-
-            <input
-              type="password"
-              placeholder="Wallet Password"
-              value={walletPassword}
-              onChange={(e) => setWalletPassword(e.target.value)}
-              className="w-full px-4 py-2 rounded-lg border border-border/50 bg-background text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50"
-            />
-
-            <div className="flex gap-2">
-              <Button
-                onClick={() => {
-                  setShowPasswordPrompt(false);
-                  setWalletPassword('');
-                }}
-                variant="outline"
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={executeSwapTransaction}
-                disabled={loading || !walletPassword}
-                className="flex-1"
-              >
-                {loading ? 'Executing...' : 'Execute Swap'}
-              </Button>
-            </div>
+        <div className="p-4 rounded-lg border border-border/50 bg-card/40 space-y-3">
+          <div className="flex items-center gap-2 mb-3">
+            <Lock className="w-4 h-4 text-primary" />
+            <p className="font-semibold text-foreground">Enter Wallet Password to Execute</p>
+          </div>
+          
+          <Input
+            type="password"
+            placeholder="Wallet password"
+            value={walletPassword}
+            onChange={(e) => {
+              setWalletPassword(e.target.value);
+              setError(null);
+            }}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') {
+                handleExecuteSwap();
+              }
+            }}
+          />
+          
+          <div className="flex gap-2">
+            <Button
+              onClick={handleExecuteSwap}
+              disabled={!walletPassword || loading}
+              className="flex-1 bg-primary hover:bg-primary/90"
+            >
+              {loading ? 'Executing...' : 'Execute Swap'}
+            </Button>
+            <Button
+              onClick={() => {
+                setShowPasswordPrompt(false);
+                setWalletPassword('');
+              }}
+              variant="outline"
+              className="flex-1"
+            >
+              Cancel
+            </Button>
           </div>
         </div>
       )}
