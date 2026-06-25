@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { CreditCard, ShoppingCart, Zap, Smartphone, Badge } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { AmountSelectionModal } from '@/components/amount-selection-modal';
 
 interface SpendingOption {
   id: string;
@@ -66,6 +68,26 @@ const spendingOptions: SpendingOption[] = [
 ];
 
 export function RealWorldSpending() {
+  const [selectedMerchant, setSelectedMerchant] = useState<typeof spendingOptions[0] | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const handleCardClick = (option: typeof spendingOptions[0]) => {
+    if (!option.comingSoon) {
+      setSelectedMerchant(option);
+      setIsModalOpen(true);
+    }
+  };
+
+  const handleModalClose = () => {
+    setIsModalOpen(false);
+    setSelectedMerchant(null);
+  };
+
+  const handleProceed = (amount: number, currency: 'EUR' | 'USDC') => {
+    console.log('[v0] Proceeding with payment:', { merchant: selectedMerchant?.title, amount, currency });
+    // Payment processing will be implemented in next step
+  };
+
   return (
     <div className="w-full min-h-screen bg-background">
       {/* Header Section */}
@@ -105,7 +127,11 @@ export function RealWorldSpending() {
         {spendingOptions.map((option) => (
           <button
             key={option.id}
-            className="group relative overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-br from-slate-900 to-slate-950 p-6 text-left transition-all duration-300 hover:border-primary/50 hover:bg-slate-900/80"
+            onClick={() => handleCardClick(option)}
+            disabled={option.comingSoon}
+            className={`group relative overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-br from-slate-900 to-slate-950 p-6 text-left transition-all duration-300 ${
+              option.comingSoon ? 'opacity-60 cursor-not-allowed' : 'hover:border-primary/50 hover:bg-slate-900/80'
+            }`}
           >
             {/* Gradient Background */}
             <div
@@ -217,6 +243,27 @@ export function RealWorldSpending() {
           </Button>
         </div>
       </div>
+
+      {/* Amount Selection Modal */}
+      <AmountSelectionModal
+        isOpen={isModalOpen}
+        onClose={handleModalClose}
+        merchant={
+          selectedMerchant
+            ? {
+                name: selectedMerchant.title,
+                icon: selectedMerchant.title === 'Virtual Mastercard' ? '💳' : 
+                      selectedMerchant.title === 'Virtual Visa Card' ? '💳' :
+                      selectedMerchant.title === 'Supermarkets' ? '🛒' :
+                      selectedMerchant.title === 'Gas & Fuel' ? '⛽' :
+                      selectedMerchant.title === 'Amazon' ? '📦' :
+                      selectedMerchant.title === 'Streaming & Subscriptions' ? '🎬' : '🎯',
+                description: selectedMerchant.description,
+              }
+            : null
+        }
+        onProceed={handleProceed}
+      />
     </div>
   );
 }
