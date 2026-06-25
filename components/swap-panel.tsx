@@ -170,11 +170,23 @@ export function SwapPanel() {
     if (debounceTimer.current) {
       clearTimeout(debounceTimer.current);
     }
-    
     debounceTimer.current = setTimeout(() => {
       calculateBestPath(amount);
     }, 300);
   }, [calculateBestPath]);
+
+  // Re-fetch quote whenever tokens change (covers page-load auto-selection,
+  // manual dropdown change, and the flip button).
+  // We use a short delay so the new token state has fully committed.
+  useEffect(() => {
+    if (sendToken && receiveToken && sendAmount && parseFloat(sendAmount) > 0) {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+      debounceTimer.current = setTimeout(() => {
+        calculateBestPath(sendAmount);
+      }, 150);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sendToken, receiveToken]);
 
   // Handle send amount change
   const handleSendAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -189,14 +201,17 @@ export function SwapPanel() {
     }
   };
 
-  // Swap send and receive tokens
+  // Swap send and receive tokens — preserve the current send amount so the
+  // quote re-fetches immediately for the flipped pair.
   const handleSwapTokens = () => {
-    const temp = sendToken;
-    setSendToken(receiveToken);
-    setReceiveToken(temp);
-    setSendAmount('');
+    const prevSend = sendToken;
+    const prevReceive = receiveToken;
+    setSendToken(prevReceive);
+    setReceiveToken(prevSend);
+    // Keep existing send amount; the token-change useEffect will re-fetch
     setReceiveAmount('');
     setBestPath(null);
+    setError(null);
   };
 
   // Execute swap after password confirmation
@@ -385,7 +400,7 @@ export function SwapPanel() {
                 setShowSendDropdown(false);
                 setShowReceiveDropdown(false);
               }}
-              className="w-24"
+              className="w-32 min-w-[7rem] text-right text-foreground bg-background border-border/50 placeholder:text-muted-foreground focus:ring-primary focus:border-primary font-semibold text-base"
             />
           </div>
         </div>
@@ -433,11 +448,8 @@ export function SwapPanel() {
                         setBestPath(null);
                         setReceiveAmount('');
                         setError(null);
-                        // Trigger path finding if we have amounts
-                        if (sendAmount) {
-                          setTimeout(() => debouncedCalculate(sendAmount), 100);
-                        }
-                        // Focus input after selection
+                        // The token-change useEffect will re-fetch automatically.
+                        // Just focus the amount input for UX.
                         setTimeout(() => sendInputRef.current?.focus(), 0);
                       }}
                       className="w-full text-left px-4 py-2 hover:bg-primary/20 border-b border-border/20 last:border-b-0 transition-colors"
@@ -453,8 +465,15 @@ export function SwapPanel() {
             </div>
 
             {/* Receive Amount Display */}
-            <div className="w-24 px-4 py-3 rounded-lg border border-border/50 bg-background/50 text-foreground font-semibold flex items-center justify-end">
-              {loading ? '...' : parseFloat(receiveAmount || '0').toFixed(4)}
+            <div className="w-32 min-w-[7rem] px-3 py-3 rounded-lg border border-border/50 bg-background/30 text-foreground font-semibold flex items-center justify-end text-base tabular-nums overflow-hidden">
+              {loading
+                ? <span className="text-muted-foreground text-sm">...</span>
+                : <span className={receiveAmount ? 'text-foreground' : 'text-muted-foreground'}>
+                    {receiveAmount
+                      ? parseFloat(receiveAmount).toFixed(4)
+                      : '0.0000'}
+                  </span>
+              }
             </div>
           </div>
         </div>
