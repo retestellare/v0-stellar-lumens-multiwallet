@@ -4,7 +4,7 @@ import React from 'react';
 import { Header } from '@/components/header';
 import { useWallet } from '@/lib/wallet-context';
 import { Button } from '@/components/ui/button';
-import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations, getAccountTrades, getXLMUSDStats, hasTrustline, addTrustline } from '@/lib/stellar-utils';
+import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations, getAccountTrades, getXLMUSDStats, hasTrustline, addTrustline, calculateAvailableBalance } from '@/lib/stellar-utils';
 import { TradingPairHeader } from '@/components/trading-pair-header';
 import { OrderBook } from '@/components/order-book';
 import { TradeHistory } from '@/components/trade-history';
@@ -85,6 +85,11 @@ export default function ExchangePage() {
     open24h: string;
     close24h: string;
   } | null>(null);
+
+  // Available balances (accounting for committed orders and network reserve)
+  const [availableSellingBalance, setAvailableSellingBalance] = useState('0');
+  const [availableBuyingBalance, setAvailableBuyingBalance] = useState('0');
+  const [balancesLoading, setBalancesLoading] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -415,6 +420,34 @@ export default function ExchangePage() {
     }
   }, [mounted]);
 
+  // Fetch available balances (accounting for committed orders and network reserve)
+  useEffect(() => {
+    // Don't fetch if not mounted - will be called again when mounted becomes true
+    if (!mounted || !activeWalletId) return;
+    
+    const wallet = wallets.find(w => w.id === activeWalletId);
+    if (!wallet) return;
+
+    const fetchAvailableBalances = async () => {
+      setBalancesLoading(true);
+      try {
+        const [sellingAvail, buyingAvail] = await Promise.all([
+          calculateAvailableBalance(wallet.publicKey, sellingAsset, sellingIssuer),
+          calculateAvailableBalance(wallet.publicKey, buyingAsset, buyingIssuer),
+        ]);
+        
+        setAvailableSellingBalance(sellingAvail);
+        setAvailableBuyingBalance(buyingAvail);
+      } catch (error) {
+        console.error('[v0] Error fetching available balances:', error);
+      } finally {
+        setBalancesLoading(false);
+      }
+    };
+
+    fetchAvailableBalances();
+  }, [activeWalletId, wallets, sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
+
   if (!mounted) return null;
 
   const activeWallet = wallets.find(w => w.id === activeWalletId);
@@ -565,9 +598,16 @@ export default function ExchangePage() {
         }
         const data = await getOrderBook(sellingAsset, sellingIssuer, buyingAsset, buyingIssuer);
         setOrderBook(data);
-        // Refresh balances after order
-        if (activeWalletId) {
+        // Refresh balances and available balances after order
+        if (activeWalletId && activeWallet) {
           await updateBalances(activeWalletId);
+          // Recalculate available balances after order submission
+          const [sellingAvail, buyingAvail] = await Promise.all([
+            calculateAvailableBalance(activeWallet.publicKey, sellingAsset, sellingIssuer),
+            calculateAvailableBalance(activeWallet.publicKey, buyingAsset, buyingIssuer),
+          ]);
+          setAvailableSellingBalance(sellingAvail);
+          setAvailableBuyingBalance(buyingAvail);
         }
       } else {
         setTxResult({ success: false, message: result.error || 'Order failed' });
@@ -639,6 +679,15 @@ export default function ExchangePage() {
       if (result.success) {
         setMyOrders(myOrders.filter(o => o.id !== id));
         setTxResult({ success: true, message: 'Order cancelled successfully' });
+        // Refresh available balances after cancellation
+        if (activeWalletId && activeWallet) {
+          const [sellingAvail, buyingAvail] = await Promise.all([
+            calculateAvailableBalance(activeWallet.publicKey, sellingAsset, sellingIssuer),
+            calculateAvailableBalance(activeWallet.publicKey, buyingAsset, buyingIssuer),
+          ]);
+          setAvailableSellingBalance(sellingAvail);
+          setAvailableBuyingBalance(buyingAvail);
+        }
       } else {
         setTxResult({ success: false, message: result.error || 'Failed to cancel order' });
       }
@@ -761,8 +810,8 @@ export default function ExchangePage() {
           <CompactOrderForm
             sellingAsset={sellingAsset}
             buyingAsset={buyingAsset}
-            sellingBalance={sellingBalance}
-            buyingBalance={buyingBalance}
+            sellingBalance={availableSellingBalance}
+            buyingBalance={availableBuyingBalance}
             bestBid={bestBid ?? undefined}
             bestAsk={bestAsk ?? undefined}
             buyPrice={buyPrice}
