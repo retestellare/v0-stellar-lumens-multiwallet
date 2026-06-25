@@ -1219,6 +1219,83 @@ export const getAccountOffers = async (
 };
 
 /**
+ * Calculate available balance for an asset, accounting for:
+ * - Tokens committed in open selling offers
+ * - Minimum network reserve for XLM (2 + subentry_count) * 0.5
+ * 
+ * Returns: Total Balance - Committed in Orders - Network Reserve (XLM only)
+ */
+export const calculateAvailableBalance = async (
+  publicKey: string,
+  assetCode: string,
+  assetIssuer: string
+): Promise<string> => {
+  try {
+    // Fetch account details and offers in parallel
+    const [account, offers] = await Promise.all([
+      (async () => {
+        const server = new Horizon.Server(HORIZON_URL);
+        return server.loadAccount(publicKey);
+      })(),
+      getAccountOffers(publicKey),
+    ]);
+
+    // Get total balance for this asset
+    const balanceData = account.balances.find((b: any) => {
+      if (assetCode === 'XLM' || assetCode === 'native') {
+        return b.asset_type === 'native';
+      }
+      return b.asset_code === assetCode && b.asset_issuer === assetIssuer;
+    });
+
+    const totalBalance = balanceData ? parseFloat(balanceData.balance) : 0;
+
+    // Calculate tokens committed in selling offers for this asset
+    let committedBalance = 0;
+    for (const offer of offers) {
+      const selling = offer.selling;
+      let isSellingThisAsset = false;
+
+      if (assetCode === 'XLM' || assetCode === 'native') {
+        isSellingThisAsset = selling.asset_type === 'native';
+      } else {
+        isSellingThisAsset =
+          selling.asset_code === assetCode && selling.asset_issuer === assetIssuer;
+      }
+
+      if (isSellingThisAsset) {
+        committedBalance += parseFloat(offer.amount);
+      }
+    }
+
+    // Calculate network reserve (XLM only)
+    let networkReserve = 0;
+    if (assetCode === 'XLM' || assetCode === 'native') {
+      // Minimum reserve = (2 + subentry_count) * 0.5 XLM
+      const subentryCount = account.subentry_count || 0;
+      networkReserve = (2 + subentryCount) * 0.5;
+    }
+
+    // Available Balance = Total - Committed - Reserve
+    const availableBalance = Math.max(0, totalBalance - committedBalance - networkReserve);
+
+    console.log('[v0] Available balance calc:', {
+      asset: `${assetCode}${assetIssuer ? `_${assetIssuer}` : ''}`,
+      totalBalance,
+      committedBalance,
+      networkReserve,
+      availableBalance,
+    });
+
+    return availableBalance.toString();
+  } catch (error) {
+    console.error('[v0] Error calculating available balance:', error);
+    // Return 0 if there's an error
+    return '0';
+  }
+};
+
+/**
  * Cancel an open offer by submitting a manage_sell_offer with amount 0
  */
 export const cancelOffer = async (
