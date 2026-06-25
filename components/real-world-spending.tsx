@@ -259,6 +259,11 @@ export function RealWorldSpending() {
                       selectedMerchant.title === 'Amazon' ? '📦' :
                       selectedMerchant.title === 'Streaming & Subscriptions' ? '🎬' : '🎯',
                 description: selectedMerchant.description,
+                merchantType: selectedMerchant.title === 'Virtual Mastercard' ? 'virtual_card' :
+                              selectedMerchant.title === 'Virtual Visa Card' ? 'virtual_card' :
+                              selectedMerchant.title === 'Amazon' ? 'amazon' :
+                              selectedMerchant.title === 'Supermarkets' ? 'retail' :
+                              selectedMerchant.title === 'Gas & Fuel' ? 'gas' : 'retail',
               }
             : null
         }
