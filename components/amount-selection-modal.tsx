@@ -67,7 +67,9 @@ export function AmountSelectionModal({
   useEffect(() => {
     const amount = isCustom ? parseFloat(customAmount) : selectedAmount;
     if (amount && !isNaN(amount) && amount > 0) {
-      setUsdcAmount(parseFloat((amount * EUR_TO_USDC_RATE).toFixed(2)));
+      // Calculate USDC amount and maintain full precision (7 decimal places for Stellar)
+      const usdcValue = amount * EUR_TO_USDC_RATE;
+      setUsdcAmount(parseFloat(usdcValue.toFixed(7)));
     } else {
       setUsdcAmount(0);
     }
@@ -116,9 +118,17 @@ export function AmountSelectionModal({
     setStep('details');
   };
 
+  // Validate and format amount for Stellar operations (7 decimal places)
+  const formatAmountForStellar = (amount: number): string => {
+    return parseFloat(amount.toFixed(7)).toString();
+  };
+
   const handleProceed = () => {
     const amount = isCustom ? parseFloat(customAmount) : selectedAmount;
     if (amount && !isNaN(amount) && amount > 0) {
+      // Validate USDC amount is properly formatted
+      const formattedAmount = formatAmountForStellar(usdcAmount);
+      console.log('[v0] USDC amount for Stellar:', formattedAmount, 'decimal places:', (formattedAmount.split('.')[1] || '').length);
       simulateBitrefillOrder();
     }
   };
@@ -159,11 +169,16 @@ export function AmountSelectionModal({
 
         console.log('[v0] Generating and signing USDC transaction locally');
 
+        // Format amount with exactly 7 decimal places as required by Stellar
+        const stellarAmount = usdcAmount.toFixed(7);
+        console.log('[v0] USDC amount formatted for Stellar:', stellarAmount);
+        console.log('[v0] Decimal places:', (stellarAmount.split('.')[1] || '').length);
+
         // Create and sign the USDC payment transaction using the secret key
         const txResult = await createAndSignUSDCTransaction(
           activeSecretKey,
           transactionDetails.destinationAddress,
-          usdcAmount.toFixed(7),
+          stellarAmount,
           transactionDetails.memoText
         );
 

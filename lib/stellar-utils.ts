@@ -1708,6 +1708,16 @@ export const createAndSignUSDCTransaction = async (
   try {
     const server = new Horizon.Server(HORIZON_URL);
     
+    // Validate amount format - must be string with exactly 7 decimal places
+    const amountRegex = /^\d+(\.\d{1,7})?$/;
+    if (!amountRegex.test(amount)) {
+      throw new Error(`Invalid amount format: ${amount}. Must be a valid decimal with up to 7 decimal places.`);
+    }
+    
+    // Ensure amount has proper decimal places for Stellar
+    const formattedAmount = parseFloat(amount).toFixed(7);
+    console.log('[v0] Amount validation: input="${amount}" → formatted="${formattedAmount}"');
+    
     // Create keypair from secret
     const sourceKeypair = Keypair.fromSecret(sourceSecret);
     const sourcePublicKey = sourceKeypair.publicKey();
@@ -1715,7 +1725,7 @@ export const createAndSignUSDCTransaction = async (
     console.log('[v0] Creating USDC transaction:', {
       from: sourcePublicKey.substring(0, 8) + '...',
       to: destinationPublicKey.substring(0, 8) + '...',
-      amount,
+      amount: formattedAmount,
     });
     
     // Fetch account to get current sequence number
@@ -1736,7 +1746,7 @@ export const createAndSignUSDCTransaction = async (
         Operation.payment({
           destination: destinationPublicKey,
           asset: usdcAsset,
-          amount: amount,
+          amount: formattedAmount,
         })
       )
       .addMemo(Memo.text(memoText))
