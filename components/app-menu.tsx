@@ -17,6 +17,7 @@ import {
   Droplets,
   Search,
   Bot,
+  ShoppingBag,
 } from 'lucide-react';
 import { useWallet } from '@/lib/wallet-context';
 
@@ -33,6 +34,7 @@ export function AppMenu({ isOpen, onClose, onOpenSettings }: AppMenuProps) {
   const menuItems = [
     { icon: Home, label: 'Home', href: '/' },
     { icon: Search, label: 'Search Tokens', href: '/token-search' },
+    { icon: ShoppingBag, label: 'Real-World Spending', href: '/spending' },
     { icon: ArrowRightLeft, label: 'Swap', href: '/swap' },
     { icon: ArrowRightLeft, label: 'Exchange', href: '/exchange' },
     { icon: Droplets, label: 'Pools', href: '/pools' },
