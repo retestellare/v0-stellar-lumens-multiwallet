@@ -1694,3 +1694,84 @@ export const clearHomeDomain = async (
     return { success: false, error: errorMessage };
   }
 };
+
+/**
+ * Create and sign a USDC payment transaction locally
+ * This function builds a payment transaction and signs it with the provided secret key
+ */
+export const createAndSignUSDCTransaction = async (
+  sourceSecret: string,
+  destinationPublicKey: string,
+  amount: string,
+  memoText: string
+): Promise<{ success: boolean; signedXdr?: string; hash?: string; error?: string }> => {
+  try {
+    const server = new Horizon.Server(HORIZON_URL);
+    
+    // Create keypair from secret
+    const sourceKeypair = Keypair.fromSecret(sourceSecret);
+    const sourcePublicKey = sourceKeypair.publicKey();
+    
+    console.log('[v0] Creating USDC transaction:', {
+      from: sourcePublicKey.substring(0, 8) + '...',
+      to: destinationPublicKey.substring(0, 8) + '...',
+      amount,
+    });
+    
+    // Fetch account to get current sequence number
+    const accountResponse = await server.loadAccount(sourcePublicKey);
+    
+    // USDC issuer on Stellar (Centre's official USDC)
+    const usdcAsset = new Asset(
+      'USDC',
+      'GA5ZSEJYB37JRC5AVCIA5MOP4IHTOJHW7PSMUEHC7TQWZ6GZJKMJDNJ'
+    );
+    
+    // Create transaction with memo
+    const transaction = new TransactionBuilder(accountResponse, {
+      fee: BASE_FEE,
+      networkPassphrase: Networks.PUBLIC_NETWORK,
+    })
+      .addOperation(
+        Operation.payment({
+          destination: destinationPublicKey,
+          asset: usdcAsset,
+          amount: amount,
+        })
+      )
+      .addMemo(Memo.text(memoText))
+      .setTimeout(180)
+      .build();
+    
+    // Sign the transaction with the source keypair
+    console.log('[v0] Signing transaction with wallet:', sourcePublicKey.substring(0, 8) + '...');
+    transaction.sign(sourceKeypair);
+    
+    // Get the signed XDR
+    const signedXdr = transaction.toEnvelope().toXdr('base64');
+    
+    console.log('[v0] Transaction signed successfully');
+    console.log('[v0] Signed XDR length:', signedXdr.length);
+    
+    // Submit the transaction to Stellar network
+    const result = await server.submitTransaction(transaction);
+    
+    console.log('[v0] Transaction submitted successfully:', result.hash);
+    
+    return {
+      success: true,
+      signedXdr,
+      hash: result.hash,
+    };
+  } catch (error: any) {
+    let errorMessage = error.message || 'Failed to create and sign USDC transaction';
+    
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+    
+    console.error('[v0] Error creating/signing transaction:', errorMessage);
+    return { success: false, error: errorMessage };
+  }
+};

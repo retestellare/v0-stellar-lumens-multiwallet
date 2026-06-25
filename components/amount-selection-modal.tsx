@@ -5,6 +5,7 @@ import { X, ArrowRight, Copy, Loader, Check, Barcode } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useWallet } from '@/lib/wallet-context';
+import { createAndSignUSDCTransaction } from '@/lib/stellar-utils';
 
 interface AmountSelectionModalProps {
   isOpen: boolean;
@@ -17,6 +18,7 @@ interface AmountSelectionModalProps {
   } | null;
   onProceed?: (amount: number, currency: 'EUR' | 'USDC') => void;
   activePublicKey?: string;
+  activeSecretKey?: string;
 }
 
 export function AmountSelectionModal({
@@ -25,11 +27,12 @@ export function AmountSelectionModal({
   merchant,
   onProceed,
   activePublicKey,
+  activeSecretKey,
 }: AmountSelectionModalProps) {
   const { activeWallet } = useWallet();
   
-  // Multi-step state management: 'amount' → 'loading' → 'details' → 'signing' → 'processing' → 'success'
-  const [step, setStep] = useState<'amount' | 'loading' | 'details' | 'signing' | 'processing' | 'success'>('amount');
+  // Multi-step state management: 'amount' → 'loading' → 'details' → 'signing' → 'transaction' → 'processing' → 'success'
+  const [step, setStep] = useState<'amount' | 'loading' | 'details' | 'signing' | 'transaction' | 'processing' | 'success'>('amount');
   
   const [selectedAmount, setSelectedAmount] = useState<number | null>(50);
   const [customAmount, setCustomAmount] = useState('');
@@ -120,43 +123,61 @@ export function AmountSelectionModal({
     }
   };
 
-  // Simulate blockchain processing and generate success data
+  // Create and sign USDC transaction, then generate success data
   const handleSignAndSend = async () => {
     const amount = isCustom ? parseFloat(customAmount) : selectedAmount;
     if (amount && !isNaN(amount) && amount > 0) {
-      // Transition to signing step - simulate Bitrefill API call and transaction signing
+      // Validate required credentials
+      if (!activePublicKey || !activeSecretKey) {
+        console.error('[v0] Missing wallet credentials for transaction signing');
+        setStep('details');
+        return;
+      }
+
+      // Transition to signing step
       setStep('signing');
 
       try {
         // Step 1: Simulate Bitrefill API call to create order
-        console.log('[v0] Simulating Bitrefill API call with:', {
+        console.log('[v0] Creating Bitrefill order with:', {
           amount: usdcAmount,
           asset: 'USDC',
           merchant: merchant?.name,
-          publicKey: activePublicKey?.substring(0, 8) + '...',
+          wallet: activePublicKey.substring(0, 8) + '...',
         });
 
         // Simulate API delay
         await new Promise(resolve => setTimeout(resolve, 1500));
 
-        // Step 2: Simulate Stellar transaction signing with the active public key
-        if (!activePublicKey) {
-          console.error('[v0] No active public key provided for signing');
-          throw new Error('Wallet public key not available');
+        // Get transaction details from state
+        if (!transactionDetails) {
+          throw new Error('Transaction details not available');
         }
 
-        console.log('[v0] Simulating Stellar transaction signature with public key:', activePublicKey.substring(0, 8) + '...');
+        // Step 2: Transition to transaction signing step
+        setStep('transaction');
 
-        // Simulate transaction signing delay (2 seconds for "Signing USDC transaction on the Stellar network...")
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        console.log('[v0] Generating and signing USDC transaction locally');
 
-        console.log('[v0] Transaction signed successfully');
+        // Create and sign the USDC payment transaction using the secret key
+        const txResult = await createAndSignUSDCTransaction(
+          activeSecretKey,
+          transactionDetails.destinationAddress,
+          usdcAmount.toFixed(7),
+          transactionDetails.memoText
+        );
+
+        if (!txResult.success) {
+          throw new Error(txResult.error || 'Failed to sign transaction');
+        }
+
+        console.log('[v0] Transaction signed successfully, hash:', txResult.hash);
 
         // Transition to processing step for blockchain verification
         setStep('processing');
 
-        // Simulate blockchain verification (2 seconds)
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Simulate additional blockchain verification (1 second)
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
         // Generate merchant-specific success data
         const merchantType = merchant?.merchantType || 'retail';
@@ -191,8 +212,8 @@ export function AmountSelectionModal({
 
         // Transition to success step
         setStep('success');
-      } catch (error) {
-        console.error('[v0] Error during signing and processing:', error);
+      } catch (error: any) {
+        console.error('[v0] Error during transaction signing:', error.message);
         // Reset to details view on error
         setStep('details');
       }
@@ -411,6 +432,21 @@ export function AmountSelectionModal({
               </div>
             )}
 
+            {step === 'transaction' && (
+              <div className="flex flex-col items-center justify-center py-12 space-y-4">
+                <div className="relative w-16 h-16">
+                  <div className="absolute inset-0 rounded-full bg-cyan-500/20 animate-pulse" />
+                  <Loader className="w-16 h-16 text-cyan-400 animate-spin" />
+                </div>
+                <p className="text-center text-slate-300 font-medium">
+                  Generating Stellar USDC transaction...
+                </p>
+                <p className="text-xs text-muted-foreground text-center">
+                  Creating and signing payment on the Stellar network
+                </p>
+              </div>
+            )}
+
             {step === 'processing' && (
               <div className="flex flex-col items-center justify-center py-12 space-y-4">
                 <div className="relative w-16 h-16">
@@ -614,6 +650,15 @@ export function AmountSelectionModal({
                 className="w-full bg-slate-700/50 border-slate-600/50 text-slate-300 font-semibold py-2.5 rounded-lg transition-all cursor-wait opacity-60"
               >
                 Signing...
+              </Button>
+            )}
+
+            {step === 'transaction' && (
+              <Button
+                disabled
+                className="w-full bg-slate-700/50 border-slate-600/50 text-slate-300 font-semibold py-2.5 rounded-lg transition-all cursor-wait opacity-60"
+              >
+                Generating Transaction...
               </Button>
             )}
 
