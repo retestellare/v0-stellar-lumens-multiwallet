@@ -16,6 +16,7 @@ interface AmountSelectionModalProps {
     merchantType?: 'virtual_card' | 'retail' | 'gas' | 'amazon';
   } | null;
   onProceed?: (amount: number, currency: 'EUR' | 'USDC') => void;
+  activePublicKey?: string;
 }
 
 export function AmountSelectionModal({
@@ -23,11 +24,12 @@ export function AmountSelectionModal({
   onClose,
   merchant,
   onProceed,
+  activePublicKey,
 }: AmountSelectionModalProps) {
   const { activeWallet } = useWallet();
   
-  // Multi-step state management: 'amount' → 'loading' → 'details' → 'processing' → 'success'
-  const [step, setStep] = useState<'amount' | 'loading' | 'details' | 'processing' | 'success'>('amount');
+  // Multi-step state management: 'amount' → 'loading' → 'details' → 'signing' → 'processing' → 'success'
+  const [step, setStep] = useState<'amount' | 'loading' | 'details' | 'signing' | 'processing' | 'success'>('amount');
   
   const [selectedAmount, setSelectedAmount] = useState<number | null>(50);
   const [customAmount, setCustomAmount] = useState('');
@@ -122,45 +124,78 @@ export function AmountSelectionModal({
   const handleSignAndSend = async () => {
     const amount = isCustom ? parseFloat(customAmount) : selectedAmount;
     if (amount && !isNaN(amount) && amount > 0) {
-      // Transition to processing step
-      setStep('processing');
+      // Transition to signing step - simulate Bitrefill API call and transaction signing
+      setStep('signing');
 
-      // Simulate 2-second blockchain verification
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // Generate merchant-specific success data
-      const merchantType = merchant?.merchantType || 'retail';
-      
-      if (merchantType === 'virtual_card') {
-        // Virtual card data
-        setSuccessData({
-          cardNumber: '5412 7845 1234 5678',
-          expiry: '12/27',
-          cvv: '123',
+      try {
+        // Step 1: Simulate Bitrefill API call to create order
+        console.log('[v0] Simulating Bitrefill API call with:', {
+          amount: usdcAmount,
+          asset: 'USDC',
+          merchant: merchant?.name,
+          publicKey: activePublicKey?.substring(0, 8) + '...',
         });
-      } else {
-        // Retail/Gas/Amazon voucher data
-        const giftCode = `GC-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
-        const barcode = `*${Math.random().toString(10).substring(2, 13)}*`;
-        
-        let instructions = 'Show this barcode at the store checkout';
-        if (merchant?.name === 'Amazon') {
-          instructions = 'Redeem code on Amazon.com in your account settings or use at checkout';
-        } else if (merchant?.name === 'Supermarkets') {
-          instructions = 'Present barcode at store checkout or enter the code in self-checkout system';
-        } else if (merchant?.name === 'Gas & Fuel') {
-          instructions = 'Show barcode at fuel pump display or store checkout';
+
+        // Simulate API delay
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
+        // Step 2: Simulate Stellar transaction signing with the active public key
+        if (!activePublicKey) {
+          console.error('[v0] No active public key provided for signing');
+          throw new Error('Wallet public key not available');
         }
 
-        setSuccessData({
-          giftCode,
-          barcode,
-          redemptionInstructions: instructions,
-        });
-      }
+        console.log('[v0] Simulating Stellar transaction signature with public key:', activePublicKey.substring(0, 8) + '...');
 
-      // Transition to success step
-      setStep('success');
+        // Simulate transaction signing delay (2 seconds for "Signing USDC transaction on the Stellar network...")
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        console.log('[v0] Transaction signed successfully');
+
+        // Transition to processing step for blockchain verification
+        setStep('processing');
+
+        // Simulate blockchain verification (2 seconds)
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Generate merchant-specific success data
+        const merchantType = merchant?.merchantType || 'retail';
+        
+        if (merchantType === 'virtual_card') {
+          // Virtual card data
+          setSuccessData({
+            cardNumber: '5412 7845 1234 5678',
+            expiry: '12/27',
+            cvv: '123',
+          });
+        } else {
+          // Retail/Gas/Amazon voucher data
+          const giftCode = `GC-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+          const barcode = `*${Math.random().toString(10).substring(2, 13)}*`;
+          
+          let instructions = 'Show this barcode at the store checkout';
+          if (merchant?.name === 'Amazon') {
+            instructions = 'Redeem code on Amazon.com in your account settings or use at checkout';
+          } else if (merchant?.name === 'Supermarkets') {
+            instructions = 'Present barcode at store checkout or enter the code in self-checkout system';
+          } else if (merchant?.name === 'Gas & Fuel') {
+            instructions = 'Show barcode at fuel pump display or store checkout';
+          }
+
+          setSuccessData({
+            giftCode,
+            barcode,
+            redemptionInstructions: instructions,
+          });
+        }
+
+        // Transition to success step
+        setStep('success');
+      } catch (error) {
+        console.error('[v0] Error during signing and processing:', error);
+        // Reset to details view on error
+        setStep('details');
+      }
     }
   };
 
@@ -361,6 +396,21 @@ export function AmountSelectionModal({
               </>
             )}
 
+            {step === 'signing' && (
+              <div className="flex flex-col items-center justify-center py-12 space-y-4">
+                <div className="relative w-16 h-16">
+                  <div className="absolute inset-0 rounded-full bg-blue-500/20 animate-pulse" />
+                  <Loader className="w-16 h-16 text-purple-400 animate-spin" />
+                </div>
+                <p className="text-center text-slate-300 font-medium">
+                  Signing USDC transaction on the Stellar network...
+                </p>
+                <p className="text-xs text-muted-foreground text-center">
+                  {activePublicKey ? `Wallet: ${activePublicKey.substring(0, 8)}...` : 'Authenticating with wallet'}
+                </p>
+              </div>
+            )}
+
             {step === 'processing' && (
               <div className="flex flex-col items-center justify-center py-12 space-y-4">
                 <div className="relative w-16 h-16">
@@ -556,6 +606,24 @@ export function AmountSelectionModal({
                   Back
                 </Button>
               </>
+            )}
+
+            {step === 'signing' && (
+              <Button
+                disabled
+                className="w-full bg-slate-700/50 border-slate-600/50 text-slate-300 font-semibold py-2.5 rounded-lg transition-all cursor-wait opacity-60"
+              >
+                Signing...
+              </Button>
+            )}
+
+            {step === 'processing' && (
+              <Button
+                disabled
+                className="w-full bg-slate-700/50 border-slate-600/50 text-slate-300 font-semibold py-2.5 rounded-lg transition-all cursor-wait opacity-60"
+              >
+                Processing...
+              </Button>
             )}
 
             {step === 'success' && (

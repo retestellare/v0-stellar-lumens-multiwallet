@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { CreditCard, ShoppingCart, Zap, Smartphone, Badge } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AmountSelectionModal } from '@/components/amount-selection-modal';
+import { useWallet } from '@/lib/wallet-context';
 
 interface SpendingOption {
   id: string;
@@ -68,6 +69,7 @@ const spendingOptions: SpendingOption[] = [
 ];
 
 export function RealWorldSpending() {
+  const { activeWallet } = useWallet();
   const [selectedMerchant, setSelectedMerchant] = useState<typeof spendingOptions[0] | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -268,6 +270,7 @@ export function RealWorldSpending() {
             : null
         }
         onProceed={handleProceed}
+        activePublicKey={activeWallet?.publicKey}
       />
     </div>
   );
