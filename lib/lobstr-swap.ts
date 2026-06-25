@@ -1,7 +1,14 @@
 /**
- * LOBSTR-style direct Horizon fetch for swap path finding
- * Bypasses SDK constructors, queries AMM pools and DEX directly
- * No Turbopack bundling issues, high-performance real-time quotes
+ * LOBSTR-style direct Horizon fetch for swap path finding.
+ * Bypasses all SDK constructors — pure native fetch against Horizon REST API.
+ * 
+ * Correct strict-send URL format:
+ *   /paths/strict-send
+ *     ?source_asset_type=native|credit_alphanum4|credit_alphanum12
+ *     &source_asset_code=CODE          (omit for native)
+ *     &source_asset_issuer=GXXX        (omit for native)
+ *     &source_amount=10.0000000        (amount being sent — 7 decimals)
+ *     &destination_assets=CODE:ISSUER  (or "native" for XLM)
  */
 
 const HORIZON_URL = 'https://horizon.stellar.org';
@@ -12,41 +19,37 @@ export interface LobstrPath {
   priceImpact: number;
 }
 
+/** Returns the asset_type string Horizon expects */
+function assetType(code: string): string {
+  if (code === 'XLM') return 'native';
+  return code.length <= 4 ? 'credit_alphanum4' : 'credit_alphanum12';
+}
+
 /**
- * Format asset identifier for URL query params
- * XLM (native) = "native"
- * Credit assets = "code:issuer"
+ * Build the destination_assets query value.
+ * XLM  → "native"
+ * other → "CODE:ISSUER"
  */
-function formatAssetParam(code: string, issuer?: string): string {
-  if (code === 'XLM' || !issuer) {
-    return 'native';
-  }
+function destinationAssetParam(code: string, issuer?: string): string {
+  if (code === 'XLM') return 'native';
   return `${code}:${issuer}`;
 }
 
-/**
- * Parse asset identifier from URL format
- * "native" -> { code: 'XLM', issuer: undefined }
- * "CODE:ISSUER" -> { code: 'CODE', issuer: 'ISSUER' }
- */
-function parseAssetParam(param: string): { code: string; issuer?: string } {
-  if (param === 'native') {
-    return { code: 'XLM', issuer: undefined };
-  }
-  const [code, issuer] = param.split(':');
-  return { code, issuer };
+/** Parse a Horizon path asset record into our internal shape */
+function parsePathAsset(item: any): { code: string; issuer?: string } {
+  if (item.asset_type === 'native') return { code: 'XLM' };
+  return { code: item.asset_code, issuer: item.asset_issuer };
 }
 
 /**
- * Find best swap path using direct Horizon fetch
- * LOBSTR approach: query strictSendPaths endpoint with native fetch
- * 
- * @param sourceCode - Code of asset being sent
- * @param sourceIssuer - Issuer of asset being sent (undefined for XLM)
- * @param destCode - Code of asset being received
- * @param destIssuer - Issuer of asset being received (undefined for XLM)
- * @param sendAmount - Amount to send (formatted to 7 decimals)
- * @returns Path with destination amount and route
+ * Find the best swap path using a direct fetch to Horizon /paths/strict-send.
+ * This is the LOBSTR approach: no SDK Server, no constructors, no bundler issues.
+ *
+ * @param sourceCode    "XLM" or asset code
+ * @param sourceIssuer  undefined for XLM
+ * @param destCode      "XLM" or asset code
+ * @param destIssuer    undefined for XLM
+ * @param sendAmount    amount to send, already formatted to 7 dp
  */
 export async function findLobstrSwapPath(
   sourceCode: string,
@@ -55,195 +58,125 @@ export async function findLobstrSwapPath(
   destIssuer: string | undefined,
   sendAmount: string
 ): Promise<LobstrPath | null> {
-  try {
-    // Format amounts to exactly 7 decimal places (Stellar requirement)
-    const formattedAmount = parseFloat(sendAmount).toFixed(7);
+  // Ensure exactly 7 decimal places
+  const amount = parseFloat(sendAmount).toFixed(7);
 
-    // Build destination assets parameter
-    const destAsset = formatAssetParam(destCode, destIssuer);
+  // ── Build strict-send URL ──────────────────────────────────────────────────
+  const params = new URLSearchParams();
 
-    // Build Horizon strictSendPaths URL with proper query parameters
-    const params = new URLSearchParams();
-    params.append('source_asset_type', sourceCode === 'XLM' ? 'native' : 'credit_alphanum4');
-    
-    if (sourceCode !== 'XLM') {
-      params.append('source_asset_code', sourceCode);
-      if (sourceIssuer) params.append('source_asset_issuer', sourceIssuer);
-    }
-    
-    // Destination asset
-    params.append('destination_asset_type', destCode === 'XLM' ? 'native' : 'credit_alphanum4');
-    if (destCode !== 'XLM') {
-      params.append('destination_asset_code', destCode);
-      if (destIssuer) params.append('destination_asset_issuer', destIssuer);
-    }
-    
-    // Amount - for strictSendPaths, destination_amount is what we control
-    params.append('destination_amount', formattedAmount);
+  // Source asset
+  const srcType = assetType(sourceCode);
+  params.set('source_asset_type', srcType);
+  if (srcType !== 'native') {
+    params.set('source_asset_code', sourceCode);
+    params.set('source_asset_issuer', sourceIssuer!);
+  }
 
-    const url = `${HORIZON_URL}/paths/strict-send?${params.toString()}`;
+  // The amount we are sending (strict-send param)
+  params.set('source_amount', amount);
 
-    console.log('[v0-lobstr] Fetching strict-send paths from Horizon:', url);
+  // Destination asset — passed as a single "CODE:ISSUER" or "native" value
+  params.set('destination_assets', destinationAssetParam(destCode, destIssuer));
 
-    const response = await fetch(url);
-    if (!response.ok) {
-      console.error('[v0-lobstr] Horizon response error:', response.status);
-      return null;
-    }
+  const url = `${HORIZON_URL}/paths/strict-send?${params.toString()}`;
+  console.log('[lobstr-swap] strict-send URL:', url);
 
-    const data = await response.json();
-    const records = data._embedded?.records || [];
-
-    if (records.length === 0) {
-      console.warn('[v0-lobstr] No paths found from strict-send, trying fallback...');
-      
-      // Fallback: try strict-receive with estimated destination
-      return await findLobstrSwapPathFallback(
-        sourceCode,
-        sourceIssuer,
-        destCode,
-        destIssuer,
-        formattedAmount
-      );
-    }
-
-    // Get the first (best) path from Horizon
-    const bestRecord = records[0];
-
-    console.log('[v0-lobstr] Best path record:', {
-      destination_amount: bestRecord.destination_amount,
-      path_length: bestRecord.path?.length || 0,
-    });
-
-    // Extract path assets
-    const pathAssets: Array<{ code: string; issuer?: string }> = [];
-    if (bestRecord.path && Array.isArray(bestRecord.path)) {
-      for (const pathItem of bestRecord.path) {
-        const assetParam = pathItem.asset_type === 'native' 
-          ? 'native' 
-          : `${pathItem.asset_code}:${pathItem.asset_issuer}`;
-        
-        const parsed = parseAssetParam(assetParam);
-        pathAssets.push(parsed);
-      }
-    }
-
-    // Calculate price impact (simplified)
-    const actualRate = parseFloat(bestRecord.destination_amount) / parseFloat(formattedAmount);
-    const directRate = 1;
-    const priceImpact = Math.abs(((actualRate - directRate) / directRate) * 100);
-
-    console.log('[v0-lobstr] Swap quote:', {
-      source: `${sourceCode}${sourceIssuer ? `:${sourceIssuer}` : ''}`,
-      destination: `${destCode}${destIssuer ? `:${destIssuer}` : ''}`,
-      sendAmount: formattedAmount,
-      receiveAmount: bestRecord.destination_amount,
-      priceImpact: priceImpact.toFixed(2) + '%',
-      intermediateHops: pathAssets.length,
-    });
-
-    return {
-      destinationAmount: bestRecord.destination_amount,
-      path: pathAssets,
-      priceImpact: parseFloat(priceImpact.toFixed(2)),
-    };
-  } catch (error) {
-    console.error('[v0-lobstr] Path finding error:', error);
+  const response = await fetch(url);
+  if (!response.ok) {
+    console.error('[lobstr-swap] Horizon error:', response.status, await response.text());
     return null;
   }
+
+  const data = await response.json();
+  const records: any[] = data._embedded?.records ?? [];
+  console.log('[lobstr-swap] strict-send records:', records.length);
+
+  if (records.length > 0) {
+    return buildResult(records[0], amount);
+  }
+
+  // ── Fallback: strict-receive ───────────────────────────────────────────────
+  console.warn('[lobstr-swap] strict-send returned 0 records — trying strict-receive fallback');
+  return fallbackStrictReceive(sourceCode, sourceIssuer, destCode, destIssuer, amount);
 }
 
-/**
- * Fallback path finding using strict-receive
- */
-async function findLobstrSwapPathFallback(
+/** Build our LobstrPath from a Horizon path record */
+function buildResult(record: any, sendAmount: string): LobstrPath {
+  const destAmount: string = record.destination_amount;
+
+  const path: Array<{ code: string; issuer?: string }> =
+    (record.path ?? []).map(parsePathAsset);
+
+  // Price impact: how far the exchange rate deviates from 1:1 (cosmetic metric)
+  const rate = parseFloat(destAmount) / parseFloat(sendAmount);
+  const priceImpact = Math.abs((rate - 1) * 100);
+
+  console.log('[lobstr-swap] quote:', {
+    sendAmount,
+    destAmount,
+    rate: rate.toFixed(7),
+    intermediateHops: path.length,
+  });
+
+  return {
+    destinationAmount: destAmount,
+    path,
+    priceImpact: parseFloat(priceImpact.toFixed(2)),
+  };
+}
+
+/** Strict-receive fallback: we ask "how much source do I need to get destAmount?" */
+async function fallbackStrictReceive(
   sourceCode: string,
   sourceIssuer: string | undefined,
   destCode: string,
   destIssuer: string | undefined,
   sendAmount: string
 ): Promise<LobstrPath | null> {
-  try {
-    // For strict-receive, we estimate the destination amount
-    const estimatedDestAmount = sendAmount;
+  const params = new URLSearchParams();
 
-    const params = new URLSearchParams();
-    
-    // Source asset
-    params.append('source_asset_type', sourceCode === 'XLM' ? 'native' : 'credit_alphanum4');
-    if (sourceCode !== 'XLM') {
-      params.append('source_asset_code', sourceCode);
-      if (sourceIssuer) params.append('source_asset_issuer', sourceIssuer);
-    }
-    
-    // Destination asset
-    params.append('destination_asset_type', destCode === 'XLM' ? 'native' : 'credit_alphanum4');
-    if (destCode !== 'XLM') {
-      params.append('destination_asset_code', destCode);
-      if (destIssuer) params.append('destination_asset_issuer', destIssuer);
-    }
-    
-    // For strict-receive, source_amount is what we control
-    params.append('source_amount', estimatedDestAmount);
+  // Destination asset
+  const dstType = assetType(destCode);
+  params.set('destination_asset_type', dstType);
+  if (dstType !== 'native') {
+    params.set('destination_asset_code', destCode);
+    params.set('destination_asset_issuer', destIssuer!);
+  }
 
-    const url = `${HORIZON_URL}/paths/strict-receive?${params.toString()}`;
+  // Ask for the same amount as destination
+  params.set('destination_amount', sendAmount);
 
-    console.log('[v0-lobstr] Trying strict-receive fallback:', url);
+  // Source assets
+  params.set('source_assets', destinationAssetParam(sourceCode, sourceIssuer));
 
-    const response = await fetch(url);
-    if (!response.ok) {
-      console.error('[v0-lobstr] Strict-receive fallback failed:', response.status);
-      return null;
-    }
+  const url = `${HORIZON_URL}/paths/strict-receive?${params.toString()}`;
+  console.log('[lobstr-swap] strict-receive fallback URL:', url);
 
-    const data = await response.json();
-    const records = data._embedded?.records || [];
-
-    if (records.length === 0) {
-      console.warn('[v0-lobstr] No paths found from either method');
-      return null;
-    }
-
-    const bestRecord = records[0];
-
-    // Extract path assets
-    const pathAssets: Array<{ code: string; issuer?: string }> = [];
-    if (bestRecord.path && Array.isArray(bestRecord.path)) {
-      for (const pathItem of bestRecord.path) {
-        const assetParam = pathItem.asset_type === 'native' 
-          ? 'native' 
-          : `${pathItem.asset_code}:${pathItem.asset_issuer}`;
-        
-        const parsed = parseAssetParam(assetParam);
-        pathAssets.push(parsed);
-      }
-    }
-
-    const actualRate = parseFloat(bestRecord.destination_amount) / parseFloat(bestRecord.source_amount);
-    const directRate = 1;
-    const priceImpact = Math.abs(((actualRate - directRate) / directRate) * 100);
-
-    return {
-      destinationAmount: bestRecord.destination_amount,
-      path: pathAssets,
-      priceImpact: parseFloat(priceImpact.toFixed(2)),
-    };
-  } catch (error) {
-    console.error('[v0-lobstr] Fallback path finding error:', error);
+  const response = await fetch(url);
+  if (!response.ok) {
+    console.error('[lobstr-swap] strict-receive error:', response.status);
     return null;
   }
+
+  const data = await response.json();
+  const records: any[] = data._embedded?.records ?? [];
+  console.log('[lobstr-swap] strict-receive records:', records.length);
+
+  if (records.length === 0) return null;
+
+  // For strict-receive the source_amount is what we'd spend; re-use buildResult
+  return buildResult(records[0], records[0].source_amount ?? sendAmount);
 }
 
 /**
- * LOBSTR-style slippage protection
- * Apply 1% slippage buffer by multiplying by 0.99
- * Format to exactly 7 decimal places for Stellar
+ * LOBSTR slippage protection.
+ * Multiply the quoted destination amount by (1 - slippage%) and format to 7 dp.
+ * This becomes destMin in pathPaymentStrictSend.
  */
 export function calculateLobstrSlippageAmount(
   destinationAmount: string,
   slippagePercent: number = 1
 ): string {
-  const slippageMultiplier = 1 - (slippagePercent / 100);
-  const slippageAmount = parseFloat(destinationAmount) * slippageMultiplier;
-  return slippageAmount.toFixed(7);
+  const multiplier = 1 - slippagePercent / 100;
+  return (parseFloat(destinationAmount) * multiplier).toFixed(7);
 }

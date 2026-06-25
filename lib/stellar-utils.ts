@@ -1,4 +1,4 @@
-import { Keypair, Networks, TransactionBuilder, BASE_FEE, Asset, Operation, Account, Memo, Horizon, Server } from '@stellar/stellar-sdk';
+import { Keypair, Networks, TransactionBuilder, BASE_FEE, Asset, Operation, Account, Memo, Horizon } from '@stellar/stellar-sdk';
 import nacl from 'tweetnacl';
 
 export const HORIZON_URL = 'https://horizon.stellar.org';
@@ -1064,81 +1064,49 @@ export const executeSwap = async (
       pathLength: path.length,
     });
 
-    const server = new Server(HORIZON_URL);
+    // Horizon.Server is the correct class in @stellar/stellar-sdk v11+
+    const server = new Horizon.Server(HORIZON_URL);
     const keypair = Keypair.fromSecret(secretKey);
     const sourcePublicKey = keypair.publicKey();
 
-    // Load account for sequence number
+    // Load account sequence number from Horizon
     const account = await server.loadAccount(sourcePublicKey);
-    console.log('[v0] Account loaded. Sequence:', account.sequence);
 
-    // Create source asset - use Asset.native() for XLM, otherwise new Asset(code, issuer)
-    const sendAsset = sendCode === 'XLM' 
-      ? Asset.native() 
-      : new Asset(sendCode, sendIssuer!);
-    
-    console.log('[v0] Send asset:', {
-      code: sendAsset.code,
-      issuer: sendAsset.issuer,
-      isNative: sendAsset.isNative(),
+    // Build Asset objects — Asset.native() for XLM, new Asset(code, issuer) for others
+    const sendAsset = sendCode === 'XLM' ? Asset.native() : new Asset(sendCode, sendIssuer!);
+    const destAsset = destCode === 'XLM' ? Asset.native() : new Asset(destCode, destIssuer!);
+
+    // Map intermediate path hops to Asset objects
+    const pathAssets: Asset[] = path.map(p =>
+      p.code === 'XLM' ? Asset.native() : new Asset(p.code, p.issuer!)
+    );
+
+    // destAmount coming in is already the slippage-protected minimum (calculateLobstrSlippageAmount)
+    // We just reformat to be safe
+    const destMin = formattedDestAmount;
+
+    console.log('[v0] Building pathPaymentStrictSend:', {
+      sendAsset: sendAsset.code,
+      sendAmount: formattedSendMax,
+      destAsset: destAsset.code,
+      destMin,
+      pathHops: pathAssets.map(a => a.code),
     });
 
-    // Create destination asset - use Asset.native() for XLM, otherwise new Asset(code, issuer)
-    const destAsset = destCode === 'XLM' 
-      ? Asset.native() 
-      : new Asset(destCode, destIssuer!);
-    
-    console.log('[v0] Dest asset:', {
-      code: destAsset.code,
-      issuer: destAsset.issuer,
-      isNative: destAsset.isNative(),
-    });
-
-    // Convert path array to Asset objects, filtering out source and destination
-    const pathAssets = path
-      .filter(p => {
-        // Skip source and destination assets from path
-        const isSource = (p.code === 'XLM' && sendAsset.isNative()) || 
-                        (p.code === sendCode && p.issuer === sendIssuer);
-        const isDest = (p.code === 'XLM' && destAsset.isNative()) || 
-                      (p.code === destCode && p.issuer === destIssuer);
-        return !isSource && !isDest;
-      })
-      .map(p => {
-        const asset = p.code === 'XLM' 
-          ? Asset.native() 
-          : new Asset(p.code, p.issuer!);
-        console.log('[v0] Path asset:', { code: asset.code, issuer: asset.issuer });
-        return asset;
-      });
-
-    // Calculate minimum destination amount with slippage tolerance
-    // Apply slippage tolerance percentage and format to 7 decimals
-    const slippageMultiplier = 1 - (slippageTolerance / 100);
-    const minDestAmount = (parseFloat(formattedDestAmount) * slippageMultiplier).toFixed(7);
-
-    console.log('[v0] Swap parameters:', {
-      sendAsset: `${sendAsset.code}${sendAsset.issuer ? `:${sendAsset.issuer}` : ''}`,
-      sendMax: formattedSendMax,
-      destAsset: `${destAsset.code}${destAsset.issuer ? `:${destAsset.issuer}` : ''}`,
-      expectedDestAmount: formattedDestAmount,
-      minDestAmount: minDestAmount,
-      slippagePercentage: slippageTolerance,
-      intermediatePathLength: pathAssets.length,
-    });
-
-    // Build pathPaymentStrictSend operation with properly formatted amounts
+    // pathPaymentStrictSend fields:
+    //   sendAsset, sendAmount (exact amount sent), destination,
+    //   destAsset, destMin (minimum acceptable receive), path
     const transaction = new TransactionBuilder(account, {
       fee: BASE_FEE,
       networkPassphrase: NETWORK_PASSPHRASE,
     })
       .addOperation(
         Operation.pathPaymentStrictSend({
-          sendAsset: sendAsset,
-          sendMax: formattedSendMax,
+          sendAsset,
+          sendAmount: formattedSendMax,   // exact amount we send
           destination: sourcePublicKey,
-          destAsset: destAsset,
-          destAmount: minDestAmount,
+          destAsset,
+          destMin,                         // minimum acceptable (slippage floor)
           path: pathAssets,
         })
       )
