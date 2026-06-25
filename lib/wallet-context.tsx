@@ -75,8 +75,10 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           }
 
           // Batch fetch balances for all wallets in the background
-          if (cleanedWallets.length > 0) {
-            const publicKeys = cleanedWallets.map((w: any) => w.publicKey);
+          // Note: Fetch only if balances are empty (don't overwrite cached balances)
+          const walletsNeedingFetch = cleanedWallets.filter(w => !w.balances || w.balances.length === 0);
+          if (walletsNeedingFetch.length > 0) {
+            const publicKeys = walletsNeedingFetch.map((w: any) => w.publicKey);
             try {
               const batchResults = await getMultipleWalletBalances(publicKeys, 5, 150);
               
@@ -84,7 +86,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               setWallets(prevWallets =>
                 prevWallets.map(wallet => {
                   const result = batchResults[wallet.publicKey];
-                  if (result) {
+                  if (result && walletsNeedingFetch.find(w => w.id === wallet.id)) {
                     if (result.error) {
                       // Mark wallet with error state instead of crashing
                       return { ...wallet, fetchError: result.error };
