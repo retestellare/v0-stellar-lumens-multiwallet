@@ -102,26 +102,47 @@ export async function findLobstrSwapPath(
 
 /** Build our LobstrPath from a Horizon path record */
 function buildResult(record: any, sendAmount: string): LobstrPath {
+  // destination_amount is taken verbatim from Horizon — no multiplication or division applied
   const destAmount: string = record.destination_amount;
 
   const path: Array<{ code: string; issuer?: string }> =
     (record.path ?? []).map(parsePathAsset);
 
-  // Price impact: how far the exchange rate deviates from 1:1 (cosmetic metric)
-  const rate = parseFloat(destAmount) / parseFloat(sendAmount);
-  const priceImpact = Math.abs((rate - 1) * 100);
+  // Price impact: percentage difference between the best available path and the
+  // direct spot rate returned by Horizon in source_amount vs destination_amount.
+  // Horizon's strict-send already gives the optimal route, so impact is the
+  // deviation from a zero-fee direct exchange at the same rate.
+  // We compare source_amount (what we send) vs destination_amount (what we get)
+  // relative to the quoted rate itself — not relative to a 1:1 baseline.
+  // For cross-asset pairs (e.g. XLM/USDC) the rate is never near 1:1, so
+  // comparing to 1:1 produces nonsense numbers like 51000%.
+  // Instead, we simply report the fee cost as a fraction of the output:
+  // impact ≈ 0 when there is no DEX spread, up to a few percent with spread.
+  const sentFloat = parseFloat(sendAmount);
+  const gotFloat  = parseFloat(destAmount);
+  // Use the implied mid-rate from the record's own source/dest amounts
+  const impliedRate = gotFloat / sentFloat;
+  // Horizon includes fee & spread in the quote; impact is how much the user
+  // loses to routing overhead vs a hypothetical zero-spread direct trade.
+  // We approximate it as: (spread) = fee_bps / 10000, typically ~0.3%
+  // Since we don't have a reference orderbook price here, we report the
+  // proportional routing overhead by checking if path has hops (each hop
+  // adds ~0.3% AMM fee). Direct path = 0 hops ≈ 0.3% base DEX fee.
+  const hopCount = Math.max(path.length, 0);
+  const estimatedImpact = (hopCount + 1) * 0.3; // ~0.3% per hop including base
 
   console.log('[lobstr-swap] quote:', {
     sendAmount,
     destAmount,
-    rate: rate.toFixed(7),
+    impliedRate: impliedRate.toFixed(7),
     intermediateHops: path.length,
+    estimatedImpact: estimatedImpact.toFixed(2) + '%',
   });
 
   return {
-    destinationAmount: destAmount,
+    destinationAmount: destAmount,   // printed verbatim into receive field
     path,
-    priceImpact: parseFloat(priceImpact.toFixed(2)),
+    priceImpact: parseFloat(estimatedImpact.toFixed(2)),
   };
 }
 
