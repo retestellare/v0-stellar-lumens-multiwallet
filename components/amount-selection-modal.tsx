@@ -34,6 +34,10 @@ export function AmountSelectionModal({
   // Multi-step state management: 'amount' → 'loading' → 'details' → 'signing' → 'transaction' → 'processing' → 'success'
   const [step, setStep] = useState<'amount' | 'loading' | 'details' | 'signing' | 'transaction' | 'processing' | 'success'>('amount');
   
+  // Region selection state
+  const [region, setRegion] = useState<'EU' | 'USA'>('EU');
+  const [showUsageGuide, setShowUsageGuide] = useState(false);
+  
   const [selectedAmount, setSelectedAmount] = useState<number | null>(50);
   const [customAmount, setCustomAmount] = useState('');
   const [usdcAmount, setUsdcAmount] = useState<number>(0);
@@ -59,10 +63,30 @@ export function AmountSelectionModal({
     redemptionInstructions?: string;
   } | null>(null);
 
-  // EUR to USDC conversion rate (1 EUR ≈ 1.08 USDC, approximate market rate)
-  const EUR_TO_USDC_RATE = 1.08;
+  // Regional configuration
+  const regionConfig = {
+    EU: {
+      currency: 'EUR',
+      symbol: '€',
+      conversionRate: 1.08,
+      minVirtualCard: 5,
+      minTopUp: 2,
+      description: 'Products valid throughout the Eurozone',
+    },
+    USA: {
+      currency: 'USD',
+      symbol: '$',
+      conversionRate: 1.0,
+      minVirtualCard: 20,
+      minTopUp: 5,
+      description: 'Products available for United States residents',
+    },
+  };
 
-  const quickAmounts = [25, 50, 100];
+  const currentConfig = regionConfig[region];
+  const EUR_TO_USDC_RATE = currentConfig.conversionRate;
+
+  const quickAmounts = region === 'EU' ? [25, 50, 100] : [20, 50, 100];
 
   useEffect(() => {
     const amount = isCustom ? parseFloat(customAmount) : selectedAmount;
@@ -123,9 +147,41 @@ export function AmountSelectionModal({
     return parseFloat(amount.toFixed(7)).toString();
   };
 
+  // Get minimum amount based on merchant type and region
+  const getMinimumAmount = (): number => {
+    const merchantType = merchant?.merchantType || 'retail';
+    if (merchantType === 'virtual_card') {
+      return currentConfig.minVirtualCard;
+    }
+    return currentConfig.minTopUp;
+  };
+
+  const minimumAmount = getMinimumAmount();
+  const currentAmount = isCustom ? parseFloat(customAmount) : selectedAmount;
+  const isAmountValid = currentAmount && !isNaN(currentAmount) && currentAmount >= minimumAmount;
+
+  const getValidationError = (): string | null => {
+    if (!currentAmount || isNaN(currentAmount)) return null;
+    if (currentAmount < minimumAmount) {
+      const merchantType = merchant?.merchantType || 'retail';
+      if (region === 'EU') {
+        return merchantType === 'virtual_card'
+          ? `The minimum amount for Europe is ${currentConfig.symbol}${minimumAmount}`
+          : `The minimum top-up amount for Europe is ${currentConfig.symbol}${minimumAmount}`;
+      } else {
+        return `The minimum amount for US products is ${currentConfig.symbol}${minimumAmount}`;
+      }
+    }
+    return null;
+  };
+
+  const validationError = getValidationError();
+
   const handleProceed = () => {
-    const amount = isCustom ? parseFloat(customAmount) : selectedAmount;
-    if (amount && !isNaN(amount) && amount > 0) {
+    if (!isAmountValid) {
+      return;
+    }
+    if (currentAmount && !isNaN(currentAmount) && currentAmount > 0) {
       // Validate USDC amount is properly formatted
       const formattedAmount = formatAmountForStellar(usdcAmount);
       console.log('[v0] USDC amount for Stellar:', formattedAmount, 'decimal places:', (formattedAmount.split('.')[1] || '').length);
@@ -287,6 +343,38 @@ export function AmountSelectionModal({
           <div className="p-6 space-y-6">
             {step === 'amount' && (
               <>
+                {/* Region Selector */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setRegion('EU');
+                      setSelectedAmount(50);
+                      setCustomAmount('');
+                    }}
+                    className={`flex-1 py-2 px-3 rounded-lg font-medium transition-all text-sm ${
+                      region === 'EU'
+                        ? 'bg-gradient-to-r from-purple-500 to-blue-500 text-white shadow-lg shadow-purple-500/50'
+                        : 'bg-slate-700/50 text-slate-200 hover:bg-slate-700 border border-slate-600/50'
+                    }`}
+                  >
+                    Europe (EUR)
+                  </button>
+                  <button
+                    onClick={() => {
+                      setRegion('USA');
+                      setSelectedAmount(50);
+                      setCustomAmount('');
+                    }}
+                    className={`flex-1 py-2 px-3 rounded-lg font-medium transition-all text-sm ${
+                      region === 'USA'
+                        ? 'bg-gradient-to-r from-purple-500 to-blue-500 text-white shadow-lg shadow-purple-500/50'
+                        : 'bg-slate-700/50 text-slate-200 hover:bg-slate-700 border border-slate-600/50'
+                    }`}
+                  >
+                    United States (USD)
+                  </button>
+                </div>
+
                 {/* Active Wallet Info */}
                 {activeWallet && (
                   <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/30">
@@ -311,14 +399,14 @@ export function AmountSelectionModal({
                             : 'bg-slate-700/50 text-slate-200 hover:bg-slate-700 border border-slate-600/50'
                         }`}
                       >
-                        €{amount}
+                        {currentConfig.symbol}{amount}
                       </button>
                     ))}
                   </div>
 
                   {/* Custom Amount Input */}
                   <div className="space-y-2">
-                    <label className="text-xs text-muted-foreground">Custom Amount (€)</label>
+                    <label className="text-xs text-muted-foreground">Custom Amount ({currentConfig.currency})</label>
                     <div className="relative">
                       <Input
                         type="number"
@@ -329,24 +417,71 @@ export function AmountSelectionModal({
                         step="0.01"
                         className="bg-slate-700/50 border-slate-600/50 text-white placeholder:text-slate-500 focus:border-purple-500 focus:ring-purple-500"
                       />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">€</span>
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">{currentConfig.symbol}</span>
                     </div>
                   </div>
                 </div>
+
+                {/* Validation Error */}
+                {validationError && (
+                  <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30">
+                    <p className="text-xs text-red-400 text-center">{validationError}</p>
+                  </div>
+                )}
 
                 {/* Conversion Display */}
                 {displayAmount && usdcAmount > 0 && (
                   <div className="p-4 rounded-lg bg-gradient-to-r from-purple-500/10 via-blue-500/10 to-cyan-500/10 border border-purple-500/30">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-slate-300">€{displayAmount}</span>
+                      <span className="text-sm text-slate-300">{currentConfig.symbol}{displayAmount}</span>
                       <ArrowRight className="w-4 h-4 text-purple-400" />
                       <span className="text-sm font-semibold text-blue-400">{usdcAmount.toFixed(2)} USDC</span>
                     </div>
                     <p className="text-xs text-muted-foreground text-center">
-                      Conversion rate: 1 EUR = {EUR_TO_USDC_RATE} USDC
+                      Conversion rate: 1 {currentConfig.currency} = {EUR_TO_USDC_RATE} USDC
                     </p>
                   </div>
                 )}
+
+                {/* Usage Guide - Expandable */}
+                <div className="rounded-lg bg-slate-700/30 border border-slate-600/50 overflow-hidden">
+                  <button
+                    onClick={() => setShowUsageGuide(!showUsageGuide)}
+                    className="w-full flex items-center justify-between p-3 hover:bg-slate-700/50 transition-colors"
+                  >
+                    <span className="text-sm font-medium text-slate-300">Usage Guide</span>
+                    <div className={`transition-transform ${showUsageGuide ? 'rotate-180' : ''}`}>
+                      <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                  </button>
+                  {showUsageGuide && (
+                    <div className="px-3 pb-3 pt-0 border-t border-slate-600/50 space-y-2 text-xs text-slate-300">
+                      {region === 'EU' ? (
+                        <>
+                          <p className="font-medium text-slate-200">European Products</p>
+                          <ul className="list-disc list-inside space-y-1 text-slate-400">
+                            <li>Valid throughout the entire Eurozone</li>
+                            <li>Works in all EU member states and associated territories</li>
+                            <li>Same product specifications across all regions</li>
+                            <li>Minimum €5 for virtual cards, €2 for top-ups</li>
+                            <li>Instant activation after payment</li>
+                          </ul>
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-medium text-slate-200">United States Products</p>
+                          <ul className="list-disc list-inside space-y-1 text-slate-400">
+                            <li>Available for United States residents only</li>
+                            <li>Valid across all 50 states</li>
+                            <li>Minimum $20 for virtual cards, $5 for top-ups</li>
+                            <li>Processing time: 5-10 minutes</li>
+                            <li>24/7 customer support available</li>
+                          </ul>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 {/* Fee Info */}
                 <div className="p-3 rounded-lg bg-slate-700/30 border border-slate-600/50">
@@ -623,7 +758,7 @@ export function AmountSelectionModal({
               <>
                 <Button
                   onClick={handleProceed}
-                  disabled={!displayAmount || usdcAmount === 0}
+                  disabled={!displayAmount || usdcAmount === 0 || !isAmountValid}
                   className="w-full bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white font-semibold py-2.5 rounded-lg transition-all shadow-lg shadow-purple-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Proceed to Stellar Payment
