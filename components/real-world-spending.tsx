@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { CreditCard, ShoppingCart, Zap, Smartphone, Badge } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AmountSelectionModal } from '@/components/amount-selection-modal';
+import { useWallet } from '@/lib/wallet-context';
 
 interface SpendingOption {
   id: string;
@@ -68,19 +69,36 @@ const spendingOptions: SpendingOption[] = [
 ];
 
 export function RealWorldSpending() {
+  const { activeWallet, unlockWallet, getPasswordSession } = useWallet();
   const [selectedMerchant, setSelectedMerchant] = useState<typeof spendingOptions[0] | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [unlockedSecretKey, setUnlockedSecretKey] = useState<string | null>(null);
 
   const handleCardClick = (option: typeof spendingOptions[0]) => {
-    if (!option.comingSoon) {
-      setSelectedMerchant(option);
-      setIsModalOpen(true);
+    if (!option.comingSoon && activeWallet) {
+      // Check if wallet is already unlocked in password session
+      const sessionPassword = getPasswordSession(activeWallet.id);
+      if (sessionPassword) {
+        try {
+          const secretKey = unlockWallet(activeWallet.id, sessionPassword);
+          setUnlockedSecretKey(secretKey);
+          setSelectedMerchant(option);
+          setIsModalOpen(true);
+        } catch (error) {
+          console.error('[v0] Error unlocking wallet:', error);
+        }
+      } else {
+        // Wallet needs to be unlocked - user will see a prompt in the modal or separate dialog
+        setSelectedMerchant(option);
+        setIsModalOpen(true);
+      }
     }
   };
 
   const handleModalClose = () => {
     setIsModalOpen(false);
     setSelectedMerchant(null);
+    setUnlockedSecretKey(null);
   };
 
   const handleProceed = (amount: number, currency: 'EUR' | 'USDC') => {
@@ -268,6 +286,8 @@ export function RealWorldSpending() {
             : null
         }
         onProceed={handleProceed}
+        activePublicKey={activeWallet?.publicKey}
+        activeSecretKey={unlockedSecretKey || undefined}
       />
     </div>
   );
