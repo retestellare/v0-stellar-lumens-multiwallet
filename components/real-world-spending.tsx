@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { CreditCard, ShoppingCart, Zap, Smartphone, Badge } from 'lucide-react';
+import { CreditCard, ShoppingCart, Zap, Smartphone, Badge, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AmountSelectionModal } from '@/components/amount-selection-modal';
 import { useWallet } from '@/lib/wallet-context';
@@ -117,6 +117,21 @@ export function RealWorldSpending() {
             </h1>
             <p className="text-muted-foreground text-lg">
               Use your XLM everywhere with zero KYC hassle
+            </p>
+          </div>
+        </div>
+
+        {/* Under Construction Notice */}
+        <div className="flex items-start gap-3 p-4 rounded-xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 to-orange-500/10 backdrop-blur-sm">
+          <div className="p-2 rounded-lg bg-amber-500/20 border border-amber-500/40 flex-shrink-0 mt-0.5">
+            <AlertCircle className="w-5 h-5 text-amber-400" />
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold text-amber-200 text-sm">
+              Feature Under Construction
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Real-world spending capabilities are currently under development and awaiting regulatory approval. Once approved, you&apos;ll be able to purchase virtual cards and spend with merchants worldwide.
             </p>
           </div>
         </div>
