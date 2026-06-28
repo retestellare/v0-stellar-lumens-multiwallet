@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { X, ArrowDownRight, ArrowUpRight, TrendingUp, TrendingDown, RotateCw } from 'lucide-react';
+import { X, ArrowDownRight, ArrowUpRight, TrendingUp, TrendingDown, RotateCw, Trash2 } from 'lucide-react';
 
 interface ActiveOrder {
   id: string;
@@ -21,6 +21,7 @@ interface MyOrdersProps {
   orders: ActiveOrder[];
   loading: boolean;
   onCancelOrder: (id: string) => void;
+  onCancelAllOrders?: () => void;
   buyingAsset: string;
   sellingAsset: string;
 }
@@ -31,8 +32,9 @@ const truncateIssuer = (issuer: string) => {
   return `${issuer.slice(0, 4)}...${issuer.slice(-4)}`;
 };
 
-export function MyOrders({ orders, loading, onCancelOrder }: MyOrdersProps) {
+export function MyOrders({ orders, loading, onCancelOrder, onCancelAllOrders }: MyOrdersProps) {
   const [reversedOrderIds, setReversedOrderIds] = useState<Set<string>>(new Set());
+  const [showCancelAllConfirm, setShowCancelAllConfirm] = useState(false);
 
   const toggleReversed = (orderId: string) => {
     const newSet = new Set(reversedOrderIds);
@@ -48,7 +50,7 @@ export function MyOrders({ orders, loading, onCancelOrder }: MyOrdersProps) {
     <div className="glow-border rounded-lg overflow-hidden">
       {/* Header */}
       <div className="p-4 sm:p-5 border-b border-border bg-background/50">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-3">
           <div>
             <h3 className="text-lg sm:text-xl font-bold text-foreground">My Active Orders</h3>
             <p className="text-sm text-muted-foreground mt-1">
@@ -64,6 +66,41 @@ export function MyOrders({ orders, loading, onCancelOrder }: MyOrdersProps) {
             </span>
           </div>
         </div>
+        
+        {/* Cancel All Button */}
+        {orders.length > 0 && (
+          <div className="flex gap-2">
+            {showCancelAllConfirm ? (
+              <>
+                <Button
+                  onClick={() => {
+                    onCancelAllOrders?.();
+                    setShowCancelAllConfirm(false);
+                  }}
+                  className="flex-1 bg-destructive hover:bg-destructive/90 text-white font-semibold text-sm"
+                >
+                  Confirm Cancel All
+                </Button>
+                <Button
+                  onClick={() => setShowCancelAllConfirm(false)}
+                  variant="outline"
+                  className="flex-1 border-border text-foreground font-semibold text-sm"
+                >
+                  Keep Orders
+                </Button>
+              </>
+            ) : (
+              <Button
+                onClick={() => setShowCancelAllConfirm(true)}
+                variant="outline"
+                className="w-full border-destructive/50 text-destructive hover:bg-destructive/10 font-semibold text-sm flex items-center justify-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                Cancel All Orders
+              </Button>
+            )}
+          </div>
+        )}
       </div>
       
       {loading ? (
