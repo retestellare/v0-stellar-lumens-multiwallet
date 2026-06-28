@@ -49,6 +49,7 @@ export function SwapPanel() {
   const [priceImpactWarning, setPriceImpactWarning] = useState(false);
   const [walletPassword, setWalletPassword] = useState('');
   const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
+  const [spendableBalance, setSpendableBalance] = useState<string>('0');
 
   const debounceTimer = useRef<NodeJS.Timeout>();
   const sendInputRef = useRef<HTMLInputElement>(null);
@@ -101,6 +102,29 @@ export function SwapPanel() {
       }
     }
   }, [activeWallet]);
+
+  // Calculate spendable balance whenever sendToken changes
+  // For XLM: subtract 1.5 XLM reserve estimate (base + liabilities)
+  // For other tokens: use full balance
+  useEffect(() => {
+    if (sendToken) {
+      const balance = parseFloat(sendToken.balance || '0');
+      let calculatedSpendable = balance;
+      
+      // If XLM, account for base reserve requirement (~1.5 XLM minimum)
+      if (sendToken.code === 'XLM') {
+        const reserveEstimate = 1.5;
+        calculatedSpendable = Math.max(0, balance - reserveEstimate);
+      }
+      
+      console.log('[v0] Spendable balance for', sendToken.code, ':', {
+        total: balance,
+        spendable: calculatedSpendable,
+      });
+      
+      setSpendableBalance(calculatedSpendable.toFixed(7));
+    }
+  }, [sendToken]);
 
   // LOBSTR-style real-time path finding using direct Horizon fetch
   const calculateBestPath = useCallback(async (amount: string) => {
@@ -354,9 +378,12 @@ export function SwapPanel() {
                 }}
                 className="w-full flex items-center justify-between px-4 py-3 rounded-lg border border-border/50 bg-background/50 hover:border-primary/50 transition-colors text-foreground"
               >
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold">{sendToken?.code}</span>
-                  <span className="text-xs text-muted-foreground">({sendToken?.displayBalance})</span>
+                <div className="flex flex-col items-start gap-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">{sendToken?.code}</span>
+                    <span className="text-xs text-muted-foreground">({sendToken?.displayBalance})</span>
+                  </div>
+                  <span className="text-xs font-semibold text-yellow-500">Spendable: {spendableBalance}</span>
                 </div>
                 <ChevronDown className="w-4 h-4 text-muted-foreground" />
               </button>
@@ -402,6 +429,39 @@ export function SwapPanel() {
               }}
               className="w-32 min-w-[7rem] text-right text-foreground bg-background border-border/50 placeholder:text-muted-foreground focus:ring-primary focus:border-primary font-semibold text-base"
             />
+          </div>
+
+          {/* Quick Percentage Buttons */}
+          <div className="flex gap-2 px-1">
+            {[25, 50, 75].map((percentage) => (
+              <button
+                key={percentage}
+                onClick={() => {
+                  const spendable = parseFloat(spendableBalance);
+                  const amount = (spendable * percentage / 100).toFixed(7);
+                  // Remove trailing zeros after decimal point
+                  const cleanAmount = amount.replace(/\.?0+$/, '');
+                  setSendAmount(cleanAmount);
+                  debouncedCalculate(cleanAmount);
+                }}
+                className="flex-1 px-3 py-1.5 text-xs font-semibold rounded border border-border/50 bg-background/50 text-muted-foreground hover:border-yellow-500 hover:text-yellow-500 hover:bg-yellow-500/10 transition-colors"
+              >
+                {percentage}%
+              </button>
+            ))}
+            <button
+              onClick={() => {
+                const spendable = parseFloat(spendableBalance);
+                const amount = spendable.toFixed(7);
+                // Remove trailing zeros after decimal point
+                const cleanAmount = amount.replace(/\.?0+$/, '');
+                setSendAmount(cleanAmount);
+                debouncedCalculate(cleanAmount);
+              }}
+              className="flex-1 px-3 py-1.5 text-xs font-semibold rounded border border-border/50 bg-background/50 text-muted-foreground hover:border-yellow-500 hover:text-yellow-500 hover:bg-yellow-500/10 transition-colors"
+            >
+              MAX
+            </button>
           </div>
         </div>
 
