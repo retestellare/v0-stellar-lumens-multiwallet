@@ -648,11 +648,7 @@ export default function ExchangePage() {
       if (pendingOrder) {
         await submitOrder(pendingOrder, secret);
       } else if (pendingCancelOrderId) {
-        if (pendingCancelOrderId === 'all') {
-          await proceedWithCancelAllOrders(secret);
-        } else {
-          await proceedWithCancelOrder(pendingCancelOrderId);
-        }
+        await proceedWithCancelOrder(pendingCancelOrderId);
         setPendingCancelOrderId(null);
       }
     } catch (error: any) {
@@ -706,77 +702,6 @@ export default function ExchangePage() {
       }
     } catch (error: any) {
       setTxResult({ success: false, message: error.message || 'Failed to cancel order' });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleCancelAllOrders = () => {
-    if (!decryptedSecret) {
-      setPendingCancelOrderId('all');
-      setShowPasswordModal(true);
-      return;
-    }
-    
-    proceedWithCancelAllOrders(decryptedSecret);
-  };
-
-  const proceedWithCancelAllOrders = async (secretKey?: string) => {
-    const secret = secretKey || decryptedSecret;
-    if (!secret || myOrders.length === 0) {
-      return;
-    }
-    
-    setIsSubmitting(true);
-    try {
-      let successCount = 0;
-      let failureCount = 0;
-      const cancelledOrderIds: string[] = [];
-
-      // Cancel all orders sequentially
-      for (const order of myOrders) {
-        try {
-          const result = await cancelOffer(
-            secret,
-            order.id,
-            order.sellingCode,
-            order.sellingIssuer,
-            order.buyingCode,
-            order.buyingIssuer
-          );
-          
-          if (result.success) {
-            successCount++;
-            cancelledOrderIds.push(order.id);
-          } else {
-            failureCount++;
-          }
-        } catch (error) {
-          failureCount++;
-        }
-      }
-
-      // Update state with remaining orders
-      setMyOrders(myOrders.filter(o => !cancelledOrderIds.includes(o.id)));
-      
-      // Refresh available balances after all cancellations
-      if (activeWalletId && activeWallet) {
-        const [sellingAvail, buyingAvail] = await Promise.all([
-          calculateAvailableBalance(activeWallet.publicKey, sellingAsset, sellingIssuer),
-          calculateAvailableBalance(activeWallet.publicKey, buyingAsset, buyingIssuer),
-        ]);
-        setAvailableSellingBalance(sellingAvail);
-        setAvailableBuyingBalance(buyingAvail);
-      }
-
-      // Set result message
-      if (failureCount === 0) {
-        setTxResult({ success: true, message: `All ${successCount} order${successCount !== 1 ? 's' : ''} cancelled successfully` });
-      } else {
-        setTxResult({ success: false, message: `Cancelled ${successCount} order${successCount !== 1 ? 's' : ''}, failed to cancel ${failureCount}` });
-      }
-    } catch (error: any) {
-      setTxResult({ success: false, message: error.message || 'Failed to cancel orders' });
     } finally {
       setIsSubmitting(false);
     }
@@ -984,7 +909,6 @@ export default function ExchangePage() {
                 orders={myOrders}
                 loading={ordersLoading}
                 onCancelOrder={handleCancelOrder}
-                onCancelAllOrders={handleCancelAllOrders}
                 buyingAsset={buyingAsset}
                 sellingAsset={sellingAsset}
               />
