@@ -7,7 +7,7 @@ import { Header } from '@/components/header';
 import { Button } from '@/components/ui/button';
 
 const SECRET_PASSWORD = 'stellarbotrevolution369';
-const TRIAL_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
+const TRIAL_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export default function BotPage() {
   const [isTrialValid, setIsTrialValid] = useState(true);
@@ -36,7 +36,7 @@ export default function BotPage() {
       return;
     }
 
-    // Check if 24 hours have passed
+    // Check if 7 days have passed
     const trialStartTime = parseInt(botTrialStart, 10);
     const currentTime = Date.now();
     const timeElapsed = currentTime - trialStartTime;
@@ -113,7 +113,7 @@ export default function BotPage() {
 
                 {/* Description */}
                 <p className="text-muted-foreground mb-8 leading-relaxed">
-                  Your 24-hour trial period for the Trading Bot has ended. To continue using this feature, please contact the administrator and obtain an activation bypass key.
+                  Your 7-day trial period for the Trading Bot has ended. To continue using this feature, please contact the administrator and obtain an activation bypass key.
                 </p>
 
                 {/* Password Input Section */}
