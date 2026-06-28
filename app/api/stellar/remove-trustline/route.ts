@@ -31,6 +31,13 @@ export async function POST(request: Request) {
     const account = await server.loadAccount(userPublicKey);
     const asset = new AssetFactory(assetCode, assetIssuer);
 
+    console.log('[v0] Building trustline removal transaction:', {
+      assetCode,
+      assetIssuer,
+      userPublicKey,
+      limit: "0"
+    });
+
     // Build the transaction setting the limit to "0" to remove the trustline
     const transaction = new TransactionBuilderFactory(account, {
       fee: BaseFee,
@@ -40,11 +47,13 @@ export async function POST(request: Request) {
         // @ts-ignore
         StellarSdk.Operation.changeTrust({
           asset: asset,
-          limit: "0", 
+          limit: "0",
         })
       )
       .setTimeout(180)
       .build();
+
+    console.log('[v0] Transaction built successfully');
 
     const xdr = transaction.toXDR();
 
