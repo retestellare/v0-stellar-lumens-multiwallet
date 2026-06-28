@@ -311,6 +311,7 @@ export function SettingsModal({ isOpen, onClose, onOpenBulkWallet = () => {} }: 
                       onChange={(e) => setDomainPassword(e.target.value)}
                       placeholder="Enter wallet password to sign"
                       className="w-full"
+                      autoComplete="current-password"
                     />
                     {domainError && (
                       <div className="flex items-center gap-2 text-red-500 text-xs">

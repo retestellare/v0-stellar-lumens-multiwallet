@@ -619,6 +619,7 @@ export function SwapPanel() {
             value={walletPassword}
             disabled={loading}
             autoFocus
+            autoComplete="current-password"
             onChange={(e) => {
               setWalletPassword(e.target.value);
               setError(null);

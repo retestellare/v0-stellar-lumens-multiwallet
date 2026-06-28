@@ -787,6 +787,7 @@ export default function PoolsPage() {
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && executeTransaction()}
               className="mb-4"
+              autoComplete="current-password"
             />
             <div className="flex gap-2">
               <Button 

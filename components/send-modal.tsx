@@ -344,6 +344,7 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="bg-background/50"
+                  autoComplete="current-password"
                 />
               </div>
             </div>

@@ -981,6 +981,7 @@ export default function ExchangePage() {
                 onChange={(e) => setPassword(e.target.value)}
                 className="bg-input border-border"
                 autoFocus
+                autoComplete="current-password"
               />
             </div>
             
