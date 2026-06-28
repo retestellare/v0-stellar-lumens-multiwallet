@@ -63,6 +63,9 @@ export function AmountSelectionModal({
     redemptionInstructions?: string;
   } | null>(null);
 
+  // Bitrefill order tracking
+  const [bitrefillOrderId, setBitrefillOrderId] = useState<string | null>(null);
+
   // Regional configuration
   const regionConfig = {
     EU: {
@@ -123,23 +126,67 @@ export function AmountSelectionModal({
   };
 
   // Simulate Bitrefill API call with loading animation
+  // Create real Bitrefill order via API
   const simulateBitrefillOrder = async () => {
     setStep('loading');
     
-    // Simulate API delay (2 seconds)
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Simulated Bitrefill API response with random but consistent addresses
-    const mockDestinationAddress = 'GB7CEJF7GVVMIXJJ3CTWQKUJNLQHFVMJWK34MEPZXDKDXD4GHZRK7BTC';
-    const mockMemoText = `BITREFILL-${Date.now().toString().slice(-8)}`;
-    
-    setTransactionDetails({
-      destinationAddress: mockDestinationAddress,
-      memoText: mockMemoText,
-      amount: usdcAmount,
-    });
-    
-    setStep('details');
+    try {
+      console.log('[v0] Initiating real Bitrefill order creation');
+      
+      // Call the backend API to create a Bitrefill order
+      const response = await fetch('/api/bitrefill/create-order', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          region,
+          amount: currentAmount,
+          currency: currentConfig.currency,
+          productType: 'mastercard',
+          refundAddress: activePublicKey,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        console.error('[v0] Bitrefill order creation failed:', data.error);
+        alert(`Failed to create card order: ${data.error}`);
+        setStep('amount');
+        return;
+      }
+
+      const order = data.order;
+      console.log('[v0] Bitrefill order created:', {
+        orderId: order.id,
+        paymentAddress: order.payment_address,
+        amount: order.payment_amount,
+        currency: order.payment_currency,
+      });
+
+      // Store order ID for later status checking
+      localStorage.setItem(`bitrefill_order_${order.id}`, JSON.stringify({
+        orderId: order.id,
+        createdAt: new Date().toISOString(),
+        amount: order.amount,
+        currency: order.currency,
+      }));
+
+      // Set transaction details for Stellar payment
+      setTransactionDetails({
+        destinationAddress: order.payment_address,
+        memoText: order.memo,
+        amount: usdcAmount,
+      });
+
+      console.log('[v0] Transaction details ready for Stellar signing');
+      setStep('details');
+    } catch (error: any) {
+      console.error('[v0] Error creating Bitrefill order:', error.message);
+      alert(`Error: ${error.message}`);
+      setStep('amount');
+    }
   };
 
   // Validate and format amount for Stellar operations (7 decimal places)
@@ -254,12 +301,25 @@ export function AmountSelectionModal({
         const merchantType = merchant?.merchantType || 'retail';
         
         if (merchantType === 'virtual_card') {
-          // Virtual card data
+          // For virtual cards, try to fetch the actual card details from Bitrefill
+          // The card details will be delivered via webhook when Bitrefill confirms the transaction
+          // For now, show placeholder with order info
+          console.log('[v0] Virtual card order submitted, awaiting Bitrefill confirmation');
+          
+          // Generate a transaction reference for user's records
+          const txRef = txResult.hash?.substring(0, 8) || 'UNKNOWN';
+          
           setSuccessData({
-            cardNumber: '5412 7845 1234 5678',
-            expiry: '12/27',
-            cvv: '123',
+            cardNumber: '••• Card details arriving via email ••• ',
+            expiry: '••/••',
+            cvv: '•••',
           });
+
+          // In a production app, you would:
+          // 1. Extract the order ID from transactionDetails.memoText (Bitrefill will use this)
+          // 2. Wait for webhook callback with card details
+          // 3. Update the UI with real card data
+          // 4. Store card details securely in database
         } else {
           // Retail/Gas/Amazon voucher data
           const giftCode = `GC-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
@@ -824,11 +884,39 @@ export function AmountSelectionModal({
             {step === 'success' && (
               <>
                 {merchant?.merchantType === 'virtual_card' && (
-                  <Button
-                    className="w-full bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white font-semibold py-2.5 rounded-lg transition-all shadow-lg shadow-purple-500/50"
-                  >
-                    Add to Apple / Google Wallet
-                  </Button>
+                  <>
+                    {successData?.cardNumber && (
+                      <div className="p-4 rounded-lg bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 border border-emerald-500/30 space-y-3">
+                        <p className="text-xs text-muted-foreground text-center">
+                          Card Details
+                        </p>
+                        <div className="space-y-2 font-mono text-sm">
+                          <div className="flex justify-between items-center">
+                            <span className="text-slate-400">Card:</span>
+                            <span className="text-white font-semibold">{successData.cardNumber.substring(0, 4)} •••• •••• {successData.cardNumber.slice(-4)}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-slate-400">Expires:</span>
+                            <span className="text-white">{successData.expiry}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-slate-400">CVV:</span>
+                            <span className="text-white font-semibold">{successData.cvv}</span>
+                          </div>
+                        </div>
+                        {bitrefillOrderId && (
+                          <p className="text-xs text-muted-foreground text-center border-t border-slate-600/50 pt-2">
+                            Order ID: {bitrefillOrderId.substring(0, 8)}...
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    <Button
+                      className="w-full bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white font-semibold py-2.5 rounded-lg transition-all shadow-lg shadow-purple-500/50"
+                    >
+                      Add to Apple / Google Wallet
+                    </Button>
+                  </>
                 )}
                 <Button
                   onClick={handleDone}
