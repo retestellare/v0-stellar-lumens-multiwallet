@@ -640,7 +640,7 @@ export default function ExchangePage() {
         await submitOrder(pendingOrder, secret);
       } else if (pendingCancelOrderId) {
         if (pendingCancelOrderId === 'all') {
-          await proceedWithCancelAllOrders();
+          await proceedWithCancelAllOrders(secret);
         } else {
           await proceedWithCancelOrder(pendingCancelOrderId);
         }
@@ -709,11 +709,14 @@ export default function ExchangePage() {
       return;
     }
     
-    proceedWithCancelAllOrders();
+    proceedWithCancelAllOrders(decryptedSecret);
   };
 
-  const proceedWithCancelAllOrders = async () => {
-    if (!decryptedSecret || myOrders.length === 0) return;
+  const proceedWithCancelAllOrders = async (secretKey?: string) => {
+    const secret = secretKey || decryptedSecret;
+    if (!secret || myOrders.length === 0) {
+      return;
+    }
     
     setIsSubmitting(true);
     try {
@@ -725,7 +728,7 @@ export default function ExchangePage() {
       for (const order of myOrders) {
         try {
           const result = await cancelOffer(
-            decryptedSecret,
+            secret,
             order.id,
             order.sellingCode,
             order.sellingIssuer,
