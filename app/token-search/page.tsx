@@ -812,6 +812,15 @@ export default function TokenSearchPage() {
                                 Receive {selectedToken.code}
                               </button>
                             </div>
+                            {selectedToken.code === 'XLM' && (
+                              <button 
+                                onClick={() => window.location.href = '/exchange'}
+                                className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black py-2.5 rounded-md font-semibold text-sm transition-colors mt-3 flex items-center justify-center gap-2"
+                              >
+                                <ArrowLeft className="w-4 h-4 rotate-180" />
+                                Trade on Exchange
+                              </button>
+                            )}
                           </>
                         ) : selectedToken.issuer ? (
                           <>
