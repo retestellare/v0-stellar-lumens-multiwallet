@@ -364,10 +364,10 @@ export function SwapPanel() {
       )}
 
       {/* Swap Interface Card */}
-      <div className="p-6 rounded-lg border border-border/50 bg-card/40 space-y-4">
+      <div className="p-6 rounded-xl border border-blue-500/20 bg-gradient-to-br from-slate-900/50 via-blue-900/20 to-slate-900/50 backdrop-blur-sm space-y-6">
         {/* Send Token Section */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-muted-foreground">Send</label>
+        <div className="space-y-3">
+          <label className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Send</label>
           <div className="flex gap-2">
             {/* Token Dropdown */}
             <div className="relative flex-1">
@@ -376,16 +376,16 @@ export function SwapPanel() {
                   setShowSendDropdown(!showSendDropdown);
                   setShowReceiveDropdown(false);
                 }}
-                className="w-full flex items-center justify-between px-4 py-3 rounded-lg border border-border/50 bg-background/50 hover:border-primary/50 transition-colors text-foreground"
+                className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-blue-500/30 bg-gradient-to-r from-blue-950/40 to-slate-900/40 hover:border-blue-400/50 hover:from-blue-900/50 hover:to-slate-900/50 transition-all text-foreground group"
               >
                 <div className="flex flex-col items-start gap-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold">{sendToken?.code}</span>
+                    <span className="font-bold text-lg">{sendToken?.code}</span>
                     <span className="text-xs text-muted-foreground">({sendToken?.displayBalance})</span>
                   </div>
-                  <span className="text-xs font-semibold text-yellow-500">Spendable: {spendableBalance}</span>
+                  <span className="text-xs font-semibold text-yellow-400">Spendable: {spendableBalance}</span>
                 </div>
-                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                <ChevronDown className="w-4 h-4 text-muted-foreground group-hover:text-blue-400 transition-colors" />
               </button>
 
               {/* Send Dropdown Menu */}
@@ -444,7 +444,7 @@ export function SwapPanel() {
                   setSendAmount(cleanAmount);
                   debouncedCalculate(cleanAmount);
                 }}
-                className="flex-1 px-3 py-1.5 text-xs font-semibold rounded border border-border/50 bg-background/50 text-muted-foreground hover:border-yellow-500 hover:text-yellow-500 hover:bg-yellow-500/10 transition-colors"
+                className="flex-1 px-3 py-2 text-xs font-bold rounded-lg border border-slate-600/50 bg-slate-800/50 text-slate-300 hover:border-yellow-500/60 hover:text-yellow-300 hover:bg-yellow-500/15 hover:shadow-lg hover:shadow-yellow-500/20 transition-all duration-200"
               >
                 {percentage}%
               </button>
@@ -458,7 +458,7 @@ export function SwapPanel() {
                 setSendAmount(cleanAmount);
                 debouncedCalculate(cleanAmount);
               }}
-              className="flex-1 px-3 py-1.5 text-xs font-semibold rounded border border-border/50 bg-background/50 text-muted-foreground hover:border-yellow-500 hover:text-yellow-500 hover:bg-yellow-500/10 transition-colors"
+              className="flex-1 px-3 py-2 text-xs font-bold rounded-lg border border-slate-600/50 bg-slate-800/50 text-slate-300 hover:border-yellow-500/60 hover:text-yellow-300 hover:bg-yellow-500/15 hover:shadow-lg hover:shadow-yellow-500/20 transition-all duration-200"
             >
               MAX
             </button>
@@ -466,19 +466,19 @@ export function SwapPanel() {
         </div>
 
         {/* Swap Button */}
-        <div className="flex justify-center">
+        <div className="flex justify-center py-2">
           <button
             onClick={handleSwapTokens}
             disabled={!sendToken || !receiveToken}
-            className="p-2 rounded-full border border-border/50 bg-background/50 hover:bg-primary/10 disabled:opacity-50 transition-colors"
+            className="p-3 rounded-full border-2 border-yellow-500/40 bg-gradient-to-br from-yellow-500/20 to-yellow-600/20 hover:border-yellow-400/80 hover:from-yellow-500/35 hover:to-yellow-600/35 hover:shadow-lg hover:shadow-yellow-500/30 disabled:opacity-40 transition-all duration-200 group"
           >
-            <ArrowRightLeft className="w-5 h-5 text-primary" />
+            <ArrowRightLeft className="w-6 h-6 text-yellow-400 group-hover:text-yellow-300 transition-colors" />
           </button>
         </div>
 
         {/* Receive Token Section */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-muted-foreground">Receive</label>
+        <div className="space-y-3">
+          <label className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Receive</label>
           <div className="flex gap-2">
             {/* Token Dropdown */}
             <div className="relative flex-1">
@@ -487,13 +487,13 @@ export function SwapPanel() {
                   setShowReceiveDropdown(!showReceiveDropdown);
                   setShowSendDropdown(false);
                 }}
-                className="w-full flex items-center justify-between px-4 py-3 rounded-lg border border-border/50 bg-background/50 hover:border-primary/50 transition-colors text-foreground"
+                className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-blue-500/30 bg-gradient-to-r from-blue-950/40 to-slate-900/40 hover:border-blue-400/50 hover:from-blue-900/50 hover:to-slate-900/50 transition-all text-foreground group"
               >
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold">{receiveToken?.code || 'Select'}</span>
+                  <span className="font-bold text-lg">{receiveToken?.code || 'Select'}</span>
                   <span className="text-xs text-muted-foreground">({receiveToken?.displayBalance || '0'})</span>
                 </div>
-                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                <ChevronDown className="w-4 h-4 text-muted-foreground group-hover:text-blue-400 transition-colors" />
               </button>
 
               {/* Receive Dropdown Menu */}
@@ -525,7 +525,7 @@ export function SwapPanel() {
             </div>
 
             {/* Receive Amount Display */}
-            <div className="w-32 min-w-[7rem] px-3 py-3 rounded-lg border border-border/50 bg-background/30 text-foreground font-semibold flex items-center justify-end text-base tabular-nums overflow-hidden">
+            <div className="w-32 min-w-[7rem] px-3 py-3 rounded-xl border border-blue-500/30 bg-gradient-to-r from-blue-950/30 to-slate-900/30 text-foreground font-semibold flex items-center justify-end text-base tabular-nums overflow-hidden">
               {loading
                 ? <span className="text-muted-foreground text-sm">...</span>
                 : <span className={receiveAmount ? 'text-foreground' : 'text-muted-foreground'}>
@@ -573,17 +573,17 @@ export function SwapPanel() {
       )}
 
       {/* Slippage Tolerance */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-muted-foreground">Slippage Tolerance</label>
+      <div className="space-y-3">
+        <label className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Slippage Tolerance</label>
         <div className="flex gap-2">
           {SLIPPAGE_OPTIONS.map((option) => (
             <button
               key={option}
               onClick={() => setSelectedSlippage(option)}
-              className={`flex-1 py-2 rounded-lg border transition-colors ${
+              className={`flex-1 py-2.5 rounded-lg border font-bold transition-all duration-200 ${
                 selectedSlippage === option
-                  ? 'border-primary bg-primary/20 text-primary font-semibold'
-                  : 'border-border/50 bg-background/50 text-muted-foreground hover:border-primary/50'
+                  ? 'border-yellow-500/60 bg-gradient-to-r from-yellow-500/20 to-yellow-600/20 text-yellow-300 shadow-lg shadow-yellow-500/20'
+                  : 'border-slate-600/50 bg-slate-800/50 text-slate-400 hover:border-slate-500 hover:bg-slate-700/50'
               }`}
             >
               {option}%
