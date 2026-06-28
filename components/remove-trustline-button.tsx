@@ -78,8 +78,14 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
       const NetworksPassphrase = StellarSdk.Networks?.PUBLIC || 'Public Global Stellar Network ; October 2015';
       
       // Properly convert XDR string back to transaction object
+      // TransactionBuilder.fromXDR returns a Transaction object directly
       // @ts-ignore
       const tx = StellarSdk.TransactionBuilder.fromXDR(data.xdr, NetworksPassphrase);
+      
+      // Verify the transaction object is valid before signing
+      if (!tx || typeof tx.sign !== 'function') {
+        throw new Error('Failed to reconstruct transaction from XDR');
+      }
       
       // @ts-ignore
       const keypair = StellarSdk.Keypair.fromSecret(userSecretKey);
@@ -89,10 +95,13 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
       // @ts-ignore
       const server = new StellarSdk.Horizon.Server("https://horizon.stellar.org");
       
+      console.log('[v0] Submitting signed trustline removal transaction');
+      
       try {
         // @ts-ignore
         const result = await server.submitTransaction(tx);
         
+        console.log('[v0] Transaction successful:', result.id);
         alert('Trustline removed successfully!');
         if (onSuccess) onSuccess();
         
@@ -101,8 +110,21 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
           window.location.reload();
         }, 1000);
       } catch (submitError: any) {
-        const errorDetail = submitError.response?.data?.extras?.result_codes || submitError.message;
-        throw new Error(`Transaction submission failed: ${JSON.stringify(errorDetail)}`);
+        console.error('[v0] Transaction submission error:', submitError);
+        
+        // Extract detailed error information
+        let errorDetail = 'Unknown error';
+        if (submitError.response?.data?.extras?.result_codes) {
+          errorDetail = JSON.stringify(submitError.response.data.extras.result_codes);
+        } else if (submitError.response?.data?.extras) {
+          errorDetail = JSON.stringify(submitError.response.data.extras);
+        } else if (submitError.response?.data?.title) {
+          errorDetail = submitError.response.data.title;
+        } else if (submitError.message) {
+          errorDetail = submitError.message;
+        }
+        
+        throw new Error(`Transaction submission failed: ${errorDetail}`);
       }
     } catch (err: any) {
       console.error("Remove trustline error:", err);
