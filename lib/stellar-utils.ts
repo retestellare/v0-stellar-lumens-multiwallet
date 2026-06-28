@@ -820,7 +820,7 @@ export const addTrustline = async (
     // Create asset
     const asset = new Asset(assetCode, assetIssuer);
     
-    // Build changeTrust transaction
+    // Build changeTrust transaction with unlimited limit
     const transaction = new TransactionBuilder(account, {
       fee: BASE_FEE,
       networkPassphrase: NETWORK_PASSPHRASE,
@@ -828,6 +828,7 @@ export const addTrustline = async (
       .addOperation(
         Operation.changeTrust({
           asset: asset,
+          limit: '922337203685.4775807', // Maximum XDR int64 to allow unlimited receives
         })
       )
       .setTimeout(180)
@@ -836,6 +837,10 @@ export const addTrustline = async (
     transaction.sign(keypair);
     
     const result = await server.submitTransaction(transaction);
+    
+    // Wait a moment for ledger to process
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
     return { success: true, hash: result.hash };
   } catch (error: any) {
     let errorMessage = error.message || 'Failed to add trustline';

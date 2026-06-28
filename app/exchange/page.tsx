@@ -544,11 +544,11 @@ export default function ExchangePage() {
         
         if (!hasTrust) {
           // Auto-add trustline
-          setTxResult({ success: false, message: `Adding trustline for ${assetToCheck.code}...` });
+          setTxResult({ success: false, message: `Creating trustline for ${assetToCheck.code}...` });
           const trustResult = await addTrustline(secret, assetToCheck.code, assetToCheck.issuer);
           
           if (!trustResult.success) {
-            setTxResult({ success: false, message: `Failed to add trustline: ${trustResult.error}` });
+            setTxResult({ success: false, message: `Failed to create trustline: ${trustResult.error}` });
             setIsSubmitting(false);
             return;
           }
@@ -558,9 +558,9 @@ export default function ExchangePage() {
             await updateBalances(activeWalletId);
           }
           
-          setTxResult({ success: true, message: `Trustline added for ${assetToCheck.code}. Submitting order...` });
-          // Small delay to let the UI update
-          await new Promise(resolve => setTimeout(resolve, 500));
+          setTxResult({ success: true, message: `Trustline created for ${assetToCheck.code}. Submitting order...` });
+          // Small delay to let the UI update and ensure balances are refreshed
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
       
@@ -596,6 +596,7 @@ export default function ExchangePage() {
           setSellPrice('');
           setSellAmount('');
         }
+        
         const data = await getOrderBook(sellingAsset, sellingIssuer, buyingAsset, buyingIssuer);
         setOrderBook(data);
         // Refresh balances and available balances after order
@@ -610,7 +611,15 @@ export default function ExchangePage() {
           setAvailableBuyingBalance(buyingAvail);
         }
       } else {
-        setTxResult({ success: false, message: result.error || 'Order failed' });
+        // Handle op_buy_no_trust error - trustline may have failed or been needed but not created
+        if (result.error && (result.error.includes('op_buy_no_trust') || result.error.includes('no_trust'))) {
+          setTxResult({ 
+            success: false, 
+            message: `Trustline for ${buyingAsset} needs to be created first. Please try again.` 
+          });
+        } else {
+          setTxResult({ success: false, message: result.error || 'Failed to submit order' });
+        }
       }
     } catch (error: any) {
       setTxResult({ success: false, message: error.message || 'Failed to submit order' });
