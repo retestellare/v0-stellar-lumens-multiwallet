@@ -132,6 +132,7 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
             placeholder="Wallet Password"
             className="w-full bg-black border border-gray-700 rounded p-1.5 text-xs text-white focus:outline-none focus:border-red-500"
             disabled={isLoading}
+            autoComplete="current-password"
           />
           <div className="flex gap-2 mt-1">
             <button

@@ -466,6 +466,7 @@ export default function CreatePoolPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="bg-background"
+                autoComplete="current-password"
               />
             </div>
           )}

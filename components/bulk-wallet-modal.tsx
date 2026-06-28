@@ -260,6 +260,7 @@ export function BulkWalletModal({ isOpen, onClose }: BulkWalletModalProps) {
                   value={importPassword}
                   onChange={(e) => setImportPassword(e.target.value)}
                   disabled={isProcessing}
+                  autoComplete="current-password"
                 />
               </div>
 

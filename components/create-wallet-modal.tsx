@@ -158,6 +158,7 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
                   setError('');
                 }}
                 className="bg-input border-border text-foreground placeholder:text-muted-foreground/50"
+                autoComplete="new-password"
               />
             </div>
             <div>
@@ -171,6 +172,7 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
                   setError('');
                 }}
                 className="bg-input border-border text-foreground placeholder:text-muted-foreground/50"
+                autoComplete="new-password"
               />
             </div>
             {error && <p className="text-xs text-destructive">{error}</p>}
@@ -227,6 +229,7 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
                   setError('');
                 }}
                 className="bg-input border-border text-foreground placeholder:text-muted-foreground/50"
+                autoComplete="new-password"
               />
             </div>
             <div>
@@ -240,6 +243,7 @@ export function CreateWalletModal({ isOpen, onClose }: CreateWalletModalProps) {
                   setError('');
                 }}
                 className="bg-input border-border text-foreground placeholder:text-muted-foreground/50"
+                autoComplete="new-password"
               />
             </div>
             {error && <p className="text-xs text-destructive">{error}</p>}

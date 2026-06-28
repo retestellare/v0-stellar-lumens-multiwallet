@@ -826,6 +826,7 @@ export default function TokenSearchPage() {
                                   onKeyPress={(e) => e.key === 'Enter' && handleAddTrustline()}
                                   className="w-full"
                                   disabled={addingTrustline}
+                                  autoComplete="current-password"
                                 />
                                 {trustlineError && (
                                   <p className="text-sm text-destructive">{trustlineError}</p>

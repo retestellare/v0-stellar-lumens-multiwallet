@@ -130,6 +130,7 @@ export default function BotPage() {
                     }}
                     onKeyPress={handleKeyPress}
                     placeholder="Enter your activation key"
+                    autoComplete="current-password"
                     className="w-full px-4 py-3 rounded-lg bg-card border border-border/50 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
                   />
                   {showPasswordError && (
