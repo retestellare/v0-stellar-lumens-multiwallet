@@ -58,18 +58,18 @@ export function AppUnlockModal() {
   if (!shouldShow) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-background/95 backdrop-blur-sm p-4">
-      <div className="w-full max-w-sm bg-card border border-border rounded-xl shadow-2xl p-6 space-y-5">
+    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-background/80 backdrop-blur-md p-4">
+      <div className="w-full max-w-sm bg-card border border-border rounded-2xl shadow-2xl p-7 space-y-6 animate-scale-in">
         {/* Icon + title */}
-        <div className="flex flex-col items-center gap-3 text-center">
-          <div className="w-14 h-14 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
-            <Lock className="w-7 h-7 text-primary" />
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center animate-glow">
+            <Lock className="w-8 h-8 text-primary" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-foreground">Unlock Wallet</h2>
-            <p className="text-sm text-muted-foreground mt-1">
+            <h2 className="text-xl font-bold text-foreground tracking-tight">Unlock Wallet</h2>
+            <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">
               Enter your password to access{' '}
-              <span className="text-foreground font-medium">{activeWallet?.name}</span>
+              <span className="text-foreground font-semibold">{activeWallet?.name}</span>
             </p>
           </div>
         </div>
@@ -78,19 +78,16 @@ export function AppUnlockModal() {
         <div className="space-y-2">
           <Input
             type="password"
-            placeholder="Wallet password"
+            placeholder="Enter password"
             value={password}
-            onChange={(e) => {
-              setPassword(e.target.value);
-              setError('');
-            }}
+            onChange={(e) => { setPassword(e.target.value); setError(''); }}
             onKeyDown={handleKeyDown}
             autoFocus
             autoComplete="current-password"
-            className="bg-input border-border h-11"
+            className="bg-input border-border h-12 text-sm px-4"
           />
           {error && (
-            <p className="text-xs text-destructive">{error}</p>
+            <p className="text-xs text-destructive font-medium">{error}</p>
           )}
         </div>
 
@@ -98,10 +95,14 @@ export function AppUnlockModal() {
         <Button
           onClick={handleUnlock}
           disabled={!password || isSubmitting}
-          className="w-full h-11 font-semibold"
+          className="w-full h-11 font-semibold text-sm"
         >
           {isSubmitting ? 'Unlocking...' : 'Unlock'}
         </Button>
+
+        <p className="text-center text-xs text-muted-foreground">
+          Your keys are encrypted locally and never leave your device.
+        </p>
       </div>
     </div>
   );
