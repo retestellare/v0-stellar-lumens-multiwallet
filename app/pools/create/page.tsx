@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input';
 import { WalletSelectorDropdown } from '@/components/wallet-selector-dropdown';
 import { TokenSelectorModal } from '@/components/token-selector-modal';
 import { 
-  decryptSecret,
   getIssuerTokenIcon
 } from '@/lib/stellar-utils';
 import { 
@@ -75,7 +74,7 @@ function TokenIcon({ code, issuer, className = "w-10 h-10" }: { code: string; is
 }
 
 export default function CreatePoolPage() {
-  const { wallets, activeWalletId, updateBalances } = useWallet();
+  const { wallets, activeWalletId, updateBalances, globalDecryptedSecret } = useWallet();
   const activeWallet = wallets.find(w => w.id === activeWalletId);
   
   // Safe initial states - null for unselected assets
@@ -83,7 +82,6 @@ export default function CreatePoolPage() {
   const [assetB, setAssetB] = useState<SelectedAsset | null>(null);
   const [amountA, setAmountA] = useState('');
   const [amountB, setAmountB] = useState('');
-  const [password, setPassword] = useState('');
   const [selectingAsset, setSelectingAsset] = useState<'A' | 'B' | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -94,8 +92,7 @@ export default function CreatePoolPage() {
   const isFormValid = assetA !== null && 
                        assetB !== null && 
                        parseFloat(amountA) > 0 && 
-                       parseFloat(amountB) > 0 && 
-                       password.length > 0;
+                       parseFloat(amountB) > 0;
 
   // Handle asset selection from modal
   const handleSelectAsset = useCallback((token: { code: string; issuer?: string; name?: string; image?: string }) => {
@@ -151,23 +148,15 @@ export default function CreatePoolPage() {
       return;
     }
     
-    if (!password) {
-      setErrorMessage('Please enter your wallet password.');
+    if (!globalDecryptedSecret) {
+      setErrorMessage('Wallet is locked. Please restart the app to unlock.');
       return;
     }
     
     setLoading(true);
     
     try {
-      // Decrypt the secret key
-      let secretKey: string;
-      try {
-        secretKey = decryptSecret(activeWallet.encryptedSecret, password);
-      } catch (decryptError) {
-        setErrorMessage('Incorrect password. Please try again.');
-        setLoading(false);
-        return;
-      }
+      const secretKey = globalDecryptedSecret;
       
       // Create Stellar SDK objects
       const server = new StellarSdk.Horizon.Server('https://horizon.stellar.org');
@@ -302,7 +291,6 @@ export default function CreatePoolPage() {
       const txHashValue = result.hash;
       setTxHash(txHashValue);
       setSuccessMessage(`Liquidity pool created successfully! Your LP shares have been added to your wallet.`);
-      setPassword('');
       
       // Reset form after success
       setAssetA(null);
@@ -455,21 +443,6 @@ export default function CreatePoolPage() {
               />
             )}
           </div>
-          
-          {/* Password Input - only show when both assets selected */}
-          {assetA && assetB && (
-            <div className="mb-4">
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Wallet Password</label>
-              <Input
-                type="password"
-                placeholder="Enter your wallet password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="bg-background"
-                autoComplete="current-password"
-              />
-            </div>
-          )}
           
           {/* Create Pool Button - always visible, disabled when form invalid */}
           <Button

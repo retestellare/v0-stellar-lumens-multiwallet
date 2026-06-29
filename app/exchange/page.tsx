@@ -4,7 +4,7 @@ import React from 'react';
 import { Header } from '@/components/header';
 import { useWallet } from '@/lib/wallet-context';
 import { Button } from '@/components/ui/button';
-import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations, getAccountTrades, getXLMUSDStats, hasTrustline, addTrustline, calculateAvailableBalance } from '@/lib/stellar-utils';
+import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations, getAccountTrades, getXLMUSDStats, hasTrustline, addTrustline, calculateAvailableBalance } from '@/lib/stellar-utils';
 import { TradingPairHeader } from '@/components/trading-pair-header';
 import { OrderBook } from '@/components/order-book';
 import { TradeHistory } from '@/components/trade-history';
@@ -14,9 +14,8 @@ import { PriceChart } from '@/components/price-chart';
 import { TokenSelectorModal } from '@/components/token-selector-modal';
 import { CompactOrderForm } from '@/components/compact-order-form';
 import { useState, useEffect } from 'react';
-import { ArrowLeft, TrendingUp, ArrowRightLeft, X, Loader2, Wallet } from 'lucide-react';
+import { ArrowLeft, TrendingUp, ArrowRightLeft, X, Loader2 } from 'lucide-react';
 import { WalletSelectorDropdown } from '@/components/wallet-selector-dropdown';
-import { Input } from '@/components/ui/input';
 import Link from 'next/link';
 
 interface OrderBookData {
@@ -28,7 +27,7 @@ type TabType = 'history' | 'my-orders' | 'charts';
 type TokenModalType = 'selling' | 'buying' | null;
 
 export default function ExchangePage() {
-  const { wallets, activeWalletId, updateBalances } = useWallet();
+  const { wallets, activeWalletId, updateBalances, globalDecryptedSecret } = useWallet();
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('history');
   
@@ -54,12 +53,8 @@ export default function ExchangePage() {
   // Transaction state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [txResult, setTxResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<{ type: 'buy' | 'sell'; price: string; amount: string } | null>(null);
   const [pendingCancelOrderId, setPendingCancelOrderId] = useState<string | null>(null);
-  const [password, setPassword] = useState('');
-  const [isPasswordUnlocked, setIsPasswordUnlocked] = useState(false); // Track if password entered this session
-  const [decryptedSecret, setDecryptedSecret] = useState<string | null>(null); // Store decrypted secret
   
   // Token metadata (domain, image, name)
   const [sellingMeta, setSellingMeta] = useState<{ domain?: string; image?: string; name?: string }>({});
@@ -126,18 +121,12 @@ export default function ExchangePage() {
     }
   }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
 
-  // Reset password state when wallet changes (use ref to track previous wallet)
+  // Refresh balances when wallet changes
   const prevWalletIdRef = React.useRef(activeWalletId);
   useEffect(() => {
     if (prevWalletIdRef.current !== activeWalletId && activeWalletId && mounted) {
-      // Clear password-related state when wallet changes
-      setIsPasswordUnlocked(false);
-      setDecryptedSecret(null);
-      setPassword('');
       setPendingOrder(null);
       setTxResult(null);
-      
-      // Refresh balances for the new wallet
       updateBalances(activeWalletId);
     }
     prevWalletIdRef.current = activeWalletId;
@@ -506,13 +495,11 @@ export default function ExchangePage() {
       setTxResult({ success: false, message: 'Please enter valid price and amount' });
       return;
     }
-    setPendingOrder({ type: 'buy', price, amount });
-    // If already unlocked, submit directly; otherwise show password modal
-    if (isPasswordUnlocked && decryptedSecret) {
-      submitOrder({ type: 'buy', price, amount }, decryptedSecret);
-    } else {
-      setShowPasswordModal(true);
+    if (!globalDecryptedSecret) {
+      setTxResult({ success: false, message: 'Wallet is locked. Please restart the app to unlock.' });
+      return;
     }
+    submitOrder({ type: 'buy', price, amount }, globalDecryptedSecret);
   };
 
   const handleSellClick = (price: string, amount: string) => {
@@ -520,13 +507,11 @@ export default function ExchangePage() {
       setTxResult({ success: false, message: 'Please enter valid price and amount' });
       return;
     }
-    setPendingOrder({ type: 'sell', price, amount });
-    // If already unlocked, submit directly; otherwise show password modal
-    if (isPasswordUnlocked && decryptedSecret) {
-      submitOrder({ type: 'sell', price, amount }, decryptedSecret);
-    } else {
-      setShowPasswordModal(true);
+    if (!globalDecryptedSecret) {
+      setTxResult({ success: false, message: 'Wallet is locked. Please restart the app to unlock.' });
+      return;
     }
+    submitOrder({ type: 'sell', price, amount }, globalDecryptedSecret);
   };
   
   const submitOrder = async (order: { type: 'buy' | 'sell'; price: string; amount: string }, secret: string) => {
@@ -629,40 +614,9 @@ export default function ExchangePage() {
     }
   };
   
-  const handleConfirmOrder = async () => {
-    if (!activeWallet || !password) return;
-    
-    // Check if this is for an order submission or order cancellation
-    if (!pendingOrder && !pendingCancelOrderId) return;
-    
-    setShowPasswordModal(false);
-    
-    try {
-      // Decrypt and store the secret key for this session
-      const secret = decryptSecret(activeWallet.encryptedSecret, password);
-      setDecryptedSecret(secret);
-      setIsPasswordUnlocked(true);
-      setPassword(''); // Clear password from state
-      
-      // Handle order submission or cancellation
-      if (pendingOrder) {
-        await submitOrder(pendingOrder, secret);
-      } else if (pendingCancelOrderId) {
-        await proceedWithCancelOrder(pendingCancelOrderId);
-        setPendingCancelOrderId(null);
-      }
-    } catch (error: any) {
-      setTxResult({ success: false, message: 'Invalid password' });
-      setPassword('');
-      setPendingOrder(null);
-      setPendingCancelOrderId(null);
-    }
-  };
-
   const handleCancelOrder = (id: string) => {
-    if (!decryptedSecret) {
-      setPendingCancelOrderId(id);
-      setShowPasswordModal(true);
+    if (!globalDecryptedSecret) {
+      setTxResult({ success: false, message: 'Wallet is locked. Please restart the app to unlock.' });
       return;
     }
     
@@ -672,12 +626,12 @@ export default function ExchangePage() {
 
   const proceedWithCancelOrder = async (id: string) => {
     const order = myOrders.find(o => o.id === id);
-    if (!order || !decryptedSecret) return;
+    if (!order || !globalDecryptedSecret) return;
     
     setIsSubmitting(true);
     try {
       const result = await cancelOffer(
-        decryptedSecret,
+        globalDecryptedSecret,
         id,
         order.sellingCode,
         order.sellingIssuer,
@@ -951,74 +905,7 @@ export default function ExchangePage() {
         type="buying"
       />
       
-      {/* Password Confirmation Modal */}
-      {showPasswordModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-card border border-primary/20 rounded-lg w-full max-w-md p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-foreground">
-                {pendingCancelOrderId ? 'Cancel Order' : 'Confirm Order'}
-              </h3>
-              <button onClick={() => { setShowPasswordModal(false); setPendingOrder(null); setPendingCancelOrderId(null); setPassword(''); }}>
-                <X className="w-5 h-5 text-muted-foreground hover:text-foreground" />
-              </button>
-            </div>
-            
-            <div className="space-y-2 text-sm">
-              {pendingCancelOrderId ? (
-                <p className="text-muted-foreground">
-                  Are you sure you want to cancel this order? Enter your password to confirm.
-                </p>
-              ) : (
-                <>
-                  <p className="text-muted-foreground">
-                    {pendingOrder?.type === 'buy' ? 'BUY' : 'SELL'} {pendingOrder?.amount} {sellingAsset}
-                  </p>
-                  <p className="text-muted-foreground">
-                    at {pendingOrder?.price} {buyingAsset} per {sellingAsset}
-                  </p>
-                </>
-              )}
-            </div>
-            
-            <div className="space-y-2">
-              <label className="text-sm text-muted-foreground">Enter wallet password</label>
-              <Input
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="bg-input border-border"
-                autoFocus
-                autoComplete="current-password"
-              />
-            </div>
-            
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                onClick={() => { setShowPasswordModal(false); setPendingOrder(null); setPendingCancelOrderId(null); setPassword(''); }}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleConfirmOrder}
-                disabled={!password || isSubmitting}
-                className={`flex-1 ${pendingCancelOrderId ? 'bg-destructive' : pendingOrder?.type === 'buy' ? 'bg-primary' : 'bg-destructive'}`}
-              >
-                {isSubmitting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : pendingCancelOrderId ? (
-                  'Cancel Order'
-                ) : (
-                  'Confirm'
-                )}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+
       
       {/* Transaction Result Toast */}
       {txResult && (

@@ -10,7 +10,6 @@ import {
   getLiquidityPoolDetails, 
   depositToLiquidityPool, 
   withdrawFromLiquidityPool,
-  decryptSecret,
   getAccountBalances,
   getIssuerTokenIcon
 } from '@/lib/stellar-utils';
@@ -82,7 +81,7 @@ interface PoolShare {
 }
 
 export default function PoolsPage() {
-  const { wallets, activeWalletId, updateBalances } = useWallet();
+  const { wallets, activeWalletId, updateBalances, globalDecryptedSecret } = useWallet();
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [poolShares, setPoolShares] = useState<PoolShare[]>([]);
@@ -100,8 +99,6 @@ export default function PoolsPage() {
   // Transaction state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [txResult, setTxResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [password, setPassword] = useState('');
   const [pendingAction, setPendingAction] = useState<'deposit' | 'withdraw' | null>(null);
   
   // Pool reserves for auto-calculation
@@ -278,35 +275,35 @@ export default function PoolsPage() {
   const handleDeposit = async () => {
     if (!selectedPool || !amountA || !amountB) return;
     setPendingAction('deposit');
-    setShowPasswordModal(true);
+    await executeTransaction('deposit');
   };
 
   // Handle withdraw
   const handleWithdraw = async () => {
     if (!selectedPool || !withdrawAmount) return;
     setPendingAction('withdraw');
-    setShowPasswordModal(true);
+    await executeTransaction('withdraw');
   };
 
-  // Execute transaction after password
-  const executeTransaction = async () => {
-    if (!activeWallet || !password || !pendingAction || !selectedPool) return;
+  // Execute transaction using the globally unlocked secret
+  const executeTransaction = async (action?: 'deposit' | 'withdraw') => {
+    const resolvedAction = action || pendingAction;
+    if (!activeWallet || !resolvedAction || !selectedPool) return;
+
+    if (!globalDecryptedSecret) {
+      setTxResult({ success: false, message: 'Wallet is locked. Please restart the app to unlock.' });
+      return;
+    }
     
-    setShowPasswordModal(false);
     setIsSubmitting(true);
     setTxResult(null);
     
     try {
-      const secret = await decryptSecret(activeWallet.encryptedSecret, password);
-      if (!secret) {
-        setTxResult({ success: false, message: 'Invalid password' });
-        setIsSubmitting(false);
-        return;
-      }
+      const secret = globalDecryptedSecret;
       
       let result;
       
-      if (pendingAction === 'deposit') {
+      if (resolvedAction === 'deposit') {
         const slippageFactor = parseFloat(slippage) / 100;
         const priceRatio = parseFloat(amountA) / parseFloat(amountB);
         const minPrice = { n: Math.floor(priceRatio * (1 - slippageFactor) * 10000000), d: 10000000 };
@@ -347,7 +344,6 @@ export default function PoolsPage() {
       setTxResult({ success: false, message: error.message || 'Transaction failed' });
     } finally {
       setIsSubmitting(false);
-      setPassword('');
       setPendingAction(null);
     }
   };
@@ -772,46 +768,7 @@ export default function PoolsPage() {
         </div>
       )}
 
-      {/* Password Modal */}
-      {showPasswordModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-sidebar border border-border rounded-lg max-w-sm w-full p-6">
-            <h3 className="text-lg font-bold mb-4">Enter Password</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Enter your wallet password to sign this transaction.
-            </p>
-            <Input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && executeTransaction()}
-              className="mb-4"
-              autoComplete="current-password"
-            />
-            <div className="flex gap-2">
-              <Button 
-                variant="outline" 
-                className="flex-1"
-                onClick={() => {
-                  setShowPasswordModal(false);
-                  setPassword('');
-                  setPendingAction(null);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button 
-                className="flex-1"
-                onClick={executeTransaction}
-                disabled={!password}
-              >
-                Confirm
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 }
