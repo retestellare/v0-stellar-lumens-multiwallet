@@ -92,7 +92,7 @@ export default function HistoryPage() {
   const sentCount = payments.filter(p => !isReceived(p)).length;
 
   return (
-    <main className="min-h-screen bg-background">
+    <main className="min-h-dvh bg-background">
       <Header />
       <div className="page-container py-6">
 

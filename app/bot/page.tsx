@@ -69,7 +69,7 @@ export default function BotPage() {
   // Show loading state until mounted to prevent hydration issues
   if (!mounted) {
     return (
-      <div className="min-h-screen bg-background text-foreground flex flex-col">
+      <div className="min-h-dvh bg-background text-foreground flex flex-col">
         <Header />
       </div>
     );
@@ -78,7 +78,7 @@ export default function BotPage() {
   const showPaywall = !isTrialValid && !isUnlocked;
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
+    <div className="min-h-dvh bg-background text-foreground flex flex-col">
       <Header />
       
       <main className="flex flex-col w-full flex-1">

@@ -7,7 +7,7 @@ export const metadata = {
 
 export default function SpendingPage() {
   return (
-    <main className="min-h-screen bg-background">
+    <main className="min-h-dvh bg-background">
       <div className="container mx-auto px-4 py-8 md:py-12">
         <RealWorldSpending />
       </div>
