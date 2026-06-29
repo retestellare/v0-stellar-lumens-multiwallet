@@ -36,6 +36,9 @@ export interface WalletContextType {
   passwordSessionType: PasswordSessionType;
   setPasswordSessionType: (type: PasswordSessionType) => void;
   batchImportWallets: (entries: Array<{ privateKey: string; publicKey: string; accountName: string }>, password: string) => { successful: number; failed: number };
+  // Global decrypted secret — unlocked once on app open, cleared on wallet change
+  globalDecryptedSecret: string | null;
+  setGlobalDecryptedSecret: (secret: string | null) => void;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -44,6 +47,22 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [activeWalletId, setActiveWalletId] = useState<string | null>(null);
   
+  // Global decrypted secret — unlocked once on app open, cleared when active wallet changes
+  const [globalDecryptedSecret, setGlobalDecryptedSecretState] = useState<string | null>(null);
+  const prevActiveWalletIdRef = React.useRef<string | null>(null);
+
+  // Clear the global secret whenever the active wallet changes
+  useEffect(() => {
+    if (prevActiveWalletIdRef.current !== null && prevActiveWalletIdRef.current !== activeWalletId) {
+      setGlobalDecryptedSecretState(null);
+    }
+    prevActiveWalletIdRef.current = activeWalletId;
+  }, [activeWalletId]);
+
+  const setGlobalDecryptedSecret = useCallback((secret: string | null) => {
+    setGlobalDecryptedSecretState(secret);
+  }, []);
+
   // Password session management - stored in RAM only
   const [passwordSessionType, setPasswordSessionType] = useState<PasswordSessionType>('everytime');
   const [passwordSessions, setPasswordSessions] = useState<Record<string, { password: string; timestamp: number }>>({});
@@ -360,6 +379,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         passwordSessionType,
         setPasswordSessionType,
         batchImportWallets,
+        globalDecryptedSecret,
+        setGlobalDecryptedSecret,
       }}
     >
       {children}

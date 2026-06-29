@@ -1,0 +1,108 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { Lock } from 'lucide-react';
+import { useWallet } from '@/lib/wallet-context';
+import { decryptSecret } from '@/lib/stellar-utils';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+
+/**
+ * AppUnlockModal — shown once when the app starts and wallets exist
+ * but no global decrypted secret is available yet.
+ * Stores the result in WalletContext.globalDecryptedSecret so every
+ * page/component can use it without asking again.
+ */
+export function AppUnlockModal() {
+  const { wallets, activeWallet, activeWalletId, globalDecryptedSecret, setGlobalDecryptedSecret } = useWallet();
+
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Show only when: mounted, wallets exist, active wallet exists, and no secret unlocked yet
+  const shouldShow =
+    mounted &&
+    wallets.length > 0 &&
+    activeWallet !== null &&
+    globalDecryptedSecret === null;
+
+  const handleUnlock = async () => {
+    if (!activeWallet || !password) return;
+
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      const secret = decryptSecret(activeWallet.encryptedSecret, password);
+      setGlobalDecryptedSecret(secret);
+      setPassword('');
+    } catch {
+      setError('Incorrect password. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && password && !isSubmitting) {
+      handleUnlock();
+    }
+  };
+
+  if (!shouldShow) return null;
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-background/95 backdrop-blur-sm p-4">
+      <div className="w-full max-w-sm bg-card border border-border rounded-xl shadow-2xl p-6 space-y-5">
+        {/* Icon + title */}
+        <div className="flex flex-col items-center gap-3 text-center">
+          <div className="w-14 h-14 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
+            <Lock className="w-7 h-7 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-foreground">Unlock Wallet</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Enter your password to access{' '}
+              <span className="text-foreground font-medium">{activeWallet?.name}</span>
+            </p>
+          </div>
+        </div>
+
+        {/* Password input */}
+        <div className="space-y-2">
+          <Input
+            type="password"
+            placeholder="Wallet password"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setError('');
+            }}
+            onKeyDown={handleKeyDown}
+            autoFocus
+            autoComplete="current-password"
+            className="bg-input border-border h-11"
+          />
+          {error && (
+            <p className="text-xs text-destructive">{error}</p>
+          )}
+        </div>
+
+        {/* Confirm button */}
+        <Button
+          onClick={handleUnlock}
+          disabled={!password || isSubmitting}
+          className="w-full h-11 font-semibold"
+        >
+          {isSubmitting ? 'Unlocking...' : 'Unlock'}
+        </Button>
+      </div>
+    </div>
+  );
+}

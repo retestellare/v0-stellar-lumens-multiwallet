@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { ChevronDown, ArrowRightLeft, AlertCircle, Loader2, Lock, CheckCircle } from 'lucide-react';
+import { ChevronDown, ArrowRightLeft, AlertCircle, Loader2, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { executeSwap, decryptSecret } from '@/lib/stellar-utils';
+import { executeSwap } from '@/lib/stellar-utils';
 import { useWallet } from '@/lib/wallet-context';
 import { findLobstrSwapPath, calculateLobstrSlippageAmount } from '@/lib/lobstr-swap';
 
@@ -25,7 +25,7 @@ const SLIPPAGE_OPTIONS = [0.5, 1, 2];
 
 export function SwapPanel() {
   // Get active wallet from context
-  const { activeWallet } = useWallet();
+  const { activeWallet, globalDecryptedSecret } = useWallet();
 
   // Wallet tokens and states
   const [walletTokens, setWalletTokens] = useState<Token[]>([]);
@@ -47,8 +47,6 @@ export function SwapPanel() {
   const [showReceiveDropdown, setShowReceiveDropdown] = useState(false);
   const [selectedSlippage, setSelectedSlippage] = useState(1);
   const [priceImpactWarning, setPriceImpactWarning] = useState(false);
-  const [walletPassword, setWalletPassword] = useState('');
-  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
   const [spendableBalance, setSpendableBalance] = useState<string>('0');
 
   const debounceTimer = useRef<NodeJS.Timeout>();
@@ -238,15 +236,15 @@ export function SwapPanel() {
     setError(null);
   };
 
-  // Execute swap after password confirmation
+  // Execute swap using the globally unlocked secret
   const handleExecuteSwap = async () => {
     if (!activeWallet || !sendToken || !receiveToken || !sendAmount || !bestPath) {
       setError('Please complete all fields');
       return;
     }
 
-    if (!walletPassword) {
-      setError('Please enter your wallet password');
+    if (!globalDecryptedSecret) {
+      setError('Wallet is locked. Please restart the app to unlock.');
       return;
     }
 
@@ -254,16 +252,7 @@ export function SwapPanel() {
     setError(null);
 
     try {
-      // Decrypt the secret key
-      let decryptedSecret: string;
-      try {
-        decryptedSecret = decryptSecret(activeWallet.encryptedSecret, walletPassword);
-        console.log('[v0] Secret decrypted successfully');
-      } catch (err) {
-        setError('Invalid password. Please try again.');
-        setLoading(false);
-        return;
-      }
+      const decryptedSecret = globalDecryptedSecret;
 
       // Format amounts with exactly 7 decimal places (Stellar requirement)
       const formattedSendAmount = parseFloat(sendAmount).toFixed(7);
@@ -305,8 +294,6 @@ export function SwapPanel() {
         setSendAmount('');
         setReceiveAmount('');
         setBestPath(null);
-        setShowPasswordPrompt(false);
-        setWalletPassword('');
         
         // Clear success message after 5 seconds
         setTimeout(() => setSuccessMessage(null), 5000);
@@ -594,72 +581,19 @@ export function SwapPanel() {
 
       {/* Confirm Swap Button */}
       <Button
-        onClick={() => setShowPasswordPrompt(!showPasswordPrompt)}
-        disabled={!sendAmount || !bestPath || !receiveToken || showPasswordPrompt}
+        onClick={handleExecuteSwap}
+        disabled={!sendAmount || !bestPath || !receiveToken || loading}
         className="w-full py-3 text-base font-semibold"
       >
-        {showPasswordPrompt ? (
-          'Enter Password Below'
+        {loading ? (
+          <div className="flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Executing...
+          </div>
         ) : (
           'Confirm Swap on Mainnet'
         )}
       </Button>
-
-      {/* Password Prompt */}
-      {showPasswordPrompt && (
-        <div className="p-4 rounded-lg border border-border/50 bg-card/40 space-y-3">
-          <div className="flex items-center gap-2 mb-3">
-            <Lock className="w-4 h-4 text-primary" />
-            <p className="font-semibold text-foreground">Enter Wallet Password to Execute</p>
-          </div>
-          
-          <Input
-            type="password"
-            placeholder="Wallet password"
-            value={walletPassword}
-            disabled={loading}
-            autoFocus
-            autoComplete="current-password"
-            onChange={(e) => {
-              setWalletPassword(e.target.value);
-              setError(null);
-            }}
-            onKeyPress={(e) => {
-              if (e.key === 'Enter' && !loading && walletPassword) {
-                handleExecuteSwap();
-              }
-            }}
-          />
-          
-          <div className="flex gap-2">
-            <Button
-              onClick={handleExecuteSwap}
-              disabled={!walletPassword || loading}
-              className="flex-1 bg-primary hover:bg-primary/90"
-            >
-              {loading ? (
-                <div className="flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Executing...
-                </div>
-              ) : (
-                'Execute Swap'
-              )}
-            </Button>
-            <Button
-              onClick={() => {
-                setShowPasswordPrompt(false);
-                setWalletPassword('');
-              }}
-              variant="outline"
-              className="flex-1"
-              disabled={loading}
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
