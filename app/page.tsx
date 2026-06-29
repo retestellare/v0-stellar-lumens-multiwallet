@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { Header } from '@/components/header';
-import { WalletCard } from '@/components/wallet-card';
+import { WalletContainer } from '@/components/wallet-container';
 import { AssetDetailModal } from '@/components/asset-detail-modal';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/lib/wallet-context';
@@ -206,34 +206,15 @@ export default function DashboardPage() {
               )}
             </div>
 
-            {/* ── Right column — Wallets list ── */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold text-foreground">Wallets</h2>
-                  <p className="text-xs text-muted-foreground">{wallets.length} wallet{wallets.length !== 1 ? 's' : ''}</p>
-                </div>
-                <Button
-                  onClick={handleAddWallet}
-                  size="sm"
-                  className="h-8 gap-1.5 text-xs font-semibold"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add
-                </Button>
-              </div>
-
-              <div className="space-y-2">
-                {wallets.map((wallet) => (
-                  <WalletCard
-                    key={wallet.id}
-                    wallet={wallet}
-                    isActive={activeWalletId === wallet.id}
-                    onSelect={() => handleWalletSelect(wallet.id)}
-                    onDelete={() => removeWallet(wallet.id)}
-                  />
-                ))}
-              </div>
+            {/* ── Right column — Wallet container ── */}
+            <div>
+              <WalletContainer
+                wallets={wallets}
+                activeWalletId={activeWalletId}
+                onSelect={handleWalletSelect}
+                onDelete={removeWallet}
+                onAdd={handleAddWallet}
+              />
             </div>
 
           </div>
