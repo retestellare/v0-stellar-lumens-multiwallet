@@ -1,18 +1,21 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { ChevronDown, ArrowRightLeft, AlertCircle, Loader2, CheckCircle } from 'lucide-react';
+import { ArrowUpDown, AlertCircle, Loader2, CheckCircle, ChevronDown, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { executeSwap } from '@/lib/stellar-utils';
+import { getIssuerTokenIcon } from '@/lib/stellar-utils';
 import { useWallet } from '@/lib/wallet-context';
 import { findLobstrSwapPath, calculateLobstrSlippageAmount } from '@/lib/lobstr-swap';
+import { TokenSelectorModal } from '@/components/token-selector-modal';
 
 interface Token {
   code: string;
   issuer?: string;
   balance?: string;
   displayBalance?: string;
+  image?: string;
 }
 
 interface SwapPath {
@@ -23,59 +26,95 @@ interface SwapPath {
 
 const SLIPPAGE_OPTIONS = [0.5, 1, 2];
 
+// Inline token avatar that loads icons from stellar.toml / known list
+function TokenAvatar({ code, issuer, size = 36 }: { code: string; issuer?: string; size?: number }) {
+  const [iconUrl, setIconUrl] = useState<string | null>(null);
+  const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setImgError(false);
+    setIconUrl(null);
+    getIssuerTokenIcon(code, issuer || '').then((url) => {
+      if (!cancelled && url) setIconUrl(url);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [code, issuer]);
+
+  const initials = code.slice(0, 2).toUpperCase();
+  // Deterministic hue from code string for fallback gradient
+  const hue = code.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
+
+  return (
+    <span
+      className="rounded-full flex-shrink-0 overflow-hidden flex items-center justify-center font-bold text-white"
+      style={{
+        width: size,
+        height: size,
+        fontSize: size * 0.35,
+        background: iconUrl && !imgError ? 'transparent' : `hsl(${hue},60%,45%)`,
+      }}
+    >
+      {iconUrl && !imgError ? (
+        <img
+          src={iconUrl}
+          alt={code}
+          width={size}
+          height={size}
+          className="w-full h-full object-cover"
+          onError={() => setImgError(true)}
+        />
+      ) : (
+        initials
+      )}
+    </span>
+  );
+}
+
 export function SwapPanel() {
-  // Get active wallet from context
   const { activeWallet, globalDecryptedSecret } = useWallet();
 
-  // Wallet tokens and states
   const [walletTokens, setWalletTokens] = useState<Token[]>([]);
   const [sendToken, setSendToken] = useState<Token | null>(null);
   const [receiveToken, setReceiveToken] = useState<Token | null>(null);
-  
-  // Amount states
+
   const [sendAmount, setSendAmount] = useState('');
   const [receiveAmount, setReceiveAmount] = useState('');
-  
-  // Best path and quote states
+
   const [bestPath, setBestPath] = useState<SwapPath | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  
-  // UI states
-  const [showSendDropdown, setShowSendDropdown] = useState(false);
-  const [showReceiveDropdown, setShowReceiveDropdown] = useState(false);
+
+  const [showSendModal, setShowSendModal] = useState(false);
+  const [showReceiveModal, setShowReceiveModal] = useState(false);
   const [selectedSlippage, setSelectedSlippage] = useState(1);
   const [priceImpactWarning, setPriceImpactWarning] = useState(false);
   const [spendableBalance, setSpendableBalance] = useState<string>('0');
 
-  const debounceTimer = useRef<NodeJS.Timeout>();
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sendInputRef = useRef<HTMLInputElement>(null);
 
   // Load wallet tokens when active wallet changes
   useEffect(() => {
     if (activeWallet) {
-      console.log('[v0] Loading wallet tokens from:', activeWallet.name, activeWallet.balances);
-      
       const tokens: Token[] = [];
-      
+
       if (activeWallet.balances && Array.isArray(activeWallet.balances)) {
-        // Add XLM (native)
-        const xlmBalance = activeWallet.balances.find((b: any) => 
+        const xlmBalance = activeWallet.balances.find((b: any) =>
           b.asset_type === 'native' || b.balance_type === 'native'
         )?.balance || '0';
-        
+
         tokens.push({
           code: 'XLM',
           balance: xlmBalance,
           displayBalance: parseFloat(xlmBalance).toFixed(7),
         });
-        
-        // Add other assets (skip pool shares and native)
+
         for (const balance of activeWallet.balances) {
           const isNative = balance.asset_type === 'native' || balance.balance_type === 'native';
           const isPoolShare = balance.asset_type === 'liquidity_pool_shares' || balance.balance_type === 'liquidity_pool_shares';
-          
+
           if (!isNative && !isPoolShare && balance.asset_code) {
             tokens.push({
               code: balance.asset_code,
@@ -86,14 +125,11 @@ export function SwapPanel() {
           }
         }
       }
-      
-      console.log('[v0] Loaded tokens:', tokens);
+
       setWalletTokens(tokens);
-      
-      // Auto-select first token as send token
+
       if (tokens.length > 0) {
         setSendToken(tokens[0]);
-        // Auto-select second token as receive token if available
         if (tokens.length > 1) {
           setReceiveToken(tokens[1]);
         }
@@ -101,37 +137,24 @@ export function SwapPanel() {
     }
   }, [activeWallet]);
 
-  // Calculate spendable balance whenever sendToken changes
-  // For XLM: subtract 1.5 XLM reserve estimate (base + liabilities)
-  // For other tokens: use full balance
+  // Calculate spendable balance
   useEffect(() => {
     if (sendToken) {
       const balance = parseFloat(sendToken.balance || '0');
       let calculatedSpendable = balance;
-      
-      // If XLM, account for base reserve requirement (~1.5 XLM minimum)
       if (sendToken.code === 'XLM') {
-        const reserveEstimate = 1.5;
-        calculatedSpendable = Math.max(0, balance - reserveEstimate);
+        calculatedSpendable = Math.max(0, balance - 1.5);
       }
-      
-      console.log('[v0] Spendable balance for', sendToken.code, ':', {
-        total: balance,
-        spendable: calculatedSpendable,
-      });
-      
       setSpendableBalance(calculatedSpendable.toFixed(7));
     }
   }, [sendToken]);
 
-  // LOBSTR-style real-time path finding using direct Horizon fetch
   const calculateBestPath = useCallback(async (amount: string) => {
     if (!amount || parseFloat(amount) <= 0 || !sendToken || !receiveToken) {
       setBestPath(null);
       return;
     }
 
-    // Check if send amount exceeds wallet balance
     const balance = parseFloat(sendToken.balance || '0');
     if (parseFloat(amount) > balance) {
       setError(`Insufficient balance. You have ${balance.toFixed(7)} ${sendToken.code}`);
@@ -144,15 +167,8 @@ export function SwapPanel() {
     setError(null);
 
     try {
-      // Format amount to exactly 7 decimal places (Stellar requirement)
       const formattedAmount = parseFloat(amount).toFixed(7);
 
-      console.log('[v0] Finding LOBSTR-style swap path:', {
-        from: `${formattedAmount} ${sendToken.code}${sendToken.issuer ? `:${sendToken.issuer}` : ''}`,
-        to: `${receiveToken.code}${receiveToken.issuer ? `:${receiveToken.issuer}` : ''}`,
-      });
-
-      // Direct Horizon fetch - no SDK constructors, LOBSTR approach
       const result = await findLobstrSwapPath(
         sendToken.code,
         sendToken.issuer,
@@ -162,13 +178,7 @@ export function SwapPanel() {
       );
 
       if (result && result.destinationAmount) {
-        console.log('[v0] Swap quote received:', {
-          destinationAmount: result.destinationAmount,
-          priceImpact: result.priceImpact,
-        });
-
         setBestPath(result);
-        // Display destination amount with proper formatting
         setReceiveAmount(parseFloat(result.destinationAmount).toFixed(7));
         setPriceImpactWarning(result.priceImpact > 1.5);
         setError(null);
@@ -178,7 +188,6 @@ export function SwapPanel() {
         setReceiveAmount('');
       }
     } catch (err: any) {
-      console.error('[v0] Path calculation error:', err);
       setError(err.message || 'Failed to find swap path on Horizon');
       setBestPath(null);
       setReceiveAmount('');
@@ -187,22 +196,16 @@ export function SwapPanel() {
     }
   }, [sendToken, receiveToken]);
 
-  // Debounced path calculation
   const debouncedCalculate = useCallback((amount: string) => {
-    if (debounceTimer.current) {
-      clearTimeout(debounceTimer.current);
-    }
+    if (debounceTimer.current !== null) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(() => {
       calculateBestPath(amount);
     }, 300);
   }, [calculateBestPath]);
 
-  // Re-fetch quote whenever tokens change (covers page-load auto-selection,
-  // manual dropdown change, and the flip button).
-  // We use a short delay so the new token state has fully committed.
   useEffect(() => {
     if (sendToken && receiveToken && sendAmount && parseFloat(sendAmount) > 0) {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+      if (debounceTimer.current !== null) clearTimeout(debounceTimer.current);
       debounceTimer.current = setTimeout(() => {
         calculateBestPath(sendAmount);
       }, 150);
@@ -210,11 +213,9 @@ export function SwapPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sendToken, receiveToken]);
 
-  // Handle send amount change
   const handleSendAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setSendAmount(value);
-    
     if (value) {
       debouncedCalculate(value);
     } else {
@@ -223,20 +224,23 @@ export function SwapPanel() {
     }
   };
 
-  // Swap send and receive tokens — preserve the current send amount so the
-  // quote re-fetches immediately for the flipped pair.
   const handleSwapTokens = () => {
     const prevSend = sendToken;
     const prevReceive = receiveToken;
     setSendToken(prevReceive);
     setReceiveToken(prevSend);
-    // Keep existing send amount; the token-change useEffect will re-fetch
     setReceiveAmount('');
     setBestPath(null);
     setError(null);
   };
 
-  // Execute swap using the globally unlocked secret
+  const handleSetPercentage = (pct: number) => {
+    const spendable = parseFloat(spendableBalance);
+    const amount = (spendable * pct / 100).toFixed(7).replace(/\.?0+$/, '');
+    setSendAmount(amount);
+    debouncedCalculate(amount);
+  };
+
   const handleExecuteSwap = async () => {
     if (!activeWallet || !sendToken || !receiveToken || !sendAmount || !bestPath) {
       setError('Please complete all fields');
@@ -252,29 +256,11 @@ export function SwapPanel() {
     setError(null);
 
     try {
-      const decryptedSecret = globalDecryptedSecret;
-
-      // Format amounts with exactly 7 decimal places (Stellar requirement)
       const formattedSendAmount = parseFloat(sendAmount).toFixed(7);
-      
-      // LOBSTR-style slippage protection: multiply by 0.99 for 1% buffer (or user selection)
-      const slippageProtectedAmount = calculateLobstrSlippageAmount(
-        receiveAmount,
-        selectedSlippage
-      );
+      const slippageProtectedAmount = calculateLobstrSlippageAmount(receiveAmount, selectedSlippage);
 
-      console.log('[v0] Executing LOBSTR-style swap on Mainnet:', {
-        wallet: activeWallet.name,
-        from: `${formattedSendAmount} ${sendToken.code}${sendToken.issuer ? `:${sendToken.issuer}` : ''}`,
-        to: `${receiveAmount} ${receiveToken.code}${receiveToken.issuer ? `:${receiveToken.issuer}` : ''}`,
-        slippageProtected: slippageProtectedAmount,
-        slippageTolerance: `${selectedSlippage}%`,
-        path: bestPath.path,
-      });
-
-      // Execute the swap on Mainnet with LOBSTR slippage protection
       const result = await executeSwap(
-        decryptedSecret,
+        globalDecryptedSecret,
         sendToken.code,
         sendToken.issuer,
         formattedSendAmount,
@@ -286,27 +272,57 @@ export function SwapPanel() {
       );
 
       if (result.success) {
-        console.log('[v0] Swap successful:', result.hash);
         setError(null);
         setSuccessMessage(`Swap successful! Transaction: ${result.hash}`);
-        
-        // Reset form
         setSendAmount('');
         setReceiveAmount('');
         setBestPath(null);
-        
-        // Clear success message after 5 seconds
         setTimeout(() => setSuccessMessage(null), 5000);
       } else {
         setError(result.error || 'Swap failed on Mainnet');
       }
     } catch (err: any) {
-      console.error('[v0] Swap execution error:', err);
       setError(err.message || 'Failed to execute swap on Mainnet');
     } finally {
       setLoading(false);
     }
   };
+
+  // Handle token selection from modal — find matching wallet token to get balance
+  const handleSelectSendToken = (token: { code: string; issuer?: string }) => {
+    const match = walletTokens.find(
+      (t) => t.code === token.code && (t.issuer || '') === (token.issuer || '')
+    );
+    if (match) {
+      setSendToken(match);
+    } else {
+      setSendToken({ code: token.code, issuer: token.issuer, balance: '0', displayBalance: '0.0000000' });
+    }
+    setSendAmount('');
+    setBestPath(null);
+    setReceiveAmount('');
+    setError(null);
+    setTimeout(() => sendInputRef.current?.focus(), 0);
+  };
+
+  const handleSelectReceiveToken = (token: { code: string; issuer?: string }) => {
+    const match = walletTokens.find(
+      (t) => t.code === token.code && (t.issuer || '') === (token.issuer || '')
+    );
+    if (match) {
+      setReceiveToken(match);
+    } else {
+      setReceiveToken({ code: token.code, issuer: token.issuer, balance: '0', displayBalance: '0.0000000' });
+    }
+    setBestPath(null);
+    setReceiveAmount('');
+    setError(null);
+  };
+
+  // Computed exchange rate for display
+  const exchangeRate = bestPath && sendAmount && parseFloat(sendAmount) > 0
+    ? (parseFloat(bestPath.destinationAmount) / parseFloat(sendAmount)).toFixed(6)
+    : null;
 
   if (!activeWallet) {
     return (
@@ -319,240 +335,202 @@ export function SwapPanel() {
   if (walletTokens.length === 0) {
     return (
       <div className="p-6 rounded-lg border border-border/50 bg-card/30 text-center">
+        <Loader2 className="w-6 h-6 text-primary animate-spin mx-auto mb-3" />
         <p className="text-muted-foreground">Loading wallet tokens...</p>
       </div>
     );
   }
 
+  const walletBalancesForModal = activeWallet.balances || [];
+
   return (
-    <div className="w-full max-w-2xl mx-auto space-y-6">
+    <div className="w-full space-y-4">
       {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-foreground mb-2">Swap Tokens</h2>
-        <p className="text-muted-foreground">
-          Trading wallet: <span className="font-semibold text-primary">{activeWallet.name}</span>
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-foreground">Swap Tokens</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Wallet: <span className="font-semibold text-primary">{activeWallet.name}</span>
+          </p>
+        </div>
+        {exchangeRate && sendToken && receiveToken && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20">
+            <TrendingUp className="w-3 h-3 text-primary" />
+            <span className="text-xs font-medium text-primary">
+              1 {sendToken.code} = {exchangeRate} {receiveToken.code}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Success Message */}
       {successMessage && (
-        <div className="p-4 rounded-lg border border-green-500/30 bg-green-500/10 flex items-start gap-3">
-          <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-green-500">{successMessage}</p>
+        <div className="p-3 rounded-xl border border-green-500/30 bg-green-500/10 flex items-start gap-3">
+          <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-green-500 break-all">{successMessage}</p>
         </div>
       )}
 
       {/* Error Display */}
       {error && (
-        <div className="p-4 rounded-lg border border-red-500/30 bg-red-500/10 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-red-500">{error}</p>
+        <div className="p-3 rounded-xl border border-red-500/30 bg-red-500/10 flex items-start gap-3">
+          <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-red-400">{error}</p>
         </div>
       )}
 
-      {/* Swap Interface Card */}
-      <div className="p-6 rounded-xl border border-blue-500/20 bg-gradient-to-br from-slate-900/50 via-blue-900/20 to-slate-900/50 backdrop-blur-sm space-y-6">
-        {/* Send Token Section */}
-        <div className="space-y-3">
-          <label className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Send</label>
-          <div className="flex gap-2">
-            {/* Token Dropdown */}
-            <div className="relative flex-1">
-              <button
-                onClick={() => {
-                  setShowSendDropdown(!showSendDropdown);
-                  setShowReceiveDropdown(false);
-                }}
-                className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-blue-500/30 bg-gradient-to-r from-blue-950/40 to-slate-900/40 hover:border-blue-400/50 hover:from-blue-900/50 hover:to-slate-900/50 transition-all text-foreground group"
-              >
-                <div className="flex flex-col items-start gap-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-lg">{sendToken?.code}</span>
-                    <span className="text-xs text-muted-foreground">({sendToken?.displayBalance})</span>
-                  </div>
-                  <span className="text-xs font-semibold text-yellow-400">Spendable: {spendableBalance}</span>
-                </div>
-                <ChevronDown className="w-4 h-4 text-muted-foreground group-hover:text-blue-400 transition-colors" />
-              </button>
+      {/* Main Swap Card */}
+      <div className="rounded-2xl border border-border/40 bg-card/60 backdrop-blur-sm overflow-hidden">
 
-              {/* Send Dropdown Menu */}
-              {showSendDropdown && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border/50 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
-                  {walletTokens.map((token) => (
-                    <button
-                      key={`${token.code}_${token.issuer || 'native'}`}
-                      onClick={() => {
-                        setSendToken(token);
-                        setShowSendDropdown(false);
-                        setSendAmount('');
-                        setBestPath(null);
-                        setReceiveAmount('');
-                        setError(null);
-                        // Focus input after selection
-                        setTimeout(() => sendInputRef.current?.focus(), 0);
-                      }}
-                      className="w-full text-left px-4 py-2 hover:bg-primary/20 border-b border-border/20 last:border-b-0 transition-colors"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-foreground">{token.code}</span>
-                        <span className="text-xs text-muted-foreground">{token.displayBalance}</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+        {/* SEND Panel */}
+        <div className="p-4 space-y-3">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">You Send</p>
+
+          <div className="flex items-center gap-3">
+            {/* Token Selector Button */}
+            <button
+              onClick={() => setShowSendModal(true)}
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-border/50 bg-background/50 hover:border-primary/40 hover:bg-primary/5 transition-all group min-w-0 flex-shrink-0"
+            >
+              <TokenAvatar code={sendToken?.code || 'XLM'} issuer={sendToken?.issuer} size={32} />
+              <div className="flex flex-col items-start min-w-0">
+                <span className="font-bold text-sm text-foreground leading-tight">{sendToken?.code || 'Select'}</span>
+                {sendToken?.issuer && (
+                  <span className="text-[10px] text-muted-foreground leading-tight truncate max-w-[64px]">
+                    {sendToken.issuer.slice(0, 6)}…
+                  </span>
+                )}
+              </div>
+              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0" />
+            </button>
 
             {/* Amount Input */}
-            <Input
-              ref={sendInputRef}
-              type="number"
-              placeholder="0.00"
-              value={sendAmount}
-              onChange={handleSendAmountChange}
-              onFocus={() => {
-                setShowSendDropdown(false);
-                setShowReceiveDropdown(false);
-              }}
-              className="w-32 min-w-[7rem] text-right text-foreground bg-background border-border/50 placeholder:text-muted-foreground focus:ring-primary focus:border-primary font-semibold text-base"
-            />
+            <div className="flex-1 min-w-0">
+              <Input
+                ref={sendInputRef}
+                type="number"
+                placeholder="0.00"
+                value={sendAmount}
+                onChange={handleSendAmountChange}
+                className="text-right text-xl font-bold text-foreground bg-transparent border-none shadow-none placeholder:text-muted-foreground/40 focus-visible:ring-0 h-auto p-0 pr-1"
+              />
+            </div>
           </div>
 
-          {/* Quick Percentage Buttons */}
-          <div className="flex gap-2 px-1">
-            {[25, 50, 75].map((percentage) => (
+          {/* Balance row + Percentage buttons */}
+          <div className="flex items-center gap-2">
+            <div className="flex-1 flex items-baseline gap-1">
+              <span className="text-[11px] text-muted-foreground">Balance:</span>
+              <span className="text-[11px] font-semibold text-foreground">{sendToken?.displayBalance || '0'} {sendToken?.code}</span>
+              {sendToken?.code === 'XLM' && (
+                <span className="text-[10px] text-yellow-400/80">(spendable: {spendableBalance})</span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex gap-1.5">
+            {[25, 50, 75].map((pct) => (
               <button
-                key={percentage}
-                onClick={() => {
-                  const spendable = parseFloat(spendableBalance);
-                  const amount = (spendable * percentage / 100).toFixed(7);
-                  // Remove trailing zeros after decimal point
-                  const cleanAmount = amount.replace(/\.?0+$/, '');
-                  setSendAmount(cleanAmount);
-                  debouncedCalculate(cleanAmount);
-                }}
-                className="flex-1 px-3 py-2 text-xs font-bold rounded-lg border border-slate-600/50 bg-slate-800/50 text-slate-300 hover:border-yellow-500/60 hover:text-yellow-300 hover:bg-yellow-500/15 hover:shadow-lg hover:shadow-yellow-500/20 transition-all duration-200"
+                key={pct}
+                onClick={() => handleSetPercentage(pct)}
+                className="flex-1 py-1.5 text-[11px] font-bold rounded-lg border border-border/50 bg-background/30 text-muted-foreground hover:border-primary/50 hover:text-primary hover:bg-primary/10 transition-all"
               >
-                {percentage}%
+                {pct}%
               </button>
             ))}
             <button
-              onClick={() => {
-                const spendable = parseFloat(spendableBalance);
-                const amount = spendable.toFixed(7);
-                // Remove trailing zeros after decimal point
-                const cleanAmount = amount.replace(/\.?0+$/, '');
-                setSendAmount(cleanAmount);
-                debouncedCalculate(cleanAmount);
-              }}
-              className="flex-1 px-3 py-2 text-xs font-bold rounded-lg border border-slate-600/50 bg-slate-800/50 text-slate-300 hover:border-yellow-500/60 hover:text-yellow-300 hover:bg-yellow-500/15 hover:shadow-lg hover:shadow-yellow-500/20 transition-all duration-200"
+              onClick={() => handleSetPercentage(100)}
+              className="flex-1 py-1.5 text-[11px] font-bold rounded-lg border border-border/50 bg-background/30 text-muted-foreground hover:border-primary/50 hover:text-primary hover:bg-primary/10 transition-all"
             >
               MAX
             </button>
           </div>
         </div>
 
-        {/* Swap Button */}
-        <div className="flex justify-center py-2">
+        {/* Divider with Swap Button */}
+        <div className="relative flex items-center justify-center py-1 border-y border-border/30 bg-background/20">
           <button
             onClick={handleSwapTokens}
             disabled={!sendToken || !receiveToken}
-            className="p-3 rounded-full border-2 border-yellow-500/40 bg-gradient-to-br from-yellow-500/20 to-yellow-600/20 hover:border-yellow-400/80 hover:from-yellow-500/35 hover:to-yellow-600/35 hover:shadow-lg hover:shadow-yellow-500/30 disabled:opacity-40 transition-all duration-200 group"
+            className="z-10 p-2 rounded-xl border border-border/60 bg-card hover:border-primary/60 hover:bg-primary/10 disabled:opacity-40 transition-all group shadow-sm"
+            aria-label="Flip tokens"
           >
-            <ArrowRightLeft className="w-6 h-6 text-yellow-400 group-hover:text-yellow-300 transition-colors" />
+            <ArrowUpDown className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
           </button>
         </div>
 
-        {/* Receive Token Section */}
-        <div className="space-y-3">
-          <label className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Receive</label>
-          <div className="flex gap-2">
-            {/* Token Dropdown */}
-            <div className="relative flex-1">
-              <button
-                onClick={() => {
-                  setShowReceiveDropdown(!showReceiveDropdown);
-                  setShowSendDropdown(false);
-                }}
-                className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-blue-500/30 bg-gradient-to-r from-blue-950/40 to-slate-900/40 hover:border-blue-400/50 hover:from-blue-900/50 hover:to-slate-900/50 transition-all text-foreground group"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-lg">{receiveToken?.code || 'Select'}</span>
-                  <span className="text-xs text-muted-foreground">({receiveToken?.displayBalance || '0'})</span>
-                </div>
-                <ChevronDown className="w-4 h-4 text-muted-foreground group-hover:text-blue-400 transition-colors" />
-              </button>
+        {/* RECEIVE Panel */}
+        <div className="p-4 space-y-3">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">You Receive</p>
 
-              {/* Receive Dropdown Menu */}
-              {showReceiveDropdown && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border/50 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
-                  {walletTokens.map((token) => (
-                    <button
-                      key={`${token.code}_${token.issuer || 'native'}_receive`}
-                      onClick={() => {
-                        setReceiveToken(token);
-                        setShowReceiveDropdown(false);
-                        setBestPath(null);
-                        setReceiveAmount('');
-                        setError(null);
-                        // The token-change useEffect will re-fetch automatically.
-                        // Just focus the amount input for UX.
-                        setTimeout(() => sendInputRef.current?.focus(), 0);
-                      }}
-                      className="w-full text-left px-4 py-2 hover:bg-primary/20 border-b border-border/20 last:border-b-0 transition-colors"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-foreground">{token.code}</span>
-                        <span className="text-xs text-muted-foreground">{token.displayBalance}</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
+          <div className="flex items-center gap-3">
+            {/* Token Selector Button */}
+            <button
+              onClick={() => setShowReceiveModal(true)}
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-border/50 bg-background/50 hover:border-primary/40 hover:bg-primary/5 transition-all group min-w-0 flex-shrink-0"
+            >
+              <TokenAvatar code={receiveToken?.code || '?'} issuer={receiveToken?.issuer} size={32} />
+              <div className="flex flex-col items-start min-w-0">
+                <span className="font-bold text-sm text-foreground leading-tight">{receiveToken?.code || 'Select'}</span>
+                {receiveToken?.issuer && (
+                  <span className="text-[10px] text-muted-foreground leading-tight truncate max-w-[64px]">
+                    {receiveToken.issuer.slice(0, 6)}…
+                  </span>
+                )}
+              </div>
+              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0" />
+            </button>
+
+            {/* Estimated receive amount */}
+            <div className="flex-1 flex items-center justify-end">
+              {loading ? (
+                <Loader2 className="w-5 h-5 text-primary animate-spin" />
+              ) : (
+                <span className={`text-xl font-bold tabular-nums ${receiveAmount ? 'text-foreground' : 'text-muted-foreground/40'}`}>
+                  {receiveAmount ? parseFloat(receiveAmount).toFixed(4) : '0.0000'}
+                </span>
               )}
             </div>
-
-            {/* Receive Amount Display */}
-            <div className="w-32 min-w-[7rem] px-3 py-3 rounded-xl border border-blue-500/30 bg-gradient-to-r from-blue-950/30 to-slate-900/30 text-foreground font-semibold flex items-center justify-end text-base tabular-nums overflow-hidden">
-              {loading
-                ? <span className="text-muted-foreground text-sm">...</span>
-                : <span className={receiveAmount ? 'text-foreground' : 'text-muted-foreground'}>
-                    {receiveAmount
-                      ? parseFloat(receiveAmount).toFixed(4)
-                      : '0.0000'}
-                  </span>
-              }
-            </div>
           </div>
+
+          {receiveToken && (
+            <div className="flex items-baseline gap-1">
+              <span className="text-[11px] text-muted-foreground">Balance:</span>
+              <span className="text-[11px] font-semibold text-foreground">{receiveToken.displayBalance || '0'} {receiveToken.code}</span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Best Path Info */}
+      {/* Quote Details */}
       {bestPath && (
-        <div className="p-4 rounded-lg border border-primary/30 bg-primary/5 space-y-3">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Estimated Amount</p>
-              <p className="text-lg font-semibold text-foreground">{parseFloat(bestPath.destinationAmount).toFixed(7)} {receiveToken?.code}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Price Impact</p>
-              <p className={`text-lg font-semibold ${priceImpactWarning ? 'text-yellow-500' : 'text-green-500'}`}>
-                {bestPath.priceImpact.toFixed(2)}%
-              </p>
-            </div>
+        <div className="rounded-xl border border-border/30 bg-card/30 divide-y divide-border/20 text-sm">
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <span className="text-xs text-muted-foreground">Estimated received</span>
+            <span className="text-xs font-semibold text-foreground">
+              {parseFloat(bestPath.destinationAmount).toFixed(7)} {receiveToken?.code}
+            </span>
           </div>
-          
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <span className="text-xs text-muted-foreground">Price impact</span>
+            <span className={`text-xs font-semibold ${priceImpactWarning ? 'text-yellow-400' : 'text-green-400'}`}>
+              {bestPath.priceImpact.toFixed(2)}%
+              {priceImpactWarning && ' ⚠'}
+            </span>
+          </div>
           {bestPath.path && bestPath.path.length > 0 && (
-            <div>
-              <p className="text-xs text-muted-foreground mb-2">Optimized Trading Path</p>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="px-2 py-1 rounded bg-primary/20 text-xs font-semibold text-primary">{sendToken?.code}</span>
+            <div className="flex items-center justify-between px-4 py-2.5">
+              <span className="text-xs text-muted-foreground">Route</span>
+              <div className="flex items-center gap-1 flex-wrap justify-end">
+                <span className="text-xs font-medium text-primary/80">{sendToken?.code}</span>
                 {bestPath.path.map((asset, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <span className="text-primary">→</span>
-                    <span className="px-2 py-1 rounded bg-primary/20 text-xs font-semibold text-primary">{asset.code}</span>
-                  </div>
+                  <span key={idx} className="flex items-center gap-1 text-xs">
+                    <span className="text-muted-foreground">→</span>
+                    <span className="font-medium text-primary/80">{asset.code}</span>
+                  </span>
                 ))}
+                <span className="text-muted-foreground text-xs">→</span>
+                <span className="text-xs font-medium text-primary/80">{receiveToken?.code}</span>
               </div>
             </div>
           )}
@@ -560,17 +538,17 @@ export function SwapPanel() {
       )}
 
       {/* Slippage Tolerance */}
-      <div className="space-y-3">
-        <label className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Slippage Tolerance</label>
+      <div className="space-y-2">
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Slippage Tolerance</p>
         <div className="flex gap-2">
           {SLIPPAGE_OPTIONS.map((option) => (
             <button
               key={option}
               onClick={() => setSelectedSlippage(option)}
-              className={`flex-1 py-2.5 rounded-lg border font-bold transition-all duration-200 ${
+              className={`flex-1 py-2 rounded-lg border text-xs font-bold transition-all ${
                 selectedSlippage === option
-                  ? 'border-yellow-500/60 bg-gradient-to-r from-yellow-500/20 to-yellow-600/20 text-yellow-300 shadow-lg shadow-yellow-500/20'
-                  : 'border-slate-600/50 bg-slate-800/50 text-slate-400 hover:border-slate-500 hover:bg-slate-700/50'
+                  ? 'border-primary/60 bg-primary/15 text-primary shadow-sm'
+                  : 'border-border/40 bg-background/30 text-muted-foreground hover:border-border/60 hover:text-foreground'
               }`}
             >
               {option}%
@@ -583,17 +561,37 @@ export function SwapPanel() {
       <Button
         onClick={handleExecuteSwap}
         disabled={!sendAmount || !bestPath || !receiveToken || loading}
-        className="w-full py-3 text-base font-semibold"
+        className="w-full py-3 text-sm font-semibold rounded-xl"
       >
         {loading ? (
-          <div className="flex items-center gap-2">
+          <span className="flex items-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin" />
-            Executing...
-          </div>
+            {bestPath ? 'Executing swap...' : 'Finding best route...'}
+          </span>
+        ) : !sendAmount ? (
+          'Enter an amount'
+        ) : !bestPath ? (
+          'No route found'
         ) : (
-          'Confirm Swap on Mainnet'
+          'Confirm Swap'
         )}
       </Button>
+
+      {/* Token Selector Modals */}
+      <TokenSelectorModal
+        isOpen={showSendModal}
+        onClose={() => setShowSendModal(false)}
+        onSelect={handleSelectSendToken}
+        walletBalances={walletBalancesForModal}
+        type="selling"
+      />
+      <TokenSelectorModal
+        isOpen={showReceiveModal}
+        onClose={() => setShowReceiveModal(false)}
+        onSelect={handleSelectReceiveToken}
+        walletBalances={walletBalancesForModal}
+        type="buying"
+      />
     </div>
   );
 }
