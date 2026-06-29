@@ -172,29 +172,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  {/* Quick action links */}
-                  <div className="relative z-10 flex items-center gap-2 mt-4 pt-4 border-t border-border/50">
-                    <Link href="/send">
-                      <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs font-medium border-border hover:border-primary/40 hover:bg-primary/5">
-                        Send
-                      </Button>
-                    </Link>
-                    <Link href="/receive">
-                      <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs font-medium border-border hover:border-primary/40 hover:bg-primary/5">
-                        Receive
-                      </Button>
-                    </Link>
-                    <Link href="/swap">
-                      <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs font-medium border-border hover:border-primary/40 hover:bg-primary/5">
-                        Swap
-                      </Button>
-                    </Link>
-                    <Link href="/portfolio" className="ml-auto">
-                      <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground">
-                        Portfolio &rarr;
-                      </Button>
-                    </Link>
-                  </div>
+
                 </div>
               )}
 
