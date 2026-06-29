@@ -70,7 +70,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark bg-background">
       <body className="font-sans antialiased bg-background text-foreground">
         <WalletProvider>
           <NotificationProvider>

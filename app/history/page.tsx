@@ -88,127 +88,120 @@ export default function HistoryPage() {
     return address ? `${address.substring(0, 4)}...${address.substring(address.length - 4)}` : 'Unknown';
   };
 
+  const receivedCount = payments.filter(p => isReceived(p)).length;
+  const sentCount = payments.filter(p => !isReceived(p)).length;
+
   return (
     <main className="min-h-screen bg-background">
       <Header />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Link href="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-8 transition-colors">
+      <div className="page-container py-6">
+
+        {/* Back nav */}
+        <Link href="/" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors">
           <ArrowLeft className="w-4 h-4" />
           Back to Dashboard
         </Link>
 
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="glow-border p-6 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-foreground mb-2">Transaction History</h1>
-                <p className="text-muted-foreground text-sm">
-                  {activeWallet?.name} - {payments.length} payment{payments.length !== 1 ? 's' : ''}
-                </p>
-              </div>
-              <button 
-                onClick={fetchPayments}
-                disabled={loading}
-                className="p-2 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors"
-              >
-                <RefreshCw className={`w-5 h-5 text-primary ${loading ? 'animate-spin' : ''}`} />
-              </button>
-            </div>
+        {/* Page header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <p className="section-label mb-1">Wallet</p>
+            <h1 className="text-2xl font-bold text-foreground tracking-tight">Transaction History</h1>
+            {activeWallet && (
+              <p className="text-sm text-muted-foreground mt-0.5">{activeWallet.name}</p>
+            )}
           </div>
+          <button
+            onClick={fetchPayments}
+            disabled={loading}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border hover:border-primary/30 hover:bg-primary/5 transition-colors text-sm text-muted-foreground hover:text-foreground"
+            aria-label="Refresh"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+        </div>
 
-          {/* Payments List */}
-          {loading && payments.length === 0 ? (
-            <div className="glow-border p-12 rounded-lg text-center">
-              <RefreshCw className="w-8 h-8 text-primary mx-auto mb-4 animate-spin" />
-              <p className="text-muted-foreground">Loading transactions...</p>
-            </div>
-          ) : payments.length === 0 ? (
-            <div className="glow-border p-12 rounded-lg text-center">
-              <p className="text-muted-foreground">No transactions yet. Your payments will appear here.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
+        {/* Stats row — only when loaded */}
+        {payments.length > 0 && (
+          <div className="grid grid-cols-3 gap-3 mb-6">
+            {[
+              { label: 'Total', value: payments.length, color: 'text-foreground' },
+              { label: 'Received', value: receivedCount, color: 'text-emerald-400' },
+              { label: 'Sent', value: sentCount, color: 'text-primary' },
+            ].map((s) => (
+              <div key={s.label} className="rounded-xl border border-border bg-card p-4 text-center">
+                <p className={`text-xl font-bold num ${s.color}`}>{s.value}</p>
+                <p className="section-label mt-1">{s.label}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Payments list */}
+        {loading && payments.length === 0 ? (
+          <div className="rounded-xl border border-border bg-card p-14 text-center">
+            <RefreshCw className="w-7 h-7 text-muted-foreground mx-auto mb-3 animate-spin" />
+            <p className="text-sm text-muted-foreground">Loading transactions&hellip;</p>
+          </div>
+        ) : payments.length === 0 ? (
+          <div className="rounded-xl border border-border bg-card p-14 text-center">
+            <p className="text-sm text-muted-foreground">No transactions yet. Your payments will appear here.</p>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-border bg-card overflow-hidden">
+            <div className="divide-y divide-border/40">
               {payments.map((payment) => {
                 const received = isReceived(payment);
                 const assetCode = getAssetCode(payment);
-                
+
                 return (
-                  <div
-                    key={payment.id}
-                    className="glow-border p-4 rounded-lg hover:bg-card/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-4">
-                      {/* Direction Icon */}
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                        received ? 'bg-green-500/20' : 'bg-accent/20'
-                      }`}>
-                        {received ? (
-                          <ArrowDownLeft className="w-5 h-5 text-green-500" />
-                        ) : (
-                          <ArrowUpRight className="w-5 h-5 text-accent" />
-                        )}
-                      </div>
-
-                      {/* Details */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`font-semibold ${received ? 'text-green-500' : 'text-accent'}`}>
-                            {received ? '+' : '-'}{formatAmount(payment.amount)} {assetCode}
-                          </span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {received ? 'From' : 'To'}: {getCounterparty(payment)}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatDate(payment.created_at)}
-                        </p>
-                      </div>
-
-                      {/* View Link */}
-                      <Link
-                        href={`https://stellar.expert/explorer/public/tx/${payment.transaction_hash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-2 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors flex-shrink-0"
-                      >
-                        <ExternalLink className="w-4 h-4 text-primary" />
-                      </Link>
+                  <div key={payment.id} className="flex items-center gap-3 px-4 py-3.5 hover:bg-muted/20 transition-colors">
+                    {/* Icon */}
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      received ? 'bg-emerald-500/15' : 'bg-primary/10'
+                    }`}>
+                      {received
+                        ? <ArrowDownLeft className="w-4 h-4 text-emerald-400" />
+                        : <ArrowUpRight className="w-4 h-4 text-primary" />
+                      }
                     </div>
+
+                    {/* Details */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className={`text-sm font-semibold num ${received ? 'text-emerald-400' : 'text-foreground'}`}>
+                          {received ? '+' : '-'}{formatAmount(payment.amount)} {assetCode}
+                        </span>
+                        <span className="text-xs text-muted-foreground capitalize">
+                          {payment.type === 'create_account' ? 'account created' : payment.type.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-xs text-muted-foreground">
+                          {received ? 'From' : 'To'} {getCounterparty(payment)}
+                        </span>
+                        <span className="text-xs text-muted-foreground/50">&middot;</span>
+                        <span className="text-xs text-muted-foreground">{formatDate(payment.created_at)}</span>
+                      </div>
+                    </div>
+
+                    {/* Explorer link */}
+                    <Link
+                      href={`https://stellar.expert/explorer/public/tx/${payment.transaction_hash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1.5 rounded-lg text-muted-foreground hover:text-primary transition-colors flex-shrink-0"
+                      aria-label="View on Stellar Expert"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </Link>
                   </div>
                 );
               })}
             </div>
-          )}
-
-          {/* Summary Stats */}
-          {payments.length > 0 && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="glow-border p-4 rounded-lg">
-                <p className="text-xs font-medium text-muted-foreground mb-1">Total Payments</p>
-                <p className="text-xl font-bold text-primary">{payments.length}</p>
-              </div>
-              <div className="glow-border p-4 rounded-lg">
-                <p className="text-xs font-medium text-muted-foreground mb-1">Received</p>
-                <p className="text-xl font-bold text-green-500">
-                  {payments.filter(p => isReceived(p)).length}
-                </p>
-              </div>
-              <div className="glow-border p-4 rounded-lg">
-                <p className="text-xs font-medium text-muted-foreground mb-1">Sent</p>
-                <p className="text-xl font-bold text-accent">
-                  {payments.filter(p => !isReceived(p)).length}
-                </p>
-              </div>
-              <div className="glow-border p-4 rounded-lg">
-                <p className="text-xs font-medium text-muted-foreground mb-1">Latest</p>
-                <p className="text-xs font-semibold text-foreground truncate">
-                  {payments.length > 0 ? formatDate(payments[0].created_at) : 'N/A'}
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </main>
   );

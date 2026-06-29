@@ -28,89 +28,91 @@ export function Header({ onOpenBulkWallet }: HeaderProps) {
 
   return (
     <>
-      <header className="border-b border-primary/20 bg-background sticky top-0 z-40 backdrop-blur-md">
+      <header className="sticky top-0 z-40 border-b border-border/60 bg-background/90 backdrop-blur-xl backdrop-saturate-150">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Mobile Layout (hidden on md:) - 3 Column Grid */}
-          <div className="md:hidden grid grid-cols-3 items-center h-16 gap-2">
-            {/* Left: Mobile Logo */}
-            <button 
+          {/* Mobile Layout */}
+          <div className="md:hidden grid grid-cols-3 items-center h-14 gap-2">
+            {/* Left: Logo */}
+            <button
               onClick={() => setMenuOpen(true)}
-              className="flex items-center gap-1.5 group transition-all hover:opacity-80 justify-start"
+              className="flex items-center gap-2 group transition-all"
             >
-              <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-primary/80 to-primary shadow-lg flex-shrink-0">
-                <Zap className="w-5 h-5 text-primary-foreground" />
+              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary shadow-md shadow-primary/20 flex-shrink-0">
+                <Zap className="w-4 h-4 text-primary-foreground" strokeWidth={2.5} />
               </div>
-              <span className="font-bold text-xs text-foreground group-hover:text-primary transition-colors truncate">Stellar</span>
+              <span className="font-bold text-sm text-foreground group-hover:text-primary transition-colors truncate">Stellar</span>
             </button>
-            
-            {/* Center: Wallet Selector Dropdown */}
-            <div className="flex justify-center px-1">
+
+            {/* Center: Wallet Selector */}
+            <div className="flex justify-center">
               <WalletSelectorDropdown compact={true} />
             </div>
 
-            {/* Right: Mobile Right Controls */}
-            <div className="flex items-center gap-2 justify-end">
-              {/* Notification Badge */}
+            {/* Right: Controls */}
+            <div className="flex items-center gap-1.5 justify-end">
               <NotificationBadge />
-
-              {/* Mobile Menu Button */}
               <button
                 onClick={() => setMenuOpen(true)}
-                className="p-2 rounded-lg hover:bg-primary/10 transition-colors"
+                className="p-2 rounded-lg hover:bg-muted transition-colors"
+                aria-label="Open menu"
               >
                 <Menu className="w-5 h-5 text-muted-foreground" />
               </button>
             </div>
           </div>
 
-          {/* Desktop Layout (hidden on mobile) */}
-          <div className="hidden md:flex items-center justify-between h-20 gap-4">
-            {/* Logo Section */}
-            <button 
+          {/* Desktop Layout */}
+          <div className="hidden md:flex items-center justify-between h-16 gap-6">
+            {/* Logo */}
+            <button
               onClick={() => setMenuOpen(true)}
-              className="flex items-center gap-3 group transition-all hover:opacity-80"
+              className="flex items-center gap-3 group transition-all flex-shrink-0"
             >
-              <div className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-primary/80 to-primary shadow-lg">
-                <Zap className="w-6 h-6 text-primary-foreground" />
+              <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary shadow-lg shadow-primary/25">
+                <Zap className="w-5 h-5 text-primary-foreground" strokeWidth={2.5} />
               </div>
-              <div className="flex flex-col leading-tight">
-                <span className="font-bold text-lg text-foreground group-hover:text-primary transition-colors">Stellar</span>
-                <span className="text-xs text-muted-foreground">Lumens Wallet</span>
+              <div className="flex flex-col leading-none">
+                <span className="font-bold text-base text-foreground group-hover:text-primary transition-colors">Stellar</span>
+                <span className="text-xs text-muted-foreground mt-0.5">Lumens Wallet</span>
               </div>
             </button>
-            
-            {/* Desktop Navigation */}
-            <nav className="flex items-center gap-8">
+
+            {/* Navigation */}
+            <nav className="flex items-center gap-1">
               {navLinks.map((link) => (
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`text-sm font-medium transition-all ${
+                  className={`relative px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                     pathname === link.href
-                      ? 'text-primary'
-                      : 'text-muted-foreground hover:text-foreground'
+                      ? 'text-primary bg-primary/10'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
                   }`}
                 >
                   {link.label}
+                  {pathname === link.href && (
+                    <span className="absolute inset-x-3 -bottom-px h-px bg-primary rounded-full" />
+                  )}
                 </Link>
               ))}
             </nav>
 
-            {/* Desktop Right Side Controls */}
-            <div className="flex items-center gap-4">
-              {/* Notification Badge */}
+            {/* Right Controls */}
+            <div className="flex items-center gap-3 flex-shrink-0">
               <NotificationBadge />
 
-              {/* Live Status Indicator */}
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/30">
-                <span className="inline-block w-2 h-2 bg-primary rounded-full animate-pulse"></span>
-                <span className="text-xs font-medium text-primary">Live</span>
+              {/* Live badge */}
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                <span className="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                <span className="text-xs font-medium text-emerald-400">Live</span>
               </div>
 
-              {/* Menu Button */}
+              <WalletSelectorDropdown compact={false} />
+
               <button
                 onClick={() => setMenuOpen(true)}
-                className="p-2 rounded-lg hover:bg-primary/10 transition-colors"
+                className="p-2 rounded-lg hover:bg-muted transition-colors"
+                aria-label="Open menu"
               >
                 <Menu className="w-5 h-5 text-muted-foreground" />
               </button>
