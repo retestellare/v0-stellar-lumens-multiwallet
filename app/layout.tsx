@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { WalletProvider } from '@/lib/wallet-context'
 import { NotificationProvider } from '@/lib/notification-context'
+import { AppUnlockModal } from '@/components/app-unlock-modal'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -73,6 +74,7 @@ export default function RootLayout({
       <body className="font-sans antialiased bg-background text-foreground">
         <WalletProvider>
           <NotificationProvider>
+            <AppUnlockModal />
             {children}
           </NotificationProvider>
         </WalletProvider>
