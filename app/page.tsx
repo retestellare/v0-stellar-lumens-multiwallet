@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { Header } from '@/components/header';
-import { WalletContainer } from '@/components/wallet-container';
 import { AssetDetailModal } from '@/components/asset-detail-modal';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/lib/wallet-context';
@@ -137,9 +136,9 @@ export default function DashboardPage() {
             </Button>
           </div>
         ) : (
-          <div className="grid lg:grid-cols-[1fr_320px] gap-5">
+          <div className="max-w-2xl">
 
-            {/* ── Left column ── */}
+            {/* ── Content ── */}
             <div className="space-y-4 min-w-0">
 
               {/* Balance hero card */}
@@ -204,17 +203,6 @@ export default function DashboardPage() {
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* ── Right column — Wallet container ── */}
-            <div>
-              <WalletContainer
-                wallets={wallets}
-                activeWalletId={activeWalletId}
-                onSelect={handleWalletSelect}
-                onDelete={removeWallet}
-                onAdd={handleAddWallet}
-              />
             </div>
 
           </div>

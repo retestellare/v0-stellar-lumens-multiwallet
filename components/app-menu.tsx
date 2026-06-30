@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -21,6 +22,10 @@ import {
   ShoppingBag,
 } from 'lucide-react';
 import { useWallet } from '@/lib/wallet-context';
+import { WalletContainer } from '@/components/wallet-container';
+
+const CreateWalletModal = dynamic(() => import('@/components/create-wallet-modal').then(m => ({ default: m.CreateWalletModal })), { loading: () => null });
+const BulkWalletModal = dynamic(() => import('@/components/bulk-wallet-modal').then(m => ({ default: m.BulkWalletModal })), { loading: () => null });
 
 interface AppMenuProps {
   isOpen: boolean;
@@ -30,7 +35,9 @@ interface AppMenuProps {
 
 export function AppMenu({ isOpen, onClose, onOpenSettings }: AppMenuProps) {
   const pathname = usePathname();
-  const { activeWallet, wallets, setActiveWallet, removeWallet } = useWallet();
+  const { activeWallet, wallets, activeWalletId, setActiveWallet, removeWallet } = useWallet();
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isBulkOpen, setIsBulkOpen] = useState(false);
 
   const menuItems = [
     { icon: Home, label: 'Home', href: '/' },
@@ -151,38 +158,18 @@ export function AppMenu({ isOpen, onClose, onOpenSettings }: AppMenuProps) {
             );
           })}
 
-          {/* Switch Wallet */}
-          {wallets.length > 1 && (
-            <>
-              <div className="my-3 border-t border-border/60" />
-              <p className="section-label px-3 mb-2">Switch Wallet</p>
-              {wallets.map((wallet) => {
-                const isCurrentWallet = activeWallet?.publicKey === wallet.publicKey;
-                return (
-                  <button
-                    key={wallet.publicKey}
-                    onClick={() => { setActiveWallet(wallet.publicKey); onClose(); }}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors mb-0.5 ${
-                      isCurrentWallet
-                        ? 'bg-primary/15 text-primary font-medium'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
-                    }`}
-                  >
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold ${isCurrentWallet ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
-                      {wallet.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 text-left min-w-0">
-                      <p className="font-medium truncate">{wallet.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {wallet.balances?.length || 0} asset{wallet.balances?.length !== 1 ? 's' : ''}
-                      </p>
-                    </div>
-                    {isCurrentWallet && <span className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />}
-                  </button>
-                );
-              })}
-            </>
-          )}
+          {/* My Wallets section */}
+          <div className="my-3 border-t border-border/60" />
+          <p className="section-label px-3 mb-2">My Wallets</p>
+          <div className="px-1">
+            <WalletContainer
+              wallets={wallets}
+              activeWalletId={activeWalletId}
+              onSelect={(id) => { setActiveWallet(id); }}
+              onDelete={removeWallet}
+              onAdd={() => setIsCreateOpen(true)}
+            />
+          </div>
         </div>
 
         {/* Footer */}
@@ -192,6 +179,9 @@ export function AppMenu({ isOpen, onClose, onOpenSettings }: AppMenuProps) {
           </p>
         </div>
       </div>
+
+      <CreateWalletModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <BulkWalletModal isOpen={isBulkOpen} onClose={() => setIsBulkOpen(false)} />
     </>
   );
 }

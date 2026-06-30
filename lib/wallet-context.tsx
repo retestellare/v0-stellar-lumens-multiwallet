@@ -47,21 +47,25 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [activeWalletId, setActiveWalletId] = useState<string | null>(null);
   
-  // Global decrypted secret — unlocked once on app open, cleared when active wallet changes
-  const [globalDecryptedSecret, setGlobalDecryptedSecretState] = useState<string | null>(null);
-  const prevActiveWalletIdRef = React.useRef<string | null>(null);
+  // Per-wallet decrypted secret cache — stored in RAM only, cleared on page reload.
+  // Once a wallet is unlocked, switching back to it within the same session is instant.
+  const [walletSecrets, setWalletSecrets] = useState<Record<string, string>>({});
 
-  // Clear the global secret whenever the active wallet changes
-  useEffect(() => {
-    if (prevActiveWalletIdRef.current !== null && prevActiveWalletIdRef.current !== activeWalletId) {
-      setGlobalDecryptedSecretState(null);
-    }
-    prevActiveWalletIdRef.current = activeWalletId;
-  }, [activeWalletId]);
+  // globalDecryptedSecret is the secret for the *currently active* wallet.
+  // It is derived from walletSecrets[activeWalletId] so it updates automatically on switch.
+  const globalDecryptedSecret = activeWalletId ? (walletSecrets[activeWalletId] ?? null) : null;
 
   const setGlobalDecryptedSecret = useCallback((secret: string | null) => {
-    setGlobalDecryptedSecretState(secret);
-  }, []);
+    if (!activeWalletId) return;
+    setWalletSecrets(prev => {
+      if (secret === null) {
+        const next = { ...prev };
+        delete next[activeWalletId];
+        return next;
+      }
+      return { ...prev, [activeWalletId]: secret };
+    });
+  }, [activeWalletId]);
 
   // Password session management - stored in RAM only
   const [passwordSessionType, setPasswordSessionType] = useState<PasswordSessionType>('everytime');
