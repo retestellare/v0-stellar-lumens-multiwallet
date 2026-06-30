@@ -39,6 +39,8 @@ export interface WalletContextType {
   // Global decrypted secret — unlocked once on app open, cleared on wallet change
   globalDecryptedSecret: string | null;
   setGlobalDecryptedSecret: (secret: string | null) => void;
+  // Store the session password so wallet switches auto-decrypt without re-prompting
+  setSessionPassword: (password: string) => void;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -48,12 +50,35 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [activeWalletId, setActiveWalletId] = useState<string | null>(null);
   
   // Per-wallet decrypted secret cache — stored in RAM only, cleared on page reload.
-  // Once a wallet is unlocked, switching back to it within the same session is instant.
   const [walletSecrets, setWalletSecrets] = useState<Record<string, string>>({});
 
+  // Session password — cached in RAM after the first successful unlock so that
+  // switching wallets can silently decrypt the new wallet without re-prompting.
+  const sessionPasswordRef = React.useRef<string | null>(null);
+
   // globalDecryptedSecret is the secret for the *currently active* wallet.
-  // It is derived from walletSecrets[activeWalletId] so it updates automatically on switch.
   const globalDecryptedSecret = activeWalletId ? (walletSecrets[activeWalletId] ?? null) : null;
+
+  // When the active wallet changes, try to auto-decrypt it with the cached session password.
+  useEffect(() => {
+    if (!activeWalletId || !sessionPasswordRef.current) return;
+    // Already unlocked for this wallet in this session — nothing to do.
+    if (walletSecrets[activeWalletId]) return;
+
+    const wallet = wallets.find(w => w.id === activeWalletId || w.publicKey === activeWalletId);
+    if (!wallet) return;
+
+    try {
+      const secret = decryptSecret(wallet.encryptedSecret, sessionPasswordRef.current);
+      setWalletSecrets(prev => ({ ...prev, [activeWalletId]: secret }));
+    } catch {
+      // Password doesn't match this wallet — modal will appear as a fallback.
+    }
+  }, [activeWalletId, wallets]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const setSessionPassword = useCallback((password: string) => {
+    sessionPasswordRef.current = password;
+  }, []);
 
   const setGlobalDecryptedSecret = useCallback((secret: string | null) => {
     if (!activeWalletId) return;
@@ -385,6 +410,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         batchImportWallets,
         globalDecryptedSecret,
         setGlobalDecryptedSecret,
+        setSessionPassword,
       }}
     >
       {children}
