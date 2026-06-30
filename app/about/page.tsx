@@ -39,7 +39,7 @@ export default function AboutPage() {
   ];
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main className="min-h-dvh bg-background text-foreground">
       {/* Sticky header */}
       <header className="sticky top-0 z-50 bg-background/90 backdrop-blur-xl border-b border-border/60">
         <div className="max-w-2xl mx-auto px-4 py-3.5 flex items-center gap-3">

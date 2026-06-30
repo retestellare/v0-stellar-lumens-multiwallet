@@ -98,7 +98,7 @@ export function OrderBook({
   }));
 
   // Calculate max amounts for proportional depth visualization
-  // For bids, calculate FORGE amount: bid.amount / bid.price
+  // For bids, calculate base asset amount: bid.amount / bid.price
   const maxAmountBids = bids.length > 0 
     ? Math.max(...bids.map(b => {
         const price = parseFloat(b.price) || 1;
@@ -110,90 +110,83 @@ export function OrderBook({
     ? Math.max(...asks.map(a => parseFloat(a.amount) || 0), 1)
     : 1;
 
-  const priceDiff = bestBid && bestAsk 
+  const priceDiff = bestBid && bestAsk
     ? parseFloat(bestAsk) - parseFloat(bestBid)
     : 0;
 
+  const midPrice = bestBid && bestAsk
+    ? (parseFloat(bestBid) + parseFloat(bestAsk)) / 2
+    : null;
+
   return (
-    <div className="space-y-4">
-      {/* Spread Info & Real-time Price Header */}
-      <div className="glow-border p-4 rounded-lg bg-gradient-to-r from-background/50 to-background/30">
-        <div className="space-y-3">
-          {/* Top Row: Real-time Prices */}
-          {bestBid && bestAsk && (
-            <div className="grid grid-cols-3 gap-3">
-              <div className="flex flex-col gap-1">
-                <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wide">Best Bid</p>
-                <p className="text-sm sm:text-base font-semibold text-blue-400">
-                  {formatPrice(bestBid)}
-                </p>
-              </div>
-              <div className="flex flex-col gap-1 text-center">
-                <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wide">Spread</p>
-                <p className="text-sm sm:text-base font-semibold text-primary">
-                  {spread.toFixed(3)}%
-                </p>
-              </div>
-              <div className="flex flex-col gap-1">
-                <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wide">Best Ask</p>
-                <p className="text-sm sm:text-base font-semibold text-pink-400">
-                  {formatPrice(bestAsk)}
-                </p>
-              </div>
-            </div>
-          )}
-          
-          {/* Bottom Row: Spread Stats */}
-          <div className="flex items-center justify-between pt-2 border-t border-border/30">
-            <p className="text-xs font-medium text-muted-foreground">
-              Spread: <span className="text-primary font-semibold">{spread.toFixed(3)}%</span>
+    <div className="space-y-3">
+      {/* Price Summary Header */}
+      <div className="glow-border rounded-xl overflow-hidden">
+        {/* Mid / Current Price — prominent top strip */}
+        {midPrice !== null && (
+          <div className="flex items-center justify-center gap-2 py-3 px-4 bg-primary/10 border-b border-primary/20">
+            <span className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-widest">Current Price</span>
+            <span className="text-base sm:text-lg font-bold text-primary tabular-nums">
+              {formatPrice(midPrice.toString())}
+            </span>
+            <span className="text-[10px] sm:text-xs text-muted-foreground">{buyingAsset}</span>
+          </div>
+        )}
+
+        {/* Bid / Spread / Ask row */}
+        <div className="grid grid-cols-3 divide-x divide-border/30 bg-background/40">
+          <div className="flex flex-col items-center gap-0.5 py-3 px-2">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Best Bid</p>
+            <p className="text-sm font-bold text-blue-400 tabular-nums">
+              {bestBid ? formatPrice(bestBid) : '—'}
             </p>
-            {bestBid && bestAsk && (
-              <p className="text-xs text-muted-foreground">
-                Diff: <span className="text-accent font-semibold">
-                  {formatDiff(priceDiff)} {buyingAsset}
-                </span>
-              </p>
+          </div>
+          <div className="flex flex-col items-center gap-0.5 py-3 px-2">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Spread</p>
+            <p className="text-sm font-bold text-primary tabular-nums">
+              {spread.toFixed(3)}%
+            </p>
+            {priceDiff !== 0 && (
+              <p className="text-[9px] text-muted-foreground tabular-nums">{formatDiff(priceDiff)} {buyingAsset}</p>
             )}
+          </div>
+          <div className="flex flex-col items-center gap-0.5 py-3 px-2">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Best Ask</p>
+            <p className="text-sm font-bold text-pink-400 tabular-nums">
+              {bestAsk ? formatPrice(bestAsk) : '—'}
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Order Book Table - Interstellar Style */}
-      <div className="glow-border rounded-lg overflow-hidden">
+      {/* Order Book Table */}
+      <div className="glow-border rounded-xl overflow-hidden">
         {loading ? (
-          <div className="p-6 text-center text-muted-foreground">Loading order book...</div>
+          <div className="p-6 text-center text-muted-foreground text-sm">Loading order book...</div>
         ) : bids.length === 0 && asks.length === 0 ? (
-          <div className="p-6 text-center text-muted-foreground">No orders available</div>
+          <div className="p-6 text-center text-muted-foreground text-sm">No orders available</div>
         ) : (
-          <div className="bg-background/50 p-2 space-y-2">
+          <div className="bg-background/50">
             {/* Column Headers */}
-            <div className="grid grid-cols-4 gap-0 text-[10px] sm:text-xs font-semibold text-muted-foreground px-2 py-2 border-b border-border/30">
-              <div className="text-left">Amount (FORGE)</div>
-              <div className="text-right">Bid ({buyingAsset})</div>
-              <div className="text-left">Ask ({buyingAsset})</div>
-              <div className="text-right">Amount (FORGE)</div>
+            <div className="grid grid-cols-4 text-[10px] font-semibold text-muted-foreground px-2 py-2.5 border-b border-border/40 bg-background/70 uppercase tracking-wide">
+              <div className="text-left pl-1">Amt ({sellingAsset})</div>
+              <div className="text-right pr-1">Bid ({buyingAsset})</div>
+              <div className="text-left pl-1">Ask ({buyingAsset})</div>
+              <div className="text-right pr-1">Amt ({sellingAsset})</div>
             </div>
 
-            {/* Spread Row - Center */}
-            <div className="text-center py-2 px-4 bg-background/80 rounded border border-primary/20">
-              <p className="text-xs sm:text-sm font-semibold text-primary">
-                Spread: {spread.toFixed(3)}% {priceDiff !== 0 && `• ${formatDiff(priceDiff)} ${buyingAsset}`}
-              </p>
-            </div>
-
-            {/* Order Rows - Mirrored Layout */}
+            {/* Order Rows */}
             <div className="max-h-[500px] overflow-y-auto space-y-0.5">
               {mergedOrders.map((row, idx) => {
                 // Calculate depth percentages based on actual max amounts
-                // For bids, use calculated FORGE amount: bid.amount / bid.price
+                // For bids, use calculated base asset amount: bid.amount / bid.price
                 const bidForgeAmount = row.bid ? (parseFloat(row.bid.amount) / parseFloat(row.bid.price)) : 0;
                 const bidDepthWidth = row.bid ? (bidForgeAmount / maxAmountBids) * 100 : 0;
                 const askDepthWidth = row.ask ? (parseFloat(row.ask.amount) / maxAmountAsks) * 100 : 0;
 
                 return (
                   <div key={idx} className="grid grid-cols-4 gap-0 text-[11px] sm:text-xs font-mono">
-                    {/* LEFT SIDE - BIDS (Amount on left, Price on right) with gradient spanning both */}
+                      {/* LEFT SIDE - BIDS (base amount on left, price on right) */}
                     <div 
                       className="col-span-2 grid grid-cols-2"
                       style={{

@@ -620,7 +620,7 @@ export default function TokenSearchPage() {
   const displayTokens = searchQuery.length >= 2 ? searchResults : [];
 
   return (
-    <main className="min-h-screen bg-background">
+    <main className="min-h-dvh bg-background">
       <Header />
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Link 

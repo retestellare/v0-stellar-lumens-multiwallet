@@ -114,7 +114,7 @@ export default function DashboardPage() {
   const [xlmWhole, xlmDec] = xlmBalanceStr.split('.');
 
   return (
-    <main className="flex flex-col min-h-screen bg-background">
+    <main className="flex flex-col min-h-dvh bg-background">
       <Header onOpenBulkWallet={handleOpenBulkModal} />
 
       <div className="page-container py-6 flex-1">

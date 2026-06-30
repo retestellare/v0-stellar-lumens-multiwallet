@@ -23,9 +23,9 @@ export default function PortfolioPage() {
 
   if (!activeWallet) {
     return (
-      <main className="min-h-screen bg-background">
+      <main className="min-h-dvh bg-background">
         <Header />
-        <div className="page-container py-8">
+        <div className="page-container py-6">
           <p className="text-muted-foreground">No active wallet selected.</p>
         </div>
       </main>
@@ -45,9 +45,9 @@ export default function PortfolioPage() {
     : null;
 
   return (
-    <main className="min-h-screen bg-background">
+    <main className="min-h-dvh bg-background">
       <Header />
-      <div className="page-container py-6">
+      <div className="page-container py-5 sm:py-6">
 
         {/* Back nav */}
         <Link href="/" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors">

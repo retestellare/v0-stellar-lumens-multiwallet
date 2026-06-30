@@ -104,6 +104,9 @@
 @theme inline {
   --font-sans: 'Geist', 'Geist Fallback';
   --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  /* Dynamic viewport height — correct on mobile browsers with retractable UI chrome */
+  --height-dvh: 100dvh;
+  --min-height-dvh: 100dvh;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -154,15 +157,17 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
-    /* Prevent layout shift from scrollbar */
-    scrollbar-gutter: stable;
+    /* Use dvh for correct mobile viewport sizing */
+    height: 100%;
   }
 
   body {
     @apply bg-background text-foreground;
-    min-height: 100vh;
+    min-height: 100dvh;
     /* Smooth scroll */
     scroll-behavior: smooth;
+    /* Prevent horizontal overflow on mobile */
+    overflow-x: hidden;
   }
 
   /* Custom scrollbar */
@@ -249,7 +254,9 @@
 
   /* ── Page wrapper ── */
   .page-container {
-    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+    @apply w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+    /* Prevent content from touching screen edges on very small phones */
+    box-sizing: border-box;
   }
 
   /* ── Section header ── */
