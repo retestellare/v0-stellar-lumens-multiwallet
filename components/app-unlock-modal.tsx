@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
  * page/component can use it without asking again.
  */
 export function AppUnlockModal() {
-  const { wallets, activeWallet, activeWalletId, globalDecryptedSecret, setGlobalDecryptedSecret } = useWallet();
+  const { wallets, activeWallet, activeWalletId, globalDecryptedSecret, setGlobalDecryptedSecret, setSessionPassword } = useWallet();
 
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -40,6 +40,8 @@ export function AppUnlockModal() {
 
     try {
       const secret = decryptSecret(activeWallet.encryptedSecret, password);
+      // Cache the password in RAM so future wallet switches auto-decrypt silently.
+      setSessionPassword(password);
       setGlobalDecryptedSecret(secret);
       setPassword('');
     } catch {
