@@ -7,7 +7,7 @@ import { Header } from '@/components/header';
 import { AssetDetailModal } from '@/components/asset-detail-modal';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/lib/wallet-context';
-import { Plus } from 'lucide-react';
+import { Plus, Copy, Check } from 'lucide-react';
 import { AssetItem } from '@/components/asset-item';
 
 // Lazy load heavy modals for better initial page performance
@@ -32,6 +32,7 @@ export default function DashboardPage() {
   const [isReceiveOpen, setIsReceiveOpen] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<{ code: string; issuer?: string; balance: string; domain?: string; image?: string; name?: string } | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [copiedPublicKey, setCopiedPublicKey] = useState(false);
 
   const handleCloseReceive = useCallback(() => {
     setIsReceiveOpen(false);
@@ -86,6 +87,15 @@ export default function DashboardPage() {
     setSelectedAsset(null);
     setIsReceiveOpen(true);
   }, []);
+
+  const handleCopyPublicKey = useCallback(() => {
+    const wallet = wallets.find(w => w.id === activeWalletId);
+    if (wallet) {
+      navigator.clipboard.writeText(wallet.publicKey);
+      setCopiedPublicKey(true);
+      setTimeout(() => setCopiedPublicKey(false), 2000);
+    }
+  }, [activeWalletId, wallets]);
 
   useEffect(() => {
     setMounted(true);
@@ -152,9 +162,22 @@ export default function DashboardPage() {
                     <div>
                       <p className="section-label mb-2">Active Wallet</p>
                       <h1 className="text-lg font-bold text-foreground leading-tight">{activeWallet.name}</h1>
-                      <code className="text-xs text-muted-foreground font-mono mt-1 block">
-                        {activeWallet.publicKey.substring(0, 10)}...{activeWallet.publicKey.substring(activeWallet.publicKey.length - 8)}
-                      </code>
+                      <div className="flex items-center gap-2 mt-1">
+                        <code className="text-xs text-muted-foreground font-mono">
+                          {activeWallet.publicKey.substring(0, 10)}...{activeWallet.publicKey.substring(activeWallet.publicKey.length - 8)}
+                        </code>
+                        <button
+                          onClick={handleCopyPublicKey}
+                          className="p-1.5 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
+                          aria-label="Copy public key"
+                          title="Copy full public key"
+                        >
+                          {copiedPublicKey
+                            ? <Check className="w-3.5 h-3.5 text-green-400" />
+                            : <Copy className="w-3.5 h-3.5" />
+                          }
+                        </button>
+                      </div>
                     </div>
 
                     {/* Right - Balance */}
