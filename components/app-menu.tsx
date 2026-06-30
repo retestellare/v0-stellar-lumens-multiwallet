@@ -22,10 +22,6 @@ import {
   ShoppingBag,
 } from 'lucide-react';
 import { useWallet } from '@/lib/wallet-context';
-import { WalletContainer } from '@/components/wallet-container';
-
-const CreateWalletModal = dynamic(() => import('@/components/create-wallet-modal').then(m => ({ default: m.CreateWalletModal })), { loading: () => null });
-const BulkWalletModal = dynamic(() => import('@/components/bulk-wallet-modal').then(m => ({ default: m.BulkWalletModal })), { loading: () => null });
 
 interface AppMenuProps {
   isOpen: boolean;
@@ -35,9 +31,7 @@ interface AppMenuProps {
 
 export function AppMenu({ isOpen, onClose, onOpenSettings }: AppMenuProps) {
   const pathname = usePathname();
-  const { activeWallet, wallets, activeWalletId, setActiveWallet, removeWallet } = useWallet();
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isBulkOpen, setIsBulkOpen] = useState(false);
+  const { activeWallet } = useWallet();
 
   const menuItems = [
     { icon: Home, label: 'Home', href: '/' },
@@ -49,6 +43,7 @@ export function AppMenu({ isOpen, onClose, onOpenSettings }: AppMenuProps) {
     { icon: TrendingUp, label: 'Portfolio', href: '/portfolio' },
     { icon: History, label: 'History', href: '/history' },
     { icon: Bot, label: 'Trading Bot', href: '/bot' },
+    { icon: Wallet, label: 'Wallets', href: '/wallets' },
   ];
 
   const utilityItems = [
@@ -158,18 +153,7 @@ export function AppMenu({ isOpen, onClose, onOpenSettings }: AppMenuProps) {
             );
           })}
 
-          {/* My Wallets section */}
-          <div className="my-3 border-t border-border/60" />
-          <p className="section-label px-3 mb-2">My Wallets</p>
-          <div className="px-1">
-            <WalletContainer
-              wallets={wallets}
-              activeWalletId={activeWalletId}
-              onSelect={(id) => { setActiveWallet(id); }}
-              onDelete={removeWallet}
-              onAdd={() => setIsCreateOpen(true)}
-            />
-          </div>
+
         </div>
 
         {/* Footer */}
@@ -179,9 +163,6 @@ export function AppMenu({ isOpen, onClose, onOpenSettings }: AppMenuProps) {
           </p>
         </div>
       </div>
-
-      <CreateWalletModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
-      <BulkWalletModal isOpen={isBulkOpen} onClose={() => setIsBulkOpen(false)} />
     </>
   );
 }
