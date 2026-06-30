@@ -60,11 +60,11 @@ export function AppUnlockModal() {
   if (!shouldShow) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-background/80 backdrop-blur-md p-4">
-      <div className="w-full max-w-sm bg-card border border-border rounded-2xl shadow-2xl p-7 space-y-6 animate-scale-in">
+    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-background/85 backdrop-blur-xl p-4">
+      <div className="w-full max-w-sm bg-card border border-border/70 rounded-3xl shadow-2xl shadow-black/60 p-7 space-y-6 animate-scale-in ring-1 ring-white/5">
         {/* Icon + title */}
         <div className="flex flex-col items-center gap-4 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center animate-glow">
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/25 flex items-center justify-center animate-glow shadow-lg shadow-primary/10">
             <Lock className="w-8 h-8 text-primary" />
           </div>
           <div>

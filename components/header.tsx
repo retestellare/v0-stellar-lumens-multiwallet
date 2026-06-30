@@ -28,7 +28,7 @@ export function Header({ onOpenBulkWallet }: HeaderProps) {
 
   return (
     <>
-      <header className="sticky top-0 z-40 border-b border-border/60 bg-background/90 backdrop-blur-xl backdrop-saturate-150">
+      <header className="sticky top-0 z-40 border-b border-border/50 bg-background/95 backdrop-blur-2xl backdrop-saturate-200 shadow-[0_1px_0_0_rgba(28,45,80,0.6)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Mobile Layout */}
           <div className="md:hidden grid grid-cols-3 items-center h-14 gap-2">
@@ -37,10 +37,10 @@ export function Header({ onOpenBulkWallet }: HeaderProps) {
               onClick={() => setMenuOpen(true)}
               className="flex items-center gap-2 group transition-all"
             >
-              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary shadow-md shadow-primary/20 flex-shrink-0">
+              <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-primary shadow-lg shadow-primary/30 ring-1 ring-primary/40 flex-shrink-0">
                 <Zap className="w-4 h-4 text-primary-foreground" strokeWidth={2.5} />
               </div>
-              <span className="font-bold text-sm text-foreground group-hover:text-primary transition-colors truncate">Stellar</span>
+              <span className="font-bold text-sm text-foreground group-hover:text-primary transition-colors truncate tracking-tight">Stellar</span>
             </button>
 
             {/* Center: Wallet Selector */}
@@ -68,31 +68,28 @@ export function Header({ onOpenBulkWallet }: HeaderProps) {
               onClick={() => setMenuOpen(true)}
               className="flex items-center gap-3 group transition-all flex-shrink-0"
             >
-              <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary shadow-lg shadow-primary/25">
+              <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary shadow-lg shadow-primary/30 ring-1 ring-primary/40">
                 <Zap className="w-5 h-5 text-primary-foreground" strokeWidth={2.5} />
               </div>
               <div className="flex flex-col leading-none">
-                <span className="font-bold text-base text-foreground group-hover:text-primary transition-colors">Stellar</span>
-                <span className="text-xs text-muted-foreground mt-0.5">Lumens Wallet</span>
+                <span className="font-bold text-base text-foreground group-hover:text-primary transition-colors tracking-tight">Stellar</span>
+                <span className="text-[11px] text-muted-foreground mt-0.5 tracking-wide uppercase">Lumens Wallet</span>
               </div>
             </button>
 
             {/* Navigation */}
-            <nav className="flex items-center gap-1">
+            <nav className="flex items-center gap-0.5 bg-muted/20 rounded-xl p-1 border border-border/40">
               {navLinks.map((link) => (
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`relative px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  className={`relative px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                     pathname === link.href
-                      ? 'text-primary bg-primary/10'
+                      ? 'text-primary-foreground bg-primary shadow-sm shadow-primary/20'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
                   }`}
                 >
                   {link.label}
-                  {pathname === link.href && (
-                    <span className="absolute inset-x-3 -bottom-px h-px bg-primary rounded-full" />
-                  )}
                 </Link>
               ))}
             </nav>

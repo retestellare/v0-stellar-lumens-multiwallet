@@ -153,27 +153,28 @@ export default function DashboardPage() {
 
               {/* Balance hero card */}
               {activeWallet && (
-                <div className="relative overflow-hidden rounded-xl border border-primary/20 bg-card p-5 shadow-lg shadow-black/20">
-                  {/* subtle accent dot */}
-                  <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-primary/5 blur-2xl pointer-events-none" />
+                <div className="relative overflow-hidden rounded-2xl border border-primary/25 bg-card p-5 shadow-xl shadow-black/30 ring-1 ring-primary/8">
+                  {/* subtle accent glow */}
+                  <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-primary/8 blur-3xl pointer-events-none" />
+                  <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-secondary/5 blur-2xl pointer-events-none" />
 
                   <div className="relative z-10 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
                     {/* Left */}
                     <div>
                       <p className="section-label mb-2">Active Wallet</p>
-                      <h1 className="text-lg font-bold text-foreground leading-tight">{activeWallet.name}</h1>
-                      <div className="flex items-center gap-2 mt-1">
-                        <code className="text-xs text-muted-foreground font-mono">
+                      <h1 className="text-lg font-bold text-foreground leading-tight tracking-tight">{activeWallet.name}</h1>
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                        <code className="text-xs text-muted-foreground font-mono bg-muted/40 px-2 py-0.5 rounded-md border border-border/40">
                           {activeWallet.publicKey.substring(0, 10)}...{activeWallet.publicKey.substring(activeWallet.publicKey.length - 8)}
                         </code>
                         <button
                           onClick={handleCopyPublicKey}
-                          className="p-1.5 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
+                          className="p-1.5 rounded-lg hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
                           aria-label="Copy public key"
                           title="Copy full public key"
                         >
                           {copiedPublicKey
-                            ? <Check className="w-3.5 h-3.5 text-green-400" />
+                            ? <Check className="w-3.5 h-3.5 text-success" />
                             : <Copy className="w-3.5 h-3.5" />
                           }
                         </button>
@@ -183,29 +184,27 @@ export default function DashboardPage() {
                     {/* Right - Balance */}
                     <div className="sm:text-right">
                       <p className="section-label mb-1">XLM Balance</p>
-                      <div className="flex items-baseline sm:justify-end gap-1">
-                        <span className="text-3xl font-bold text-primary num">{parseInt(xlmWhole).toLocaleString()}</span>
-                        <span className="text-base text-muted-foreground num">.{xlmDec || '00'}</span>
-                        <span className="text-sm font-semibold text-muted-foreground ml-0.5">XLM</span>
+                      <div className="flex items-baseline sm:justify-end gap-0.5">
+                        <span className="text-4xl font-bold text-primary num tracking-tight">{parseInt(xlmWhole).toLocaleString()}</span>
+                        <span className="text-xl text-primary/60 num">.{xlmDec || '00'}</span>
+                        <span className="text-sm font-semibold text-muted-foreground ml-1">XLM</span>
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
                         {activeWallet.balances.length} asset{activeWallet.balances.length !== 1 ? 's' : ''}
                       </p>
                     </div>
                   </div>
-
-
                 </div>
               )}
 
               {/* Assets list */}
               {activeWallet && (
-                <div className="rounded-xl border border-border bg-card overflow-hidden">
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
-                    <h2 className="text-sm font-semibold text-foreground">Assets</h2>
-                    <span className="text-xs text-muted-foreground">{activeWallet.balances.length} total</span>
+                <div className="rounded-2xl border border-border/70 bg-card overflow-hidden shadow-sm">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 bg-muted/10">
+                    <h2 className="text-sm font-semibold text-foreground tracking-tight">Assets</h2>
+                    <span className="text-xs text-muted-foreground bg-muted/40 px-2 py-0.5 rounded-full border border-border/40">{activeWallet.balances.length} total</span>
                   </div>
-                  <div className="p-2 space-y-1">
+                  <div className="p-2 space-y-0.5">
                     {activeWallet.balances.length === 0 ? (
                       <p className="text-xs text-muted-foreground text-center py-6">No assets yet. Fund your wallet to get started.</p>
                     ) : (
