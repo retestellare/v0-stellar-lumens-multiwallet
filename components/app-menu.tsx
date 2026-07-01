@@ -63,18 +63,18 @@ export function AppMenu({ isOpen, onClose, onOpenSettings }: AppMenuProps) {
       />
 
       {/* Menu Panel */}
-      <div className="fixed top-0 left-0 h-full w-72 sm:w-80 bg-card border-r border-border z-50 flex flex-col animate-in slide-in-from-left duration-200">
+      <div className="fixed top-0 left-0 h-full w-72 sm:w-80 bg-card border-r border-border/60 z-50 flex flex-col animate-in slide-in-from-left duration-200 shadow-2xl shadow-black/60">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3.5 border-b border-border/60">
+        <div className="flex items-center justify-between px-4 py-3.5 border-b border-border/50 bg-muted/10">
           <div className="flex items-center gap-2.5">
-            <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-primary">
+            <div className="flex items-center justify-center w-7 h-7 rounded-xl bg-primary shadow-md shadow-primary/30 ring-1 ring-primary/40">
               <Zap className="w-3.5 h-3.5 text-primary-foreground" strokeWidth={2.5} />
             </div>
-            <span className="font-bold text-sm text-foreground">Stellar Wallet</span>
+            <span className="font-bold text-sm text-foreground tracking-tight">Stellar Wallet</span>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-muted transition-colors"
+            className="p-1.5 rounded-lg hover:bg-muted/60 transition-colors"
             aria-label="Close menu"
           >
             <X className="w-4 h-4 text-muted-foreground" />
@@ -83,9 +83,9 @@ export function AppMenu({ isOpen, onClose, onOpenSettings }: AppMenuProps) {
 
         {/* Active Wallet Info */}
         {activeWallet && (
-          <div className="mx-3 mt-3 px-3 py-2.5 rounded-lg bg-muted/50 border border-border/50">
+          <div className="mx-3 mt-3 px-3 py-2.5 rounded-xl bg-primary/6 border border-primary/15">
             <p className="section-label mb-1">Active Wallet</p>
-            <p className="text-sm font-semibold text-foreground truncate">{activeWallet.name}</p>
+            <p className="text-sm font-semibold text-foreground truncate tracking-tight">{activeWallet.name}</p>
             <p className="text-xs text-muted-foreground font-mono mt-0.5 truncate">
               {activeWallet.publicKey.substring(0, 10)}...{activeWallet.publicKey.substring(activeWallet.publicKey.length - 6)}
             </p>
@@ -102,15 +102,15 @@ export function AppMenu({ isOpen, onClose, onOpenSettings }: AppMenuProps) {
                 key={item.href}
                 href={item.href}
                 onClick={onClose}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-0.5 ${
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all mb-0.5 ${
                   isActive
-                    ? 'bg-primary/15 text-primary'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                    ? 'bg-primary/12 text-primary border border-primary/15'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/40 border border-transparent'
                 }`}
               >
                 <item.icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-primary' : ''}`} />
-                <span>{item.label}</span>
-                {isActive && <span className="ml-auto w-1 h-1 rounded-full bg-primary" />}
+                <span className="tracking-tight">{item.label}</span>
+                {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_6px_rgba(245,197,24,0.6)]" />}
               </Link>
             );
           })}

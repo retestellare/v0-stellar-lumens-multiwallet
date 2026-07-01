@@ -81,10 +81,10 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-3 p-2.5 rounded-lg border border-border/40 hover:border-primary/25 hover:bg-primary/5 active:bg-primary/10 transition-colors cursor-pointer text-left group"
+      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-transparent hover:border-border/50 hover:bg-muted/30 active:bg-muted/50 transition-all cursor-pointer text-left group"
     >
       {/* Token Icon */}
-      <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center overflow-hidden border border-border/60 flex-shrink-0">
+      <div className="w-9 h-9 rounded-full bg-muted/60 flex items-center justify-center overflow-hidden border border-border/50 flex-shrink-0 shadow-sm">
         {image && !imageError ? (
           <img
             src={image}
@@ -100,7 +100,7 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
 
       {/* Token Info */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-foreground leading-tight">{code}</p>
+        <p className="text-sm font-semibold text-foreground leading-tight tracking-tight">{code}</p>
         <p className="text-xs text-muted-foreground truncate leading-tight mt-0.5">
           {domain || (issuer ? 'Custom token' : 'Native XLM')}
         </p>
@@ -108,7 +108,7 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
 
       {/* Balance */}
       <div className="text-right flex-shrink-0">
-        <p className="text-sm font-semibold text-foreground num">
+        <p className="text-sm font-semibold text-foreground num tabular-nums">
           {numBalance >= 1000
             ? numBalance.toLocaleString('en-US', { maximumFractionDigits: 2 })
             : numBalance.toFixed(numBalance === 0 ? 0 : 4)}
