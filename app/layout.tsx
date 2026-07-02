@@ -4,6 +4,7 @@ import { Analytics } from '@vercel/analytics/next'
 import { WalletProvider } from '@/lib/wallet-context'
 import { NotificationProvider } from '@/lib/notification-context'
 import { AppUnlockModal } from '@/components/app-unlock-modal'
+import { PersistentBotFrame } from '@/components/persistent-bot-frame'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -76,6 +77,7 @@ export default function RootLayout({
           <NotificationProvider>
             <AppUnlockModal />
             {children}
+            <PersistentBotFrame />
           </NotificationProvider>
         </WalletProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
