@@ -208,9 +208,9 @@ export default function DashboardPage() {
                     {activeWallet.balances.length === 0 ? (
                       <p className="text-xs text-muted-foreground text-center py-6">No assets yet. Fund your wallet to get started.</p>
                     ) : (
-                      activeWallet.balances.map((balance: any, idx: number) => (
+                      activeWallet.balances.map((balance: any) => (
                         <AssetItem
-                          key={idx}
+                          key={`${balance.asset_code || 'XLM'}_${balance.asset_issuer || ''}`}
                           code={balance.asset_code || 'XLM'}
                           issuer={balance.asset_issuer || ''}
                           balance={balance.balance}

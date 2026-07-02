@@ -671,32 +671,21 @@ export default function TokenSearchPage() {
 
         {searchQuery.length >= 2 ? (
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-foreground">Results for &quot;{searchQuery}&quot;</h2>
-            {loading ? (
-              <div className="flex flex-col items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 text-primary animate-spin mb-4" />
-                <p className="text-muted-foreground">Searching Stellar network...</p>
-              </div>
-            ) : displayTokens.length === 0 ? (
-              <div className="flex items-center justify-center py-12 border border-border/50 rounded-lg">
-                <p className="text-muted-foreground text-center">No tokens found. Try a different search term.</p>
-              </div>
-            ) : (
-              <div className="grid gap-3">
-                {displayTokens.map((token) => {
-                  const isFav = favorites.has(`${token.code}_${token.issuer}`);
-                  return (
-                    <TokenCard
-                      key={`${token.code}-${token.issuer || 'native'}`}
-                      token={token}
-                      isFav={isFav}
-                      onToggleFavorite={() => handleToggleFavorite(token)}
-                      onSelect={() => handleSelectToken(token)}
-                    />
-                  );
-                })}
-              </div>
+            {displayTokens.length === 0 && !loading && (
+              <p className="text-center text-muted-foreground py-8">No tokens found for &ldquo;{searchQuery}&rdquo;</p>
             )}
+            {displayTokens.map((token) => {
+              const isFav = favorites.has(`${token.code}_${token.issuer}`);
+              return (
+                <TokenCard
+                  key={`${token.code}-${token.issuer}`}
+                  token={token}
+                  isFav={isFav}
+                  onToggleFavorite={() => handleToggleFavorite(token)}
+                  onSelect={() => handleSelectToken(token)}
+                />
+              );
+            })}
           </div>
         ) : (
           <div className="space-y-8">
@@ -740,24 +729,35 @@ export default function TokenSearchPage() {
 
         {selectedToken && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-card border border-primary/30 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 bg-card border-b border-primary/20 p-4 flex items-start justify-between">
-                <div className="flex items-start gap-3 flex-1">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center flex-shrink-0 text-lg font-bold">
+            <div className="bg-card border border-primary/30 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+              <div className="sticky top-0 bg-card border-b border-primary/20 p-4 shrink-0">
+                {/* Top row: icon + name + close */}
+                <div className="flex items-start gap-3">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center shrink-0 text-lg font-bold">
                     {selectedToken.code.charAt(0)}
                   </div>
-                  <div className="min-w-0">
-                    <h2 className="font-bold text-foreground">{selectedToken.code}</h2>
-                    <p className="text-xs text-muted-foreground truncate">{selectedToken.issuer || 'Native'}</p>
+                  <div className="flex-1 min-w-0">
+                    <h2 className="font-bold text-foreground leading-tight">{selectedToken.code}</h2>
+                    {selectedToken.issuer ? (
+                      <p className="text-xs text-muted-foreground font-mono break-all leading-tight mt-0.5">
+                        {selectedToken.issuer.slice(0, Math.ceil(selectedToken.issuer.length / 2))}
+                        <br />
+                        {selectedToken.issuer.slice(Math.ceil(selectedToken.issuer.length / 2))}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground mt-0.5">Native XLM</p>
+                    )}
                   </div>
+                  <button
+                    onClick={handleCloseDetail}
+                    className="shrink-0 p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                    aria-label="Close"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
-                <button
-                  onClick={handleCloseDetail}
-                  className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-                >
-                  <X className="w-5 h-5" />
-                </button>
               </div>
+              <div className="overflow-y-auto flex-1">
 
               <div className="border-b border-primary/20 flex">
                 {(['about', 'receive', 'send'] as const).map((tab) => (
@@ -951,6 +951,7 @@ export default function TokenSearchPage() {
                   </div>
                 )}
               </div>
+              </div>{/* end overflow-y-auto flex-1 */}
             </div>
           </div>
         )}
