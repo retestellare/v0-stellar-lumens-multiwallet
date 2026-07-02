@@ -602,12 +602,15 @@ export default function ExchangePage() {
       } else {
         // Handle op_buy_no_trust error - trustline may have failed or been needed but not created
         if (result.error && (result.error.includes('op_buy_no_trust') || result.error.includes('no_trust'))) {
+          // Keep pendingOrder alive so handleCreateTrustlineAndRetry can reuse it
           setPendingTrustlineAsset({ code: buyingAsset, issuer: buyingIssuer });
           setShowTrustlineAlert(true);
           setTxResult({ 
             success: false, 
-            message: `Trustline for ${buyingAsset} needs to be created. Click the alert below to proceed.` 
+            message: `Trustline for ${buyingAsset} needs to be created.` 
           });
+          setIsSubmitting(false);
+          return; // skip the finally clearance below
         } else {
           setTxResult({ success: false, message: result.error || 'Failed to submit order' });
         }
