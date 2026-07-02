@@ -147,31 +147,29 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, [wallets]);
 
   const updateBalances = useCallback(async (walletId: string) => {
-    // Use a functional update to avoid stale closure issues
-    setWallets(prev => {
-      const wallet = prev.find(w => w.id === walletId || w.publicKey === walletId);
-      if (!wallet) return prev;
+    try {
+      const wallet = wallets.find(w => w.id === walletId || w.publicKey === walletId);
+      if (!wallet) return;
       
-      // Fetch balances asynchronously
-      getAccountBalances(wallet.publicKey)
-        .then(rawBalances => {
-          // Parse balances to separate regular assets from pool shares
-          const { assets, poolShares } = parseWalletBalances(rawBalances);
-          setWallets(current =>
-            current.map(w =>
-              (w.id === walletId || w.publicKey === walletId) 
-                ? { ...w, balances: assets, poolShares } 
-                : w
-            )
-          );
-        })
-        .catch(() => {
-          // Account may not exist yet - keep existing balances
-        });
+      // Fetch balances from Horizon
+      const rawBalances = await getAccountBalances(wallet.publicKey);
       
-      return prev;
-    });
-  }, []);
+      // Parse balances to separate regular assets from pool shares
+      const { assets, poolShares } = parseWalletBalances(rawBalances);
+      
+      // Update state with the new balances
+      setWallets(current =>
+        current.map(w =>
+          (w.id === walletId || w.publicKey === walletId) 
+            ? { ...w, balances: assets, poolShares } 
+            : w
+        )
+      );
+    } catch (error) {
+      // Account may not exist yet or network error - keep existing balances
+      console.error('[v0] Failed to update balances:', error);
+    }
+  }, [wallets]);
 
   return (
     <WalletContext.Provider
