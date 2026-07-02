@@ -322,37 +322,45 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, []);
 
   const updateBalances = useCallback(async (walletId: string) => {
-    // Find wallet first without triggering state update
-    const wallet = wallets.find(w => w.id === walletId || w.publicKey === walletId);
-    if (!wallet) return;
-    
-    try {
-      // Fetch balances from network
-      const rawBalances = await getAccountBalances(wallet.publicKey);
+    setWallets(prevWallets => {
+      const wallet = prevWallets.find(w => w.id === walletId || w.publicKey === walletId);
+      if (!wallet) return prevWallets;
       
-      // Parse balances to separate regular assets from pool shares
-      const { assets, poolShares } = parseWalletBalances(rawBalances);
+      // Fetch balances asynchronously in the background
+      (async () => {
+        try {
+          const rawBalances = await getAccountBalances(wallet.publicKey);
+          const { assets, poolShares } = parseWalletBalances(rawBalances);
+          
+          setWallets(current =>
+            current.map(w =>
+              (w.id === walletId || w.publicKey === walletId) 
+                ? { ...w, balances: assets, poolShares: poolShares || [], fetchError: undefined } 
+                : w
+            )
+          );
+        } catch (error: any) {
+          console.error('[v0] Balance fetch error:', error?.message);
+          setWallets(current =>
+            current.map(w =>
+              (w.id === walletId || w.publicKey === walletId)
+                ? { ...w, fetchError: error?.message || 'Network Error' }
+                : w
+            )
+          );
+        }
+      })();
       
-      // Update wallet with fetched data
-      setWallets(current =>
-        current.map(w =>
-          (w.id === walletId || w.publicKey === walletId) 
-            ? { ...w, balances: assets, poolShares: poolShares || [], fetchError: undefined } 
-            : w
-        )
-      );
-    } catch (error: any) {
-      console.error('[v0] Balance fetch error:', error?.message);
-      // Store error but keep existing balances instead of losing data
-      setWallets(current =>
-        current.map(w =>
-          (w.id === walletId || w.publicKey === walletId)
-            ? { ...w, fetchError: error?.message || 'Network Error' }
-            : w
-        )
-      );
+      return prevWallets;
+    });
+  }, []);
+
+  // Auto-refresh balances when active wallet changes
+  useEffect(() => {
+    if (activeWalletId) {
+      updateBalances(activeWalletId);
     }
-  }, [wallets]);
+  }, [activeWalletId, updateBalances]);
 
   const batchImportWallets = useCallback((entries: Array<{ privateKey: string; publicKey: string; accountName: string }>, password: string) => {
     let successful = 0;
