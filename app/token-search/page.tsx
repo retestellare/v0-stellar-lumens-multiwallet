@@ -471,7 +471,7 @@ export default function TokenSearchPage() {
   const [hasTrustlineForToken, setHasTrustlineForToken] = useState(false);
 
   // Wallet context
-  const { activeWallet, unlockWallet } = useWallet();
+  const { activeWallet, globalDecryptedSecret } = useWallet();
 
   const recommendedTokens = useMemo(() => {
     return [
@@ -584,7 +584,10 @@ export default function TokenSearchPage() {
   };
 
   const handleAddTrustline = async () => {
-    if (!selectedToken || !selectedToken.issuer || !passwordInput) {
+    if (!selectedToken || !selectedToken.issuer) return;
+
+    if (!globalDecryptedSecret) {
+      setTrustlineError('Wallet is locked. Please restart the app to unlock.');
       return;
     }
 
@@ -592,21 +595,11 @@ export default function TokenSearchPage() {
     setTrustlineError(null);
 
     try {
-      const secretKey = unlockWallet(activeWallet.id, passwordInput);
-      
-      if (!secretKey) {
-        setTrustlineError('Could not unlock wallet');
-        setAddingTrustline(false);
-        return;
-      }
-
-      const result = await addTrustline(secretKey, selectedToken.code, selectedToken.issuer);
+      const result = await addTrustline(globalDecryptedSecret, selectedToken.code, selectedToken.issuer);
       
       if (result.success) {
         setHasTrustlineForToken(true);
         setPasswordPrompt(false);
-        setPasswordInput('');
-        alert(`Trustline added successfully! Hash: ${result.hash}`);
       } else {
         setTrustlineError(result.error || 'Failed to add trustline');
       }
@@ -824,62 +817,26 @@ export default function TokenSearchPage() {
                           </>
                         ) : selectedToken.issuer ? (
                           <>
-                            {passwordPrompt ? (
-                              <div className="space-y-3 p-4 bg-primary/10 border border-primary/30 rounded-lg">
-                                <p className="text-sm font-medium text-foreground">Enter your password to add trustline</p>
-                                <Input
-                                  type="password"
-                                  placeholder="Enter wallet password"
-                                  value={passwordInput}
-                                  onChange={(e) => setPasswordInput(e.target.value)}
-                                  onKeyPress={(e) => e.key === 'Enter' && handleAddTrustline()}
-                                  className="w-full"
-                                  disabled={addingTrustline}
-                                  autoComplete="current-password"
-                                />
-                                {trustlineError && (
-                                  <p className="text-sm text-destructive">{trustlineError}</p>
-                                )}
-                                <div className="flex gap-2">
-                                  <button
-                                    onClick={handleAddTrustline}
-                                    disabled={addingTrustline || !passwordInput}
-                                    className="flex-1 bg-primary hover:bg-primary/80 text-primary-foreground py-2 px-4 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                  >
-                                    {addingTrustline ? (
-                                      <>
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                        Processing...
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Lock className="w-4 h-4" />
-                                        Confirm
-                                      </>
-                                    )}
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setPasswordPrompt(false);
-                                      setPasswordInput('');
-                                      setTrustlineError(null);
-                                    }}
-                                    disabled={addingTrustline}
-                                    className="flex-1 bg-muted hover:bg-muted/80 text-foreground py-2 px-4 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => setPasswordPrompt(true)}
-                                className="w-full bg-primary hover:bg-primary/80 text-primary-foreground py-2 px-4 rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-2"
-                              >
-                                <Plus className="w-4 h-4" />
-                                Add Trustline
-                              </button>
+                            {trustlineError && (
+                              <p className="text-sm text-destructive mb-2">{trustlineError}</p>
                             )}
+                            <button
+                              onClick={handleAddTrustline}
+                              disabled={addingTrustline}
+                              className="w-full bg-primary hover:bg-primary/80 text-primary-foreground py-2 px-4 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            >
+                              {addingTrustline ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  Adding...
+                                </>
+                              ) : (
+                                <>
+                                  <Plus className="w-4 h-4" />
+                                  Add Trustline
+                                </>
+                              )}
+                            </button>
                           </>
                         ) : null}
 
