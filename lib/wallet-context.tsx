@@ -102,6 +102,13 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return wallets.find(w => w.id === activeWalletId || w.publicKey === activeWalletId) || null;
   }, [wallets, activeWalletId]);
 
+  // Persist wallets to localStorage whenever they change
+  useEffect(() => {
+    if (wallets.length > 0) {
+      localStorage.setItem('stellar_wallets', JSON.stringify(wallets));
+    }
+  }, [wallets]);
+
   // Load wallets from localStorage on mount and fetch balances with batching
   useEffect(() => {
     const loadWallets = async () => {
@@ -123,7 +130,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           }
 
           // Batch fetch balances for all wallets in the background
-          // Note: Fetch only if balances are empty (don't overwrite cached balances)
           const walletsNeedingFetch = cleanedWallets.filter(w => !w.balances || w.balances.length === 0);
           if (walletsNeedingFetch.length > 0) {
             const publicKeys = walletsNeedingFetch.map((w: any) => w.publicKey);
@@ -136,7 +142,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                   const result = batchResults[wallet.publicKey];
                   if (result && walletsNeedingFetch.find(w => w.id === wallet.id)) {
                     if (result.error) {
-                      // Mark wallet with error state instead of crashing
                       return { ...wallet, fetchError: result.error };
                     } else {
                       const { assets, poolShares } = parseWalletBalances(result.balances);
@@ -148,11 +153,10 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               );
             } catch (error) {
               console.error('[v0] Error batch fetching wallets:', error);
-              // Silently fail - wallets remain with cached balances
             }
           }
         } catch (error) {
-          // Silent fail
+          console.error('[v0] Error loading wallets:', error);
         }
       }
     };
@@ -318,42 +322,42 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, []);
 
   const updateBalances = useCallback(async (walletId: string) => {
-    // Use a functional update to avoid stale closure issues
-    setWallets(prev => {
-      const wallet = prev.find(w => w.id === walletId || w.publicKey === walletId);
-      if (!wallet) return prev;
+    // Find wallet first without triggering state update
+    const wallet = wallets.find(w => w.id === walletId || w.publicKey === walletId);
+    if (!wallet) return;
+    
+    try {
+      // Fetch balances from network
+      const rawBalances = await getAccountBalances(wallet.publicKey);
       
-      // Fetch balances asynchronously with error handling
-      getAccountBalances(wallet.publicKey)
-        .then(rawBalances => {
-          // Parse balances to separate regular assets from pool shares
-          const { assets, poolShares } = parseWalletBalances(rawBalances);
-          setWallets(current =>
-            current.map(w =>
-              (w.id === walletId || w.publicKey === walletId) 
-                ? { ...w, balances: assets, poolShares, fetchError: undefined } 
-                : w
-            )
-          );
-        })
-        .catch((error) => {
-          // Store error but keep existing balances instead of losing data
-          setWallets(current =>
-            current.map(w =>
-              (w.id === walletId || w.publicKey === walletId)
-                ? { ...w, fetchError: 'Network Error' }
-                : w
-            )
-          );
-        });
+      // Parse balances to separate regular assets from pool shares
+      const { assets, poolShares } = parseWalletBalances(rawBalances);
       
-      return prev;
-    });
-  }, []);
+      // Update wallet with fetched data
+      setWallets(current =>
+        current.map(w =>
+          (w.id === walletId || w.publicKey === walletId) 
+            ? { ...w, balances: assets, poolShares: poolShares || [], fetchError: undefined } 
+            : w
+        )
+      );
+    } catch (error: any) {
+      console.error('[v0] Balance fetch error:', error?.message);
+      // Store error but keep existing balances instead of losing data
+      setWallets(current =>
+        current.map(w =>
+          (w.id === walletId || w.publicKey === walletId)
+            ? { ...w, fetchError: error?.message || 'Network Error' }
+            : w
+        )
+      );
+    }
+  }, [wallets]);
 
   const batchImportWallets = useCallback((entries: Array<{ privateKey: string; publicKey: string; accountName: string }>, password: string) => {
     let successful = 0;
     let failed = 0;
+    const newWalletsToAdd: Wallet[] = [];
 
     entries.forEach(entry => {
       try {
@@ -370,23 +374,24 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           createdAt: new Date(),
         };
 
-        setWallets(prev => [...prev, newWallet]);
+        newWalletsToAdd.push(newWallet);
         successful++;
       } catch (error) {
         failed++;
       }
     });
 
-    // Set active wallet to the first newly imported wallet if any succeeded
+    // Add all wallets at once and set active to the first newly imported one
     if (successful > 0) {
-      const newWallets = wallets;
-      if (newWallets.length > 0) {
-        setActiveWalletId(newWallets[newWallets.length - 1].id);
+      setWallets(prev => [...prev, ...newWalletsToAdd]);
+      // Set first new wallet as active
+      if (newWalletsToAdd.length > 0) {
+        setActiveWalletId(newWalletsToAdd[0].id);
       }
     }
 
     return { successful, failed };
-  }, [wallets]);
+  }, []);
 
   return (
     <WalletContext.Provider
