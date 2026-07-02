@@ -715,16 +715,38 @@ export default function ExchangePage() {
     }
   };
 
+  // Smart number formatter to remove excessive decimals
+  const formatNumber = (num: string | number): string => {
+    const n = typeof num === 'string' ? parseFloat(num) : num;
+    if (!n || n === 0) return '0';
+    
+    // For very small numbers (< 0.01), use up to 7 decimals
+    if (n < 0.01) {
+      return n.toFixed(7).replace(/\.?0+$/, '');
+    }
+    
+    // For standard numbers, use up to 6 decimals
+    return n.toFixed(6).replace(/\.?0+$/, '');
+  };
+
   // Clicking a BID order = someone wants to BUY, so you can SELL to them
   const handleSelectBidOrder = (price: string, amount: string) => {
-    setSellPrice(price);
-    setSellAmount(amount);
+    const formattedPrice = formatNumber(price);
+    const formattedAmount = formatNumber(amount);
+    setSellPrice(formattedPrice);
+    setSellAmount(formattedAmount);
+    // Also populate BUY side with the same price for comparison
+    setBuyPrice(formattedPrice);
   };
 
   // Clicking an ASK order = someone wants to SELL, so you can BUY from them
   const handleSelectAskOrder = (price: string, amount: string) => {
-    setBuyPrice(price);
-    setBuyAmount(amount);
+    const formattedPrice = formatNumber(price);
+    const formattedAmount = formatNumber(amount);
+    setBuyPrice(formattedPrice);
+    setBuyAmount(formattedAmount);
+    // Also populate SELL side with the same price for comparison
+    setSellPrice(formattedPrice);
   };
 
   const tabs = [
