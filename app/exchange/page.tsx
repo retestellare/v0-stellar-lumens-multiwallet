@@ -4,7 +4,7 @@ import React from 'react';
 import { Header } from '@/components/header';
 import { useWallet } from '@/lib/wallet-context';
 import { Button } from '@/components/ui/button';
-import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations, getAccountTrades, getXLMUSDStats, hasTrustline, addTrustline } from '@/lib/stellar-utils';
+import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations, getAccountTrades, getXLMUSDStats, hasTrustline, addTrustline, calculateAvailableBalance } from '@/lib/stellar-utils';
 import { TradingPairHeader } from '@/components/trading-pair-header';
 import { OrderBook } from '@/components/order-book';
 import { TradeHistory } from '@/components/trade-history';
@@ -14,9 +14,8 @@ import { PriceChart } from '@/components/price-chart';
 import { TokenSelectorModal } from '@/components/token-selector-modal';
 import { CompactOrderForm } from '@/components/compact-order-form';
 import { useState, useEffect } from 'react';
-import { ArrowLeft, TrendingUp, ArrowRightLeft, X, Loader2, Wallet } from 'lucide-react';
+import { ArrowLeft, TrendingUp, ArrowRightLeft, X, Loader2 } from 'lucide-react';
 import { WalletSelectorDropdown } from '@/components/wallet-selector-dropdown';
-import { Input } from '@/components/ui/input';
 import Link from 'next/link';
 
 interface OrderBookData {
@@ -28,7 +27,7 @@ type TabType = 'history' | 'my-orders' | 'charts';
 type TokenModalType = 'selling' | 'buying' | null;
 
 export default function ExchangePage() {
-  const { wallets, activeWalletId, updateBalances } = useWallet();
+  const { wallets, activeWalletId, updateBalances, globalDecryptedSecret } = useWallet();
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('history');
   
@@ -54,11 +53,8 @@ export default function ExchangePage() {
   // Transaction state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [txResult, setTxResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<{ type: 'buy' | 'sell'; price: string; amount: string } | null>(null);
-  const [password, setPassword] = useState('');
-  const [isPasswordUnlocked, setIsPasswordUnlocked] = useState(false); // Track if password entered this session
-  const [decryptedSecret, setDecryptedSecret] = useState<string | null>(null); // Store decrypted secret
+  const [pendingCancelOrderId, setPendingCancelOrderId] = useState<string | null>(null);
   
   // Token metadata (domain, image, name)
   const [sellingMeta, setSellingMeta] = useState<{ domain?: string; image?: string; name?: string }>({});
@@ -71,6 +67,7 @@ export default function ExchangePage() {
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [chartData, setChartData] = useState<any[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
+  const [chartTimeRange, setChartTimeRange] = useState<'1h' | '4h' | '1d' | '1w' | '1m'>('1h');
   const [filledOrders, setFilledOrders] = useState<any[]>([]);
   const [filledLoading, setFilledLoading] = useState(false);
   
@@ -83,6 +80,11 @@ export default function ExchangePage() {
     open24h: string;
     close24h: string;
   } | null>(null);
+
+  // Available balances (accounting for committed orders and network reserve)
+  const [availableSellingBalance, setAvailableSellingBalance] = useState('0');
+  const [availableBuyingBalance, setAvailableBuyingBalance] = useState('0');
+  const [balancesLoading, setBalancesLoading] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -119,18 +121,12 @@ export default function ExchangePage() {
     }
   }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
 
-  // Reset password state when wallet changes (use ref to track previous wallet)
+  // Refresh balances when wallet changes
   const prevWalletIdRef = React.useRef(activeWalletId);
   useEffect(() => {
     if (prevWalletIdRef.current !== activeWalletId && activeWalletId && mounted) {
-      // Clear password-related state when wallet changes
-      setIsPasswordUnlocked(false);
-      setDecryptedSecret(null);
-      setPassword('');
       setPendingOrder(null);
       setTxResult(null);
-      
-      // Refresh balances for the new wallet
       updateBalances(activeWalletId);
     }
     prevWalletIdRef.current = activeWalletId;
@@ -273,11 +269,41 @@ export default function ExchangePage() {
     const fetchChartData = async () => {
       setChartLoading(true);
       try {
+        // Configure resolution and limit based on time range
+        let resolution: number;
+        let limit: number;
+
+        switch (chartTimeRange) {
+          case '1h':
+            resolution = 300000; // 5-minute candles
+            limit = 12; // 12 * 5min = 1 hour
+            break;
+          case '4h':
+            resolution = 900000; // 15-minute candles
+            limit = 16; // 16 * 15min = 4 hours
+            break;
+          case '1d':
+            resolution = 3600000; // 1-hour candles
+            limit = 24; // 24 * 1h = 1 day
+            break;
+          case '1w':
+            resolution = 86400000; // 1-day candles
+            limit = 7; // 7 * 1d = 1 week
+            break;
+          case '1m':
+            resolution = 604800000; // 1-week candles
+            limit = 4; // 4 * 1w = ~1 month
+            break;
+          default:
+            resolution = 3600000;
+            limit = 24;
+        }
+
         const aggregations = await getTradeAggregations(
           sellingAsset, sellingIssuer,
           buyingAsset, buyingIssuer,
-          3600000, // 1 hour resolution
-          48 // 48 hours of data
+          resolution,
+          limit
         );
         setChartData(aggregations);
       } catch {
@@ -290,7 +316,7 @@ export default function ExchangePage() {
     if (mounted) {
       fetchChartData();
     }
-  }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
+  }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted, chartTimeRange]);
 
   // Fetch user's filled orders (trade history) - also clears on wallet change
   useEffect(() => {
@@ -383,6 +409,34 @@ export default function ExchangePage() {
     }
   }, [mounted]);
 
+  // Fetch available balances (accounting for committed orders and network reserve)
+  useEffect(() => {
+    // Don't fetch if not mounted - will be called again when mounted becomes true
+    if (!mounted || !activeWalletId) return;
+    
+    const wallet = wallets.find(w => w.id === activeWalletId);
+    if (!wallet) return;
+
+    const fetchAvailableBalances = async () => {
+      setBalancesLoading(true);
+      try {
+        const [sellingAvail, buyingAvail] = await Promise.all([
+          calculateAvailableBalance(wallet.publicKey, sellingAsset, sellingIssuer),
+          calculateAvailableBalance(wallet.publicKey, buyingAsset, buyingIssuer),
+        ]);
+        
+        setAvailableSellingBalance(sellingAvail);
+        setAvailableBuyingBalance(buyingAvail);
+      } catch (error) {
+        console.error('[v0] Error fetching available balances:', error);
+      } finally {
+        setBalancesLoading(false);
+      }
+    };
+
+    fetchAvailableBalances();
+  }, [activeWalletId, wallets, sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
+
   if (!mounted) return null;
 
   const activeWallet = wallets.find(w => w.id === activeWalletId);
@@ -441,13 +495,11 @@ export default function ExchangePage() {
       setTxResult({ success: false, message: 'Please enter valid price and amount' });
       return;
     }
-    setPendingOrder({ type: 'buy', price, amount });
-    // If already unlocked, submit directly; otherwise show password modal
-    if (isPasswordUnlocked && decryptedSecret) {
-      submitOrder({ type: 'buy', price, amount }, decryptedSecret);
-    } else {
-      setShowPasswordModal(true);
+    if (!globalDecryptedSecret) {
+      setTxResult({ success: false, message: 'Wallet is locked. Please restart the app to unlock.' });
+      return;
     }
+    submitOrder({ type: 'buy', price, amount }, globalDecryptedSecret);
   };
 
   const handleSellClick = (price: string, amount: string) => {
@@ -455,13 +507,11 @@ export default function ExchangePage() {
       setTxResult({ success: false, message: 'Please enter valid price and amount' });
       return;
     }
-    setPendingOrder({ type: 'sell', price, amount });
-    // If already unlocked, submit directly; otherwise show password modal
-    if (isPasswordUnlocked && decryptedSecret) {
-      submitOrder({ type: 'sell', price, amount }, decryptedSecret);
-    } else {
-      setShowPasswordModal(true);
+    if (!globalDecryptedSecret) {
+      setTxResult({ success: false, message: 'Wallet is locked. Please restart the app to unlock.' });
+      return;
     }
+    submitOrder({ type: 'sell', price, amount }, globalDecryptedSecret);
   };
   
   const submitOrder = async (order: { type: 'buy' | 'sell'; price: string; amount: string }, secret: string) => {
@@ -479,11 +529,11 @@ export default function ExchangePage() {
         
         if (!hasTrust) {
           // Auto-add trustline
-          setTxResult({ success: false, message: `Adding trustline for ${assetToCheck.code}...` });
+          setTxResult({ success: false, message: `Creating trustline for ${assetToCheck.code}...` });
           const trustResult = await addTrustline(secret, assetToCheck.code, assetToCheck.issuer);
           
           if (!trustResult.success) {
-            setTxResult({ success: false, message: `Failed to add trustline: ${trustResult.error}` });
+            setTxResult({ success: false, message: `Failed to create trustline: ${trustResult.error}` });
             setIsSubmitting(false);
             return;
           }
@@ -493,9 +543,9 @@ export default function ExchangePage() {
             await updateBalances(activeWalletId);
           }
           
-          setTxResult({ success: true, message: `Trustline added for ${assetToCheck.code}. Submitting order...` });
-          // Small delay to let the UI update
-          await new Promise(resolve => setTimeout(resolve, 500));
+          setTxResult({ success: true, message: `Trustline created for ${assetToCheck.code}. Submitting order...` });
+          // Small delay to let the UI update and ensure balances are refreshed
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
       
@@ -531,14 +581,30 @@ export default function ExchangePage() {
           setSellPrice('');
           setSellAmount('');
         }
+        
         const data = await getOrderBook(sellingAsset, sellingIssuer, buyingAsset, buyingIssuer);
         setOrderBook(data);
-        // Refresh balances after order
-        if (activeWalletId) {
+        // Refresh balances and available balances after order
+        if (activeWalletId && activeWallet) {
           await updateBalances(activeWalletId);
+          // Recalculate available balances after order submission
+          const [sellingAvail, buyingAvail] = await Promise.all([
+            calculateAvailableBalance(activeWallet.publicKey, sellingAsset, sellingIssuer),
+            calculateAvailableBalance(activeWallet.publicKey, buyingAsset, buyingIssuer),
+          ]);
+          setAvailableSellingBalance(sellingAvail);
+          setAvailableBuyingBalance(buyingAvail);
         }
       } else {
-        setTxResult({ success: false, message: result.error || 'Order failed' });
+        // Handle op_buy_no_trust error - trustline may have failed or been needed but not created
+        if (result.error && (result.error.includes('op_buy_no_trust') || result.error.includes('no_trust'))) {
+          setTxResult({ 
+            success: false, 
+            message: `Trustline for ${buyingAsset} needs to be created first. Please try again.` 
+          });
+        } else {
+          setTxResult({ success: false, message: result.error || 'Failed to submit order' });
+        }
       }
     } catch (error: any) {
       setTxResult({ success: false, message: error.message || 'Failed to submit order' });
@@ -548,40 +614,24 @@ export default function ExchangePage() {
     }
   };
   
-  const handleConfirmOrder = async () => {
-    if (!pendingOrder || !activeWallet || !password) return;
-    
-    setShowPasswordModal(false);
-    
-    try {
-      // Decrypt and store the secret key for this session
-      const secret = decryptSecret(activeWallet.encryptedSecret, password);
-      setDecryptedSecret(secret);
-      setIsPasswordUnlocked(true);
-      setPassword(''); // Clear password from state
-      
-      // Submit the order
-      await submitOrder(pendingOrder, secret);
-    } catch (error: any) {
-      setTxResult({ success: false, message: 'Invalid password' });
-      setPassword('');
-      setPendingOrder(null);
-    }
-  };
-
-  const handleCancelOrder = async (id: string) => {
-    if (!decryptedSecret) {
-      setTxResult({ success: false, message: 'Please unlock wallet with password first' });
+  const handleCancelOrder = (id: string) => {
+    if (!globalDecryptedSecret) {
+      setTxResult({ success: false, message: 'Wallet is locked. Please restart the app to unlock.' });
       return;
     }
     
+    // If already unlocked, proceed directly to cancel
+    proceedWithCancelOrder(id);
+  };
+
+  const proceedWithCancelOrder = async (id: string) => {
     const order = myOrders.find(o => o.id === id);
-    if (!order) return;
+    if (!order || !globalDecryptedSecret) return;
     
     setIsSubmitting(true);
     try {
       const result = await cancelOffer(
-        decryptedSecret,
+        globalDecryptedSecret,
         id,
         order.sellingCode,
         order.sellingIssuer,
@@ -592,6 +642,15 @@ export default function ExchangePage() {
       if (result.success) {
         setMyOrders(myOrders.filter(o => o.id !== id));
         setTxResult({ success: true, message: 'Order cancelled successfully' });
+        // Refresh available balances after cancellation
+        if (activeWalletId && activeWallet) {
+          const [sellingAvail, buyingAvail] = await Promise.all([
+            calculateAvailableBalance(activeWallet.publicKey, sellingAsset, sellingIssuer),
+            calculateAvailableBalance(activeWallet.publicKey, buyingAsset, buyingIssuer),
+          ]);
+          setAvailableSellingBalance(sellingAvail);
+          setAvailableBuyingBalance(buyingAvail);
+        }
       } else {
         setTxResult({ success: false, message: result.error || 'Failed to cancel order' });
       }
@@ -615,14 +674,14 @@ export default function ExchangePage() {
   };
 
   const tabs = [
-    { id: 'history', label: 'History', icon: '📊' },
+    { id: 'history', label: 'History', icon: '����' },
     { id: 'my-orders', label: 'My Orders', icon: '📋' },
     { id: 'filled', label: 'Filled', icon: '✅' },
     { id: 'charts', label: 'Charts', icon: '📈' },
   ] as const;
 
   return (
-    <main className="min-h-screen bg-background">
+    <main className="min-h-dvh bg-background">
       <Header />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex items-center justify-between mb-8">
@@ -714,8 +773,8 @@ export default function ExchangePage() {
           <CompactOrderForm
             sellingAsset={sellingAsset}
             buyingAsset={buyingAsset}
-            sellingBalance={sellingBalance}
-            buyingBalance={buyingBalance}
+            sellingBalance={availableSellingBalance}
+            buyingBalance={availableBuyingBalance}
             bestBid={bestBid ?? undefined}
             bestAsk={bestAsk ?? undefined}
             buyPrice={buyPrice}
@@ -822,6 +881,8 @@ export default function ExchangePage() {
                 loading={chartLoading}
                 sellingAsset={sellingAsset}
                 buyingAsset={buyingAsset}
+                timeRange={chartTimeRange}
+                onTimeRangeChange={setChartTimeRange}
               />
             )}
           </div>
@@ -844,57 +905,7 @@ export default function ExchangePage() {
         type="buying"
       />
       
-      {/* Password Confirmation Modal */}
-      {showPasswordModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-card border border-primary/20 rounded-lg w-full max-w-md p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-foreground">Confirm Order</h3>
-              <button onClick={() => { setShowPasswordModal(false); setPendingOrder(null); setPassword(''); }}>
-                <X className="w-5 h-5 text-muted-foreground hover:text-foreground" />
-              </button>
-            </div>
-            
-            <div className="space-y-2 text-sm">
-              <p className="text-muted-foreground">
-                {pendingOrder?.type === 'buy' ? 'BUY' : 'SELL'} {pendingOrder?.amount} {sellingAsset}
-              </p>
-              <p className="text-muted-foreground">
-                at {pendingOrder?.price} {buyingAsset} per {sellingAsset}
-              </p>
-            </div>
-            
-            <div className="space-y-2">
-              <label className="text-sm text-muted-foreground">Enter wallet password</label>
-              <Input
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="bg-input border-border"
-                autoFocus
-              />
-            </div>
-            
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                onClick={() => { setShowPasswordModal(false); setPendingOrder(null); setPassword(''); }}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleConfirmOrder}
-                disabled={!password || isSubmitting}
-                className={`flex-1 ${pendingOrder?.type === 'buy' ? 'bg-primary' : 'bg-destructive'}`}
-              >
-                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+
       
       {/* Transaction Result Toast */}
       {txResult && (

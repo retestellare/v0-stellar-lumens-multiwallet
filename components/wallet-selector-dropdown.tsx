@@ -48,7 +48,7 @@ export function WalletSelectorDropdown({ compact = false }: WalletSelectorDropdo
       {/* Trigger Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-2 px-3 py-2 rounded-lg border border-border/50 bg-background/50 hover:bg-background/80 hover:border-primary/30 transition-all ${
+        className={`flex items-center gap-2 px-3 py-2 rounded-xl border border-border/60 bg-muted/30 hover:bg-muted/50 hover:border-primary/30 transition-all shadow-sm ${
           compact ? 'text-xs' : 'text-sm'
         }`}
       >
@@ -65,10 +65,10 @@ export function WalletSelectorDropdown({ compact = false }: WalletSelectorDropdo
       {/* Dropdown Modal */}
       {isOpen && (
         <div className="absolute top-full left-0 right-0 mt-2 z-50 min-w-[280px] sm:min-w-[320px]">
-          <div className="bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+          <div className="bg-card border border-border/80 rounded-2xl shadow-2xl shadow-black/50 overflow-hidden ring-1 ring-white/5">
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
-              <h3 className="font-semibold text-foreground text-sm">Select Wallet</h3>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border/60 bg-muted/20">
+              <h3 className="font-semibold text-foreground text-sm tracking-tight">Select Wallet</h3>
               <button
                 onClick={() => setIsOpen(false)}
                 className="text-muted-foreground hover:text-foreground transition-colors"
@@ -85,8 +85,10 @@ export function WalletSelectorDropdown({ compact = false }: WalletSelectorDropdo
                   <button
                     key={wallet.id || wallet.publicKey}
                     onClick={() => handleSelectWallet(wallet.id || wallet.publicKey)}
-                    className={`w-full flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors border-b border-border/30 last:border-b-0 ${
-                      isActive ? 'bg-primary/10 border-l-2 border-l-primary' : ''
+                    className={`w-full flex items-center justify-between px-4 py-3 transition-all border-b border-border/20 last:border-b-0 ${
+                      isActive
+                        ? 'bg-primary/12 border-l-[3px] border-l-primary pl-[13px]'
+                        : 'hover:bg-muted/40 border-l-[3px] border-l-transparent pl-[13px]'
                     }`}
                   >
                     <div className="flex flex-col items-start gap-0.5">

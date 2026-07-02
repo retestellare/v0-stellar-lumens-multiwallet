@@ -1,31 +1,101 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback } from 'react';
+import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { Header } from '@/components/header';
-import { WalletCard } from '@/components/wallet-card';
-import { CreateWalletModal } from '@/components/create-wallet-modal';
-import { SendModal } from '@/components/send-modal';
-import { ReceiveModal } from '@/components/receive-modal';
 import { AssetDetailModal } from '@/components/asset-detail-modal';
 import { Button } from '@/components/ui/button';
 import { useWallet } from '@/lib/wallet-context';
-import { Plus, Send, ArrowRightLeft, Briefcase, Download, Droplets } from 'lucide-react';
-import Link from 'next/link';
+import { Plus, Copy, Check } from 'lucide-react';
 import { AssetItem } from '@/components/asset-item';
 
+// Lazy load heavy modals for better initial page performance
+const CreateWalletModal = dynamic(() => import('@/components/create-wallet-modal').then(mod => ({ default: mod.CreateWalletModal })), {
+  loading: () => null,
+});
+const BulkWalletModal = dynamic(() => import('@/components/bulk-wallet-modal').then(mod => ({ default: mod.BulkWalletModal })), {
+  loading: () => null,
+});
+const SendModal = dynamic(() => import('@/components/send-modal').then(mod => ({ default: mod.SendModal })), {
+  loading: () => null,
+});
+const ReceiveModal = dynamic(() => import('@/components/receive-modal').then(mod => ({ default: mod.ReceiveModal })), {
+  loading: () => null,
+});
+
 export default function DashboardPage() {
-  const router = useRouter();
   const { wallets, activeWalletId, setActiveWallet, removeWallet, updateBalances } = useWallet();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [isSendOpen, setIsSendOpen] = useState(false);
   const [isReceiveOpen, setIsReceiveOpen] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<{ code: string; issuer?: string; balance: string; domain?: string; image?: string; name?: string } | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [copiedPublicKey, setCopiedPublicKey] = useState(false);
 
-  const handleExchangeClick = () => {
-    router.push('/exchange');
-  };
+  const handleCloseReceive = useCallback(() => {
+    setIsReceiveOpen(false);
+  }, []);
+
+  const handleSendClick = useCallback(() => {
+    setIsSendOpen(true);
+  }, []);
+
+  const handleReceiveClick = useCallback(() => {
+    setIsReceiveOpen(true);
+  }, []);
+
+  const handleWalletSelect = useCallback((id: string) => {
+    setActiveWallet(id);
+  }, [setActiveWallet]);
+
+  const handleAddWallet = useCallback(() => {
+    setIsModalOpen(true);
+  }, []);
+
+  const handleCloseModal = useCallback(() => {
+    setIsModalOpen(false);
+  }, []);
+
+  const handleOpenBulkModal = useCallback(() => {
+    setIsBulkModalOpen(true);
+  }, []);
+
+  const handleCloseBulkModal = useCallback(() => {
+    setIsBulkModalOpen(false);
+  }, []);
+
+  const handleCloseSend = useCallback(() => {
+    setIsSendOpen(false);
+  }, []);
+
+  const handleSelectAsset = useCallback((asset: { code: string; issuer?: string; balance: string }) => {
+    setSelectedAsset(asset);
+  }, []);
+
+  const handleCloseAssetDetail = useCallback(() => {
+    setSelectedAsset(null);
+  }, []);
+
+  const handleAssetSend = useCallback(() => {
+    setSelectedAsset(null);
+    setIsSendOpen(true);
+  }, []);
+
+  const handleAssetReceive = useCallback(() => {
+    setSelectedAsset(null);
+    setIsReceiveOpen(true);
+  }, []);
+
+  const handleCopyPublicKey = useCallback(() => {
+    const wallet = wallets.find(w => w.id === activeWalletId);
+    if (wallet) {
+      navigator.clipboard.writeText(wallet.publicKey);
+      setCopiedPublicKey(true);
+      setTimeout(() => setCopiedPublicKey(false), 2000);
+    }
+  }, [activeWalletId, wallets]);
 
   useEffect(() => {
     setMounted(true);
@@ -48,82 +118,95 @@ export default function DashboardPage() {
 
   const activeWallet = wallets.find(w => w.id === activeWalletId);
 
+  const xlmBalance = activeWallet?.balances.find((b: any) => b.asset_type === 'native');
+  const xlmBalanceStr = xlmBalance?.balance || '0';
+  const [xlmWhole, xlmDec] = xlmBalanceStr.split('.');
+
   return (
-    <main className="min-h-screen bg-background">
-      <Header />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <main className="flex flex-col min-h-dvh bg-background">
+      <Header onOpenBulkWallet={handleOpenBulkModal} />
+
+      <div className="page-container py-6 flex-1">
         {wallets.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20">
-            <div className="text-center space-y-4">
-              <h1 className="text-3xl font-bold text-foreground">Welcome to Stellar Lumens Wallet</h1>
-              <p className="text-muted-foreground max-w-md">
-                Create or import your first Stellar wallet to get started. Your keys are encrypted locally and never stored on our servers.
-              </p>
-              <Button
-                onClick={() => setIsModalOpen(true)}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                Create First Wallet
-              </Button>
+          /* ── Empty state ── */
+          <div className="flex flex-col items-center justify-center py-24 text-center animate-fade-up">
+            <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-6 animate-glow">
+              <Plus className="w-8 h-8 text-primary" />
             </div>
+            <h1 className="text-2xl font-bold text-foreground tracking-tight text-balance">Welcome to Stellar Lumens Wallet</h1>
+            <p className="text-sm text-muted-foreground max-w-xs mt-3 leading-relaxed text-balance">
+              Create or import your first Stellar wallet to get started. Your keys are encrypted locally and never leave your device.
+            </p>
+            <Button
+              onClick={handleAddWallet}
+              className="mt-6 gap-2 font-semibold"
+            >
+              <Plus className="w-4 h-4" />
+              Create First Wallet
+            </Button>
           </div>
         ) : (
-          <div className="space-y-8">
-            {/* Active Wallet Summary */}
-            {activeWallet && (
-              <div className="glow-border p-6 rounded-lg space-y-4">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h2 className="text-sm font-medium text-muted-foreground">Active Wallet</h2>
-                    <p className="text-2xl font-bold text-primary mt-1">{activeWallet.name}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm text-muted-foreground">Total Balance</p>
-                    <p className="text-3xl font-bold text-foreground mt-1">
-                      {(activeWallet.balances.find((b: any) => b.asset_type === 'native')?.balance || '0')} XLM
-                    </p>
+          <div className="max-w-2xl">
+
+            {/* ── Content ── */}
+            <div className="space-y-4 min-w-0">
+
+              {/* Balance hero card */}
+              {activeWallet && (
+                <div className="relative overflow-hidden rounded-2xl border border-primary/25 bg-card p-5 shadow-xl shadow-black/30 ring-1 ring-primary/8">
+                  {/* subtle accent glow */}
+                  <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-primary/8 blur-3xl pointer-events-none" />
+                  <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-secondary/5 blur-2xl pointer-events-none" />
+
+                  <div className="relative z-10 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+                    {/* Left */}
+                    <div>
+                      <p className="section-label mb-2">Active Wallet</p>
+                      <h1 className="text-lg font-bold text-foreground leading-tight tracking-tight">{activeWallet.name}</h1>
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                        <code className="text-xs text-muted-foreground font-mono bg-muted/40 px-2 py-0.5 rounded-md border border-border/40">
+                          {activeWallet.publicKey.substring(0, 10)}...{activeWallet.publicKey.substring(activeWallet.publicKey.length - 8)}
+                        </code>
+                        <button
+                          onClick={handleCopyPublicKey}
+                          className="p-1.5 rounded-lg hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
+                          aria-label="Copy public key"
+                          title="Copy full public key"
+                        >
+                          {copiedPublicKey
+                            ? <Check className="w-3.5 h-3.5 text-success" />
+                            : <Copy className="w-3.5 h-3.5" />
+                          }
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Right - Balance */}
+                    <div className="sm:text-right">
+                      <p className="section-label mb-1">XLM Balance</p>
+                      <div className="flex items-baseline sm:justify-end gap-0.5">
+                        <span className="text-4xl font-bold text-primary num tracking-tight">{parseInt(xlmWhole).toLocaleString()}</span>
+                        <span className="text-xl text-primary/60 num">.{xlmDec || '00'}</span>
+                        <span className="text-sm font-semibold text-muted-foreground ml-1">XLM</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {activeWallet.balances.length} asset{activeWallet.balances.length !== 1 ? 's' : ''}
+                      </p>
+                    </div>
                   </div>
                 </div>
+              )}
 
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                  <button 
-                    onClick={() => setIsSendOpen(true)}
-                    className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group"
-                  >
-                    <Send className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
-                    <p className="text-xs font-medium text-foreground">Send</p>
-                  </button>
-                  <button 
-                    onClick={() => setIsReceiveOpen(true)}
-                    className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group"
-                  >
-                    <Download className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
-                    <p className="text-xs font-medium text-foreground">Receive</p>
-                  </button>
-                  <Link href="/portfolio" className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group">
-                    <Briefcase className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
-                    <p className="text-xs font-medium text-foreground">Portfolio</p>
-                  </Link>
-                  <button 
-                    onClick={handleExchangeClick}
-                    className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group"
-                  >
-                    <ArrowRightLeft className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
-                    <p className="text-xs font-medium text-foreground">Exchange</p>
-                  </button>
-                  <Link href="/pools" className="glow-border p-3 rounded-lg hover:bg-primary/10 transition-colors text-center group">
-                    <Droplets className="w-5 h-5 text-primary mx-auto mb-2 group-hover:glow-pulse" />
-                    <p className="text-xs font-medium text-foreground">Pools</p>
-                  </Link>
-                </div>
-
-                {/* Assets List */}
-                <div className="space-y-2">
-                  <h3 className="text-sm font-medium text-muted-foreground">Assets</h3>
-                  <div className="grid gap-2 max-h-48 overflow-y-auto">
+              {/* Assets list */}
+              {activeWallet && (
+                <div className="rounded-2xl border border-border/70 bg-card overflow-hidden shadow-sm">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 bg-muted/10">
+                    <h2 className="text-sm font-semibold text-foreground tracking-tight">Assets</h2>
+                    <span className="text-xs text-muted-foreground bg-muted/40 px-2 py-0.5 rounded-full border border-border/40">{activeWallet.balances.length} total</span>
+                  </div>
+                  <div className="p-2 space-y-0.5">
                     {activeWallet.balances.length === 0 ? (
-                      <p className="text-xs text-muted-foreground text-center py-4">No assets yet. Fund your wallet to get started.</p>
+                      <p className="text-xs text-muted-foreground text-center py-6">No assets yet. Fund your wallet to get started.</p>
                     ) : (
                       activeWallet.balances.map((balance: any, idx: number) => (
                         <AssetItem
@@ -131,7 +214,7 @@ export default function DashboardPage() {
                           code={balance.asset_code || 'XLM'}
                           issuer={balance.asset_issuer || ''}
                           balance={balance.balance}
-                          onClick={() => setSelectedAsset({
+                          onClick={() => handleSelectAsset({
                             code: balance.asset_code || 'XLM',
                             issuer: balance.asset_issuer,
                             balance: balance.balance,
@@ -141,55 +224,23 @@ export default function DashboardPage() {
                     )}
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* Wallets Grid */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-foreground">Your Wallets</h3>
-                <Button
-                  onClick={() => setIsModalOpen(true)}
-                  variant="outline"
-                  size="sm"
-                  className="border-primary/50 text-primary hover:bg-primary/10 gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Wallet
-                </Button>
-              </div>
-              
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {wallets.map((wallet) => (
-                  <WalletCard
-                    key={wallet.id}
-                    wallet={wallet}
-                    isActive={activeWalletId === wallet.id}
-                    onSelect={() => setActiveWallet(wallet.id)}
-                    onDelete={() => removeWallet(wallet.id)}
-                  />
-                ))}
-              </div>
+              )}
             </div>
+
           </div>
         )}
       </div>
 
-      <CreateWalletModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
-      <SendModal isOpen={isSendOpen} onClose={() => setIsSendOpen(false)} />
-      <ReceiveModal isOpen={isReceiveOpen} onClose={() => setIsReceiveOpen(false)} />
+      <CreateWalletModal isOpen={isModalOpen} onClose={handleCloseModal} />
+      <BulkWalletModal isOpen={isBulkModalOpen} onClose={handleCloseBulkModal} />
+      <SendModal isOpen={isSendOpen} onClose={handleCloseSend} />
+      <ReceiveModal isOpen={isReceiveOpen} onClose={handleCloseReceive} />
       <AssetDetailModal
         isOpen={!!selectedAsset}
-        onClose={() => setSelectedAsset(null)}
+        onClose={handleCloseAssetDetail}
         asset={selectedAsset}
-        onSend={() => {
-          setSelectedAsset(null);
-          setIsSendOpen(true);
-        }}
-        onReceive={() => {
-          setSelectedAsset(null);
-          setIsReceiveOpen(true);
-        }}
+        onSend={handleAssetSend}
+        onReceive={handleAssetReceive}
       />
     </main>
   );

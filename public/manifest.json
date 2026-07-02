@@ -1,0 +1,68 @@
+{
+  "name": "ORION Stellar Lumens Wallet",
+  "short_name": "ORION Wallet",
+  "description": "A secure and user-friendly multiwallet for Stellar Lumens (XLM) cryptocurrency",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#1a3a52",
+  "prefer_related_applications": false,
+  "screenshots": [
+    {
+      "src": "/images/screenshots/screenshot-540x720.png",
+      "sizes": "540x720",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/screenshots/screenshot-1280x720.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "purpose": "any"
+    }
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+
+  "shortcuts": [
+    {
+      "name": "Send XLM",
+      "short_name": "Send",
+      "description": "Quickly send Stellar Lumens to another wallet",
+      "url": "/send",
+      "icons": [
+        {
+          "src": "/images/shortcuts/send-96x96.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Check Balance",
+      "short_name": "Balance",
+      "description": "View your account balance and transactions",
+      "url": "/balance",
+      "icons": [
+        {
+          "src": "/images/shortcuts/balance-96x96.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+  "categories": [
+    "finance",
+    "productivity"
+  ]
+}

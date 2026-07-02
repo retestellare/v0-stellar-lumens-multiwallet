@@ -10,8 +10,8 @@ import {
   getLiquidityPoolDetails, 
   depositToLiquidityPool, 
   withdrawFromLiquidityPool,
-  decryptSecret,
-  getAccountBalances
+  getAccountBalances,
+  getIssuerTokenIcon
 } from '@/lib/stellar-utils';
 import { 
   ArrowLeft, 
@@ -29,6 +29,45 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+// Token icon component with fallback
+function TokenIcon({ code, issuer, className = "w-8 h-8" }: { code: string; issuer?: string; className?: string }) {
+  const [iconUrl, setIconUrl] = useState<string | null>(null);
+  const [imageError, setImageError] = useState(false);
+  
+  useEffect(() => {
+    let cancelled = false;
+    
+    const fetchIcon = async () => {
+      if (code === 'XLM') {
+        setIconUrl('https://assets.coingecko.com/coins/images/100/small/Stellar_symbol_black_RGB.png');
+        return;
+      }
+      const url = await getIssuerTokenIcon(code, issuer || '');
+      if (!cancelled && url) {
+        setIconUrl(url);
+      }
+    };
+    
+    fetchIcon();
+    return () => { cancelled = true; };
+  }, [code, issuer]);
+  
+  return (
+    <div className={`${className} rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold border-2 border-background overflow-hidden`}>
+      {iconUrl && !imageError ? (
+        <img 
+          src={iconUrl} 
+          alt={code} 
+          className="w-full h-full object-cover"
+          onError={() => setImageError(true)}
+        />
+      ) : (
+        <span>{code?.slice(0, 2) || '??'}</span>
+      )}
+    </div>
+  );
+}
+
 interface PoolShare {
   liquidity_pool_id: string;
   balance: string;
@@ -42,7 +81,7 @@ interface PoolShare {
 }
 
 export default function PoolsPage() {
-  const { wallets, activeWalletId, updateBalances } = useWallet();
+  const { wallets, activeWalletId, updateBalances, globalDecryptedSecret } = useWallet();
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [poolShares, setPoolShares] = useState<PoolShare[]>([]);
@@ -60,9 +99,13 @@ export default function PoolsPage() {
   // Transaction state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [txResult, setTxResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [password, setPassword] = useState('');
   const [pendingAction, setPendingAction] = useState<'deposit' | 'withdraw' | null>(null);
+  
+  // Pool reserves for auto-calculation
+  const [poolReserves, setPoolReserves] = useState<{ reserveA: number; reserveB: number } | null>(null);
+  const [reservesLoading, setReservesLoading] = useState(false);
+  const [reservesError, setReservesError] = useState<string | null>(null);
+  const [editingField, setEditingField] = useState<'amountA' | 'amountB' | null>(null);
 
   const activeWallet = wallets.find(w => w.id === activeWalletId);
 
@@ -143,39 +186,124 @@ export default function PoolsPage() {
     }
   }, [mounted, activeWallet, fetchPoolShares]);
 
-  // Handle deposit
+  // Fetch pool reserves when deposit modal opens
+  useEffect(() => {
+    const fetchReserves = async () => {
+      if (activeModal !== 'deposit' || !selectedPool) {
+        setPoolReserves(null);
+        setReservesError(null);
+        return;
+      }
+
+      setReservesLoading(true);
+      setReservesError(null);
+      
+      try {
+        const details = await getLiquidityPoolDetails(selectedPool.liquidity_pool_id);
+        
+        if (!details.reserves || details.reserves.length < 2) {
+          setReservesError('Unable to fetch pool reserves');
+          setPoolReserves(null);
+          return;
+        }
+
+        const reserveA = parseFloat(details.reserves[0].amount);
+        const reserveB = parseFloat(details.reserves[1].amount);
+
+        if (reserveA === 0 || reserveB === 0) {
+          setReservesError('Pool has zero reserves - manual entry required');
+          setPoolReserves(null);
+        } else {
+          setPoolReserves({ reserveA, reserveB });
+        }
+      } catch (error) {
+        console.error('[v0] Error fetching pool reserves:', error);
+        setReservesError('Failed to fetch pool reserves');
+        setPoolReserves(null);
+      } finally {
+        setReservesLoading(false);
+      }
+    };
+
+    fetchReserves();
+  }, [activeModal, selectedPool]);
+
+  // Auto-calculate amountB when amountA changes
+  useEffect(() => {
+    if (editingField !== 'amountA' || !poolReserves || !amountA) {
+      return;
+    }
+
+    const userAmount = parseFloat(amountA);
+    if (isNaN(userAmount) || userAmount <= 0) {
+      setAmountB('');
+      return;
+    }
+
+    // Calculate: amountB = amountA × (reserveB / reserveA)
+    const ratio = poolReserves.reserveB / poolReserves.reserveA;
+    const calculatedB = (userAmount * ratio).toFixed(7);
+    setAmountB(calculatedB);
+  }, [amountA, poolReserves, editingField]);
+
+  // Auto-calculate amountA when amountB changes
+  useEffect(() => {
+    if (editingField !== 'amountB' || !poolReserves || !amountB) {
+      return;
+    }
+
+    const userAmount = parseFloat(amountB);
+    if (isNaN(userAmount) || userAmount <= 0) {
+      setAmountA('');
+      return;
+    }
+
+    // Calculate: amountA = amountB × (reserveA / reserveB)
+    const ratio = poolReserves.reserveA / poolReserves.reserveB;
+    const calculatedA = (userAmount * ratio).toFixed(7);
+    setAmountA(calculatedA);
+  }, [amountB, poolReserves, editingField]);
+
+  // Reset form when modal closes or pool changes
+  useEffect(() => {
+    if (activeModal !== 'deposit') {
+      setAmountA('');
+      setAmountB('');
+      setEditingField(null);
+    }
+  }, [activeModal]);
   const handleDeposit = async () => {
     if (!selectedPool || !amountA || !amountB) return;
     setPendingAction('deposit');
-    setShowPasswordModal(true);
+    await executeTransaction('deposit');
   };
 
   // Handle withdraw
   const handleWithdraw = async () => {
     if (!selectedPool || !withdrawAmount) return;
     setPendingAction('withdraw');
-    setShowPasswordModal(true);
+    await executeTransaction('withdraw');
   };
 
-  // Execute transaction after password
-  const executeTransaction = async () => {
-    if (!activeWallet || !password || !pendingAction || !selectedPool) return;
+  // Execute transaction using the globally unlocked secret
+  const executeTransaction = async (action?: 'deposit' | 'withdraw') => {
+    const resolvedAction = action || pendingAction;
+    if (!activeWallet || !resolvedAction || !selectedPool) return;
+
+    if (!globalDecryptedSecret) {
+      setTxResult({ success: false, message: 'Wallet is locked. Please restart the app to unlock.' });
+      return;
+    }
     
-    setShowPasswordModal(false);
     setIsSubmitting(true);
     setTxResult(null);
     
     try {
-      const secret = await decryptSecret(activeWallet.encryptedSecret, password);
-      if (!secret) {
-        setTxResult({ success: false, message: 'Invalid password' });
-        setIsSubmitting(false);
-        return;
-      }
+      const secret = globalDecryptedSecret;
       
       let result;
       
-      if (pendingAction === 'deposit') {
+      if (resolvedAction === 'deposit') {
         const slippageFactor = parseFloat(slippage) / 100;
         const priceRatio = parseFloat(amountA) / parseFloat(amountB);
         const minPrice = { n: Math.floor(priceRatio * (1 - slippageFactor) * 10000000), d: 10000000 };
@@ -216,7 +344,6 @@ export default function PoolsPage() {
       setTxResult({ success: false, message: error.message || 'Transaction failed' });
     } finally {
       setIsSubmitting(false);
-      setPassword('');
       setPendingAction(null);
     }
   };
@@ -237,7 +364,7 @@ export default function PoolsPage() {
   if (!mounted) return null;
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-dvh bg-background text-foreground">
       <Header />
       
       <main className="max-w-4xl mx-auto px-4 py-6">
@@ -267,6 +394,12 @@ export default function PoolsPage() {
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </Button>
+            <Link href="/pools/create">
+              <Button className="bg-primary text-primary-foreground hover:bg-primary/90 gap-1">
+                <Plus className="w-4 h-4" />
+                Create Pool
+              </Button>
+            </Link>
             <WalletSelectorDropdown />
           </div>
         </div>
@@ -351,12 +484,16 @@ export default function PoolsPage() {
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
                           <div className="flex -space-x-2">
-                            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold border-2 border-background">
-                              {pool.assetA?.code?.slice(0, 2) || '??'}
-                            </div>
-                            <div className="w-8 h-8 rounded-full bg-cyan-500/20 flex items-center justify-center text-xs font-bold border-2 border-background">
-                              {pool.assetB?.code?.slice(0, 2) || '??'}
-                            </div>
+                            <TokenIcon 
+                              code={pool.assetA?.code || '??'} 
+                              issuer={pool.assetA?.issuer}
+                              className="w-8 h-8"
+                            />
+                            <TokenIcon 
+                              code={pool.assetB?.code || '??'} 
+                              issuer={pool.assetB?.issuer}
+                              className="w-8 h-8"
+                            />
                           </div>
                           <div>
                             <p className="font-semibold">
@@ -451,28 +588,86 @@ export default function PoolsPage() {
               {selectedPool.assetA?.code || '?'} / {selectedPool.assetB?.code || '?'} Pool
             </p>
             
+            {/* Pool Reserves Info */}
+            {reservesLoading && (
+              <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded flex items-center gap-2">
+                <Loader2 className="w-4 h-4 text-blue-500 animate-spin flex-shrink-0" />
+                <p className="text-xs text-blue-400">Fetching pool reserves...</p>
+              </div>
+            )}
+            
+            {reservesError && (
+              <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-yellow-500 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-yellow-400">{reservesError}</p>
+              </div>
+            )}
+            
+            {poolReserves && !reservesError && (
+              <div className="mb-4 p-3 bg-background/50 rounded border border-border/50">
+                <p className="text-xs text-muted-foreground mb-2">Reserve Ratio</p>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs font-mono">
+                    <span className="text-foreground font-bold">{poolReserves.reserveA.toFixed(2)}</span>
+                    <span className="text-muted-foreground"> {selectedPool.assetA?.code}</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground">/</div>
+                  <div className="text-xs font-mono">
+                    <span className="text-foreground font-bold">{poolReserves.reserveB.toFixed(2)}</span>
+                    <span className="text-muted-foreground"> {selectedPool.assetB?.code}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <div className="space-y-4">
               <div>
-                <label className="text-sm text-muted-foreground mb-1 block">
-                  Amount {selectedPool.assetA?.code || 'A'}
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-sm text-muted-foreground">
+                    Amount {selectedPool.assetA?.code || 'A'}
+                  </label>
+                  {editingField === 'amountA' && poolReserves && !reservesError && (
+                    <span className="text-xs text-primary">Editing</span>
+                  )}
+                  {editingField === 'amountB' && poolReserves && !reservesError && amountA && (
+                    <span className="text-xs text-muted-foreground">Auto</span>
+                  )}
+                </div>
                 <Input
                   type="number"
                   placeholder="0.00"
                   value={amountA}
-                  onChange={(e) => setAmountA(e.target.value)}
+                  onChange={(e) => {
+                    setAmountA(e.target.value);
+                    setEditingField('amountA');
+                  }}
+                  onBlur={() => setEditingField(null)}
+                  disabled={reservesLoading}
                 />
               </div>
               
               <div>
-                <label className="text-sm text-muted-foreground mb-1 block">
-                  Amount {selectedPool.assetB?.code || 'B'}
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-sm text-muted-foreground">
+                    Amount {selectedPool.assetB?.code || 'B'}
+                  </label>
+                  {editingField === 'amountB' && poolReserves && !reservesError && (
+                    <span className="text-xs text-primary">Editing</span>
+                  )}
+                  {editingField === 'amountA' && poolReserves && !reservesError && amountB && (
+                    <span className="text-xs text-muted-foreground">Auto</span>
+                  )}
+                </div>
                 <Input
                   type="number"
                   placeholder="0.00"
                   value={amountB}
-                  onChange={(e) => setAmountB(e.target.value)}
+                  onChange={(e) => {
+                    setAmountB(e.target.value);
+                    setEditingField('amountB');
+                  }}
+                  onBlur={() => setEditingField(null)}
+                  disabled={reservesLoading}
                 />
               </div>
               
@@ -573,45 +768,7 @@ export default function PoolsPage() {
         </div>
       )}
 
-      {/* Password Modal */}
-      {showPasswordModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-sidebar border border-border rounded-lg max-w-sm w-full p-6">
-            <h3 className="text-lg font-bold mb-4">Enter Password</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Enter your wallet password to sign this transaction.
-            </p>
-            <Input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && executeTransaction()}
-              className="mb-4"
-            />
-            <div className="flex gap-2">
-              <Button 
-                variant="outline" 
-                className="flex-1"
-                onClick={() => {
-                  setShowPasswordModal(false);
-                  setPassword('');
-                  setPendingAction(null);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button 
-                className="flex-1"
-                onClick={executeTransaction}
-                disabled={!password}
-              >
-                Confirm
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 }

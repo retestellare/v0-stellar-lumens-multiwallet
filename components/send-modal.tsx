@@ -5,7 +5,7 @@ import { X, Send, Plus, Trash2, Loader2, CheckCircle, AlertCircle, ChevronDown }
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useWallet } from '@/lib/wallet-context';
-import { decryptSecret, submitPayment } from '@/lib/stellar-utils';
+import { submitPayment } from '@/lib/stellar-utils';
 
 interface Recipient {
   id: string;
@@ -20,14 +20,12 @@ interface SendModalProps {
 }
 
 export function SendModal({ isOpen, onClose }: SendModalProps) {
-  const { activeWallet } = useWallet();
+  const { activeWallet, globalDecryptedSecret } = useWallet();
   const [recipients, setRecipients] = useState<Recipient[]>([
     { id: '1', address: '', amount: '', memo: '' }
   ]);
   const [selectedAsset, setSelectedAsset] = useState<{ code: string; issuer: string; balance: string } | null>(null);
   const [showAssetPicker, setShowAssetPicker] = useState(false);
-  const [password, setPassword] = useState('');
-  const [showPasswordStep, setShowPasswordStep] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string; hash?: string } | null>(null);
 
@@ -114,24 +112,25 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
     return null;
   };
 
-  const handleContinue = () => {
-    const error = validateRecipients();
-    if (error) {
-      setResult({ success: false, message: error });
+  const handleSend = async () => {
+    if (!activeWallet) return;
+
+    const validationError = validateRecipients();
+    if (validationError) {
+      setResult({ success: false, message: validationError });
       return;
     }
-    setResult(null);
-    setShowPasswordStep(true);
-  };
 
-  const handleSend = async () => {
-    if (!activeWallet || !password) return;
+    if (!globalDecryptedSecret) {
+      setResult({ success: false, message: 'Wallet is locked. Please restart the app to unlock.' });
+      return;
+    }
     
     setIsSubmitting(true);
     setResult(null);
 
     try {
-      const secret = decryptSecret(activeWallet.encryptedSecret, password);
+      const secret = globalDecryptedSecret;
       
       // Send to each recipient
       const results: string[] = [];
@@ -162,8 +161,6 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
       // Reset form after success
       setTimeout(() => {
         setRecipients([{ id: '1', address: '', amount: '', memo: '' }]);
-        setPassword('');
-        setShowPasswordStep(false);
         onClose();
       }, 2000);
       
@@ -176,8 +173,6 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
 
   const handleClose = () => {
     setRecipients([{ id: '1', address: '', amount: '', memo: '' }]);
-    setPassword('');
-    setShowPasswordStep(false);
     setResult(null);
     setSelectedAsset(null);
     onClose();
@@ -203,8 +198,7 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {!showPasswordStep ? (
-            <>
+          <>
               {/* Asset Selector */}
               <div>
                 <label className="text-sm text-muted-foreground mb-2 block">Asset</label>
@@ -327,27 +321,6 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
                 </div>
               </div>
             </>
-          ) : (
-            /* Password Step */
-            <div className="space-y-4">
-              <div className="text-center py-4">
-                <p className="text-muted-foreground mb-4">
-                  Confirm sending {getTotalAmount().toFixed(7).replace(/\.?0+$/, '')} {selectedAsset.code} to {recipients.length} recipient{recipients.length > 1 ? 's' : ''}
-                </p>
-              </div>
-              
-              <div>
-                <label className="text-sm text-muted-foreground mb-2 block">Trading Password</label>
-                <Input
-                  type="password"
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="bg-background/50"
-                />
-              </div>
-            </div>
-          )}
 
           {/* Result Message */}
           {result && (
@@ -364,31 +337,20 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
 
         {/* Footer */}
         <div className="p-4 border-t border-border">
-          {!showPasswordStep ? (
-            <Button onClick={handleContinue} className="w-full">
-              Continue
-            </Button>
-          ) : (
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setShowPasswordStep(false)} className="flex-1">
-                Back
-              </Button>
-              <Button 
-                onClick={handleSend} 
-                disabled={isSubmitting || !password}
-                className="flex-1"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Sending...
-                  </>
-                ) : (
-                  'Send'
-                )}
-              </Button>
-            </div>
-          )}
+          <Button
+            onClick={handleSend}
+            disabled={isSubmitting}
+            className="w-full"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Sending...
+              </>
+            ) : (
+              'Send'
+            )}
+          </Button>
         </div>
       </div>
     </>

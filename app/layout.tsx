@@ -3,12 +3,14 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { WalletProvider } from '@/lib/wallet-context'
 import { NotificationProvider } from '@/lib/notification-context'
+import { AppUnlockModal } from '@/components/app-unlock-modal'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'),
   title: 'Stellar Lumens Multiwallet',
   description: 'Non-custodial Stellar multiwallet with DEX and portfolio tracking',
   generator: 'v0.app',
@@ -29,11 +31,37 @@ export const metadata: Metadata = {
     ],
     apple: '/apple-icon.png',
   },
+  openGraph: {
+    title: 'Stellar Lumens Multiwallet',
+    description: 'Non-custodial Stellar multiwallet with DEX and portfolio tracking',
+    url: '/',
+    type: 'website',
+    images: [
+      {
+        url: '/wallet-logo.png',
+        width: 512,
+        height: 512,
+        alt: 'Stellar Lumens Multiwallet Logo',
+      },
+    ],
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Stellar Lumens Multiwallet',
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  manifest: '/manifest.webmanifest',
 }
 
 export const viewport = {
   themeColor: '#0a0e27',
-  userScalable: false,
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({
@@ -42,10 +70,11 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark bg-background">
       <body className="font-sans antialiased bg-background text-foreground">
         <WalletProvider>
           <NotificationProvider>
+            <AppUnlockModal />
             {children}
           </NotificationProvider>
         </WalletProvider>
