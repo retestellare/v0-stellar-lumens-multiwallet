@@ -42,39 +42,53 @@ interface AssetItemProps {
 }
 
 export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
-  // Try instant lookup first
+  // Derive the stable cache key for this specific token
+  const tokenKey = `${code}_${issuer || ''}`;
+
+  // Initialise from the synchronous lookup so known tokens render instantly
   const cachedMeta = getTokenMetadata(code, issuer);
-  
+
   const [image, setImage] = useState<string | null>(cachedMeta?.image || null);
   const [domain, setDomain] = useState<string | null>(cachedMeta?.domain || null);
   const [imageError, setImageError] = useState(false);
-  
-  // Fetch image and domain
+
+  // When the token identity changes, reset all derived state immediately
+  // so the previous token's image never bleeds into this render
+  useEffect(() => {
+    const meta = getTokenMetadata(code, issuer);
+    setImage(meta?.image || null);
+    setDomain(meta?.domain || null);
+    setImageError(false);
+  }, [tokenKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch image and domain for tokens not in the synchronous cache
   useEffect(() => {
     let cancelled = false;
-    
+
     const fetchMeta = async () => {
-      // Fetch icon with caching
-      if (!image) {
+      const meta = getTokenMetadata(code, issuer);
+
+      // Only hit the network when we don't already have an image
+      if (!meta?.image) {
         const iconUrl = await getIssuerTokenIcon(code, issuer);
         if (!cancelled && iconUrl) {
           setImage(iconUrl);
         }
       }
-      
-      // Fetch domain from TOML if not cached
-      if (!domain && issuer) {
-        const meta = await fetchTokenMetadataFromToml(issuer);
-        if (!cancelled && meta.domain) {
-          setDomain(meta.domain);
+
+      // Only hit the network when we don't already have a domain
+      if (!meta?.domain && issuer) {
+        const tomlMeta = await fetchTokenMetadataFromToml(issuer);
+        if (!cancelled && tomlMeta.domain) {
+          setDomain(tomlMeta.domain);
         }
       }
     };
-    
+
     fetchMeta();
-    
+
     return () => { cancelled = true; };
-  }, [code, issuer, image, domain]);
+  }, [tokenKey]); // eslint-disable-line react-hooks/exhaustive-deps
   
   const numBalance = parseFloat(balance);
 
