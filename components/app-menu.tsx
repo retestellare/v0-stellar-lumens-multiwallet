@@ -46,6 +46,13 @@ export function AppMenu({ isOpen, onClose, onOpenSettings }: AppMenuProps) {
     { icon: Wallet, label: 'Wallets', href: '/wallets' },
   ];
 
+  const exchangeSubsections = [
+    { icon: History, label: 'Exchange History', href: '/exchange#history' },
+    { icon: Settings, label: 'My Orders', href: '/exchange#orders' },
+    { icon: ChevronRight, label: 'Filled Trades', href: '/exchange#filled' },
+    { icon: TrendingUp, label: 'Charts', href: '/exchange#charts' },
+  ];
+
   const utilityItems = [
     { icon: Settings, label: 'Settings', action: onOpenSettings },
     { icon: HelpCircle, label: 'Help', href: 'https://stellar.org/learn' },
@@ -97,21 +104,40 @@ export function AppMenu({ isOpen, onClose, onOpenSettings }: AppMenuProps) {
           <p className="section-label px-3 mb-2">Navigation</p>
           {menuItems.map((item) => {
             const isActive = pathname === item.href;
+            const isExchangeActive = item.label === 'Exchange' && pathname === '/exchange';
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onClose}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all mb-0.5 ${
-                  isActive
-                    ? 'bg-primary/12 text-primary border border-primary/15'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/40 border border-transparent'
-                }`}
-              >
-                <item.icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-primary' : ''}`} />
-                <span className="tracking-tight">{item.label}</span>
-                {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_6px_rgba(245,197,24,0.6)]" />}
-              </Link>
+              <div key={item.href}>
+                <Link
+                  href={item.href}
+                  onClick={onClose}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all mb-0.5 ${
+                    isActive
+                      ? 'bg-primary/12 text-primary border border-primary/15'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/40 border border-transparent'
+                  }`}
+                >
+                  <item.icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-primary' : ''}`} />
+                  <span className="tracking-tight">{item.label}</span>
+                  {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_6px_rgba(245,197,24,0.6)]" />}
+                </Link>
+                
+                {/* Exchange subsection quick links */}
+                {isExchangeActive && (
+                  <div className="ml-6 mt-1 space-y-0.5">
+                    {exchangeSubsections.map((sub) => (
+                      <Link
+                        key={sub.href}
+                        href={sub.href}
+                        onClick={onClose}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-primary/8 transition-colors"
+                      >
+                        <sub.icon className="w-3.5 h-3.5 flex-shrink-0 opacity-60" />
+                        <span className="tracking-tight">{sub.label}</span>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
             );
           })}
 

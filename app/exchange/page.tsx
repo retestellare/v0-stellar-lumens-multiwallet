@@ -23,7 +23,7 @@ interface OrderBookData {
   asks: Array<{ price: string; amount: string }>;
 }
 
-type TabType = 'history' | 'my-orders' | 'charts';
+type TabType = 'history' | 'my-orders' | 'charts' | 'filled';
 type TokenModalType = 'selling' | 'buying' | null;
 
 export default function ExchangePage() {
@@ -89,6 +89,17 @@ export default function ExchangePage() {
   // Trustline retry state
   const [pendingTrustlineAsset, setPendingTrustlineAsset] = useState<{ code: string; issuer: string } | null>(null);
   const [showTrustlineAlert, setShowTrustlineAlert] = useState(false);
+
+  // Handle hash-based navigation for quick-access links from sidebar
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash.slice(1); // Remove the #
+      if (hash === 'history') setActiveTab('history');
+      else if (hash === 'orders') setActiveTab('my-orders');
+      else if (hash === 'filled') setActiveTab('my-orders'); // Filled trades shown in my-orders tab
+      else if (hash === 'charts') setActiveTab('charts');
+    }
+  }, []);
 
   useEffect(() => {
     setMounted(true);
@@ -924,7 +935,7 @@ export default function ExchangePage() {
           </div>
 
           {/* Tab Content */}
-          <div className="min-h-96">
+          <div id="history" className="min-h-96">
             {activeTab === 'history' && (
               <TradeHistory
                 trades={trades}
@@ -933,7 +944,9 @@ export default function ExchangePage() {
                 sellingAsset={sellingAsset}
               />
             )}
+          </div>
 
+          <div id="orders" className="min-h-96">
             {activeTab === 'my-orders' && (
               <MyOrders
                 orders={myOrders}
@@ -943,14 +956,18 @@ export default function ExchangePage() {
                 sellingAsset={sellingAsset}
               />
             )}
+          </div>
 
-            {activeTab === 'filled' && (
+          <div id="filled" className="min-h-96">
+            {activeTab === 'my-orders' && (
               <FilledOrders
                 orders={filledOrders}
                 loading={filledLoading}
               />
             )}
+          </div>
 
+          <div id="charts" className="min-h-96">
             {activeTab === 'charts' && (
               <PriceChart
                 data={chartData}
