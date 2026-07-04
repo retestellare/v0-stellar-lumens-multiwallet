@@ -6,6 +6,7 @@ import { useWallet } from '@/lib/wallet-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { WalletSelectorDropdown } from '@/components/wallet-selector-dropdown';
+import { PoolListSkeleton } from '@/components/skeleton-loaders';
 import { 
   getLiquidityPoolDetails, 
   depositToLiquidityPool, 
@@ -461,9 +462,8 @@ export default function PoolsPage() {
               </div>
 
               {loading ? (
-                <div className="p-8 text-center">
-                  <Loader2 className="w-8 h-8 mx-auto animate-spin text-primary" />
-                  <p className="mt-2 text-muted-foreground">Loading LP shares from wallet...</p>
+                <div className="p-4">
+                  <PoolListSkeleton count={3} />
                 </div>
               ) : poolShares.length === 0 ? (
                 <div className="p-8 text-center">

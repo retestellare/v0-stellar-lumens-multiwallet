@@ -13,6 +13,7 @@ import { FilledOrders } from '@/components/filled-orders';
 import { PriceChart } from '@/components/price-chart';
 import { TokenSelectorModal } from '@/components/token-selector-modal';
 import { CompactOrderForm } from '@/components/compact-order-form';
+import { OrderBookSkeleton, ChartSkeleton } from '@/components/skeleton-loaders';
 import { useState, useEffect } from 'react';
 import { ArrowLeft, TrendingUp, ArrowRightLeft, X, Loader2, AlertCircle } from 'lucide-react';
 import { WalletSelectorDropdown } from '@/components/wallet-selector-dropdown';
@@ -935,8 +936,8 @@ export default function ExchangePage() {
           </div>
 
           {/* Tab Content */}
-          <div id="history" className="min-h-96">
-            {activeTab === 'history' && (
+          <div id="history" className="min-h-screen">
+            {mounted && activeTab === 'history' && (
               <TradeHistory
                 trades={trades}
                 loading={tradesLoading}
@@ -944,10 +945,11 @@ export default function ExchangePage() {
                 sellingAsset={sellingAsset}
               />
             )}
+            {tradesLoading && activeTab === 'history' && <OrderBookSkeleton />}
           </div>
 
-          <div id="orders" className="min-h-96">
-            {activeTab === 'my-orders' && (
+          <div id="orders" className="min-h-screen">
+            {mounted && activeTab === 'my-orders' && (
               <MyOrders
                 orders={myOrders}
                 loading={ordersLoading}
@@ -956,19 +958,21 @@ export default function ExchangePage() {
                 sellingAsset={sellingAsset}
               />
             )}
+            {ordersLoading && activeTab === 'my-orders' && <OrderBookSkeleton />}
           </div>
 
-          <div id="filled" className="min-h-96">
-            {activeTab === 'my-orders' && (
+          <div id="filled" className="min-h-screen">
+            {mounted && activeTab === 'my-orders' && (
               <FilledOrders
                 orders={filledOrders}
                 loading={filledLoading}
               />
             )}
+            {filledLoading && activeTab === 'my-orders' && <OrderBookSkeleton />}
           </div>
 
-          <div id="charts" className="min-h-96">
-            {activeTab === 'charts' && (
+          <div id="charts" className="min-h-screen">
+            {mounted && activeTab === 'charts' && (
               <PriceChart
                 data={chartData}
                 loading={chartLoading}
@@ -978,6 +982,7 @@ export default function ExchangePage() {
                 onTimeRangeChange={setChartTimeRange}
               />
             )}
+            {chartLoading && activeTab === 'charts' && <ChartSkeleton />}
           </div>
         </div>
       </div>
