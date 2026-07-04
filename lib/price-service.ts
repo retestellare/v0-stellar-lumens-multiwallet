@@ -16,12 +16,19 @@ interface CachedPrice extends TokenPrice {
 }
 
 // Mapping of Stellar token codes to CoinGecko IDs
+// This includes major Stellar-native tokens and popular assets
 const TOKEN_COINGECKO_IDS: Record<string, string> = {
+  // Major tokens
   'XLM': 'stellar',
   'USDC': 'usd-coin',
   'EURC': 'euro-coin',
+  
+  // Cryptocurrencies
   'BTC': 'bitcoin',
   'ETH': 'ethereum',
+  'DOGE': 'dogecoin',
+  
+  // Stellar ecosystem tokens
   'AQUA': 'aqua',
   'SHX': 'stronghold',
   'VELO': 'velo',
@@ -29,10 +36,33 @@ const TOKEN_COINGECKO_IDS: Record<string, string> = {
   'ARST': 'ars-token',
   'BRLT': 'brl-token',
   'DBTK': 'digibank-token',
-  'DOGE': 'dogecoin',
   'FORGE': 'stellarforge',
   'GRAT': 'grat-token',
   'yXLM': 'ultrastellar-yield-xlm',
+  
+  // StellarForge ecosystem
+  'OOPS': 'oops-token',
+  'SPARK': 'spark-token',
+  'STROLL': 'stroll-token',
+  'WEEDCOIN': 'weedcoin',
+  
+  // USD variants
+  'yUSDC': 'usd-coin',
+  
+  // Stablecoins and wrapped tokens
+  'USDT': 'tether',
+  'BUSD': 'binance-usd',
+  'LUMIN': 'luminex',
+  'CETES': 'cetes-token',
+  
+  // Additional tokens
+  'ETN': 'electroneum',
+  'HOLDING': 'holding-token',
+  'JOHN': 'john-token',
+  'KING': 'king-token',
+  'TERN': 'tern-token',
+  'USDH': 'usdh-token',
+  'MOBI': 'mobi-token',
 };
 
 /**
