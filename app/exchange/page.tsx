@@ -918,9 +918,9 @@ export default function ExchangePage() {
             </div>
           </div>
 
-          {/* Tabs Navigation - History, My Orders, Charts only */}
+          {/* Tabs Navigation */}
           <div className="flex flex-wrap gap-2 border-b border-border pb-4">
-            {tabs.filter(t => t.id !== 'form').map((tab) => (
+            {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
@@ -949,40 +949,67 @@ export default function ExchangePage() {
           </div>
 
           <div id="orders" className="min-h-screen">
-            {mounted && activeTab === 'my-orders' && (
-              <MyOrders
-                orders={myOrders}
-                loading={ordersLoading}
-                onCancelOrder={handleCancelOrder}
-                buyingAsset={buyingAsset}
-                sellingAsset={sellingAsset}
-              />
+            {mounted ? (
+              activeTab === 'my-orders' && (
+                <>
+                  {ordersLoading ? (
+                    <OrderBookSkeleton />
+                  ) : (
+                    <MyOrders
+                      orders={myOrders}
+                      loading={ordersLoading}
+                      onCancelOrder={handleCancelOrder}
+                      buyingAsset={buyingAsset}
+                      sellingAsset={sellingAsset}
+                    />
+                  )}
+                </>
+              )
+            ) : (
+              <OrderBookSkeleton />
             )}
-            {ordersLoading && activeTab === 'my-orders' && <OrderBookSkeleton />}
           </div>
 
           <div id="filled" className="min-h-screen">
-            {mounted && activeTab === 'my-orders' && (
-              <FilledOrders
-                orders={filledOrders}
-                loading={filledLoading}
-              />
+            {mounted ? (
+              activeTab === 'filled' && (
+                <>
+                  {filledLoading ? (
+                    <OrderBookSkeleton />
+                  ) : (
+                    <FilledOrders
+                      orders={filledOrders}
+                      loading={filledLoading}
+                    />
+                  )}
+                </>
+              )
+            ) : (
+              <OrderBookSkeleton />
             )}
-            {filledLoading && activeTab === 'my-orders' && <OrderBookSkeleton />}
           </div>
 
           <div id="charts" className="min-h-screen">
-            {mounted && activeTab === 'charts' && (
-              <PriceChart
-                data={chartData}
-                loading={chartLoading}
-                sellingAsset={sellingAsset}
-                buyingAsset={buyingAsset}
-                timeRange={chartTimeRange}
-                onTimeRangeChange={setChartTimeRange}
-              />
+            {mounted ? (
+              activeTab === 'charts' && (
+                <>
+                  {chartLoading ? (
+                    <ChartSkeleton />
+                  ) : (
+                    <PriceChart
+                      data={chartData}
+                      loading={chartLoading}
+                      sellingAsset={sellingAsset}
+                      buyingAsset={buyingAsset}
+                      timeRange={chartTimeRange}
+                      onTimeRangeChange={setChartTimeRange}
+                    />
+                  )}
+                </>
+              )
+            ) : (
+              <ChartSkeleton />
             )}
-            {chartLoading && activeTab === 'charts' && <ChartSkeleton />}
           </div>
         </div>
       </div>
