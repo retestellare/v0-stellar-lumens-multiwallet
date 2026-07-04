@@ -6,6 +6,7 @@ import { getAccountPayments } from '@/lib/stellar-utils';
 import { useState, useEffect } from 'react';
 import { ArrowLeft, ArrowUpRight, ArrowDownLeft, ExternalLink, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
+import { TransactionListSkeleton } from '@/components/skeleton-loaders';
 
 interface Payment {
   id: string;
@@ -55,7 +56,14 @@ export default function HistoryPage() {
     }
   };
 
-  if (!mounted) return null;
+  if (!mounted) {
+    return (
+      <main className="min-h-dvh bg-background">
+        <Header />
+        <div className="page-container py-6" />
+      </main>
+    );
+  }
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -140,10 +148,7 @@ export default function HistoryPage() {
 
         {/* Payments list */}
         {loading && payments.length === 0 ? (
-          <div className="rounded-xl border border-border bg-card p-14 text-center">
-            <RefreshCw className="w-7 h-7 text-muted-foreground mx-auto mb-3 animate-spin" />
-            <p className="text-sm text-muted-foreground">Loading transactions&hellip;</p>
-          </div>
+          <TransactionListSkeleton count={6} />
         ) : payments.length === 0 ? (
           <div className="rounded-xl border border-border bg-card p-14 text-center">
             <p className="text-sm text-muted-foreground">No transactions yet. Your payments will appear here.</p>
