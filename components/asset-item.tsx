@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { fetchTokenMetadataFromToml, getIssuerTokenIcon } from '@/lib/stellar-utils';
-import { fetchTokenPrice, formatPrice, formatChange } from '@/lib/price-service';
+import { formatPrice, formatChange, type TokenPrice } from '@/lib/price-service';
 import { getTokenPicks } from '@/lib/token-service';
 
 // Known tokens cache for instant metadata lookup
@@ -39,10 +39,11 @@ interface AssetItemProps {
   code: string;
   issuer: string;
   balance: string;
+  priceData?: TokenPrice | null;
   onClick?: () => void;
 }
 
-export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
+export function AssetItem({ code, issuer, balance, priceData, onClick }: AssetItemProps) {
   // Derive the stable cache key for this specific token
   const tokenKey = `${code}_${issuer || ''}`;
 
@@ -52,9 +53,6 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
   const [image, setImage] = useState<string | null>(cachedMeta?.image || null);
   const [domain, setDomain] = useState<string | null>(cachedMeta?.domain || null);
   const [imageError, setImageError] = useState(false);
-  const [price, setPrice] = useState<number | null>(null);
-  const [priceChange, setPriceChange] = useState<number | null>(null);
-  const [priceLoading, setPriceLoading] = useState(false);
 
   // When the token identity changes, reset all derived state immediately
   // so the previous token's image never bleeds into this render
@@ -63,8 +61,6 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
     setImage(meta?.image || null);
     setDomain(meta?.domain || null);
     setImageError(false);
-    setPrice(null);
-    setPriceChange(null);
   }, [tokenKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch image, domain, and price for tokens not in the synchronous cache
@@ -90,14 +86,6 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
         }
       }
 
-      // Fetch price data from CoinGecko
-      setPriceLoading(true);
-      const priceData = await fetchTokenPrice(code);
-      if (!cancelled && priceData) {
-        setPrice(priceData.usd);
-        setPriceChange(priceData.usd_24h_change);
-      }
-      setPriceLoading(false);
     };
 
     fetchMeta();
@@ -106,6 +94,8 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
   }, [tokenKey]); // eslint-disable-line react-hooks/exhaustive-deps
   
   const numBalance = parseFloat(balance);
+  const hasLivePrice = typeof priceData?.usd === 'number';
+  const priceChange = priceData?.usd_24h_change ?? 0;
 
   return (
     <button
@@ -143,22 +133,21 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
             : numBalance.toFixed(numBalance === 0 ? 0 : 4)}
         </p>
         <div className="flex items-center justify-end gap-1.5 mt-0.5">
-          {price && (
+          {hasLivePrice ? (
             <>
-              <p className="text-xs text-muted-foreground">{formatPrice(price)}</p>
-              {priceChange !== null && (
-                <p className={`text-xs font-semibold tabular-nums ${
-                  priceChange >= 0 
-                    ? 'text-emerald-500' 
-                    : 'text-red-500'
-                }`}>
-                  {formatChange(priceChange).text}
-                </p>
-              )}
+              <p className="text-xs text-muted-foreground">{formatPrice(priceData.usd)}</p>
+              <p className={`text-xs font-semibold tabular-nums ${
+                priceChange > 0
+                  ? 'text-emerald-500'
+                  : priceChange < 0
+                    ? 'text-red-500'
+                    : 'text-muted-foreground'
+              }`}>
+                {formatChange(priceChange).text}
+              </p>
             </>
-          )}
-          {!price && !priceLoading && (
-            <p className="text-xs text-muted-foreground">{code}</p>
+          ) : (
+            <p className="text-xs text-muted-foreground">$0.00 (0.00%)</p>
           )}
         </div>
       </div>

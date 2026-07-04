@@ -10,6 +10,7 @@ import { useWallet } from '@/lib/wallet-context';
 import { Plus, Copy, Check } from 'lucide-react';
 import { AssetItem } from '@/components/asset-item';
 import { WalletBalanceSkeleton, AssetListSkeleton } from '@/components/skeleton-loaders';
+import { fetchWalletAssetPrices, type TokenPrice } from '@/lib/price-service';
 
 // Lazy load heavy modals for better initial page performance
 const CreateWalletModal = dynamic(() => import('@/components/create-wallet-modal').then(mod => ({ default: mod.CreateWalletModal })), {
@@ -34,6 +35,7 @@ export default function DashboardPage() {
   const [selectedAsset, setSelectedAsset] = useState<{ code: string; issuer?: string; balance: string; domain?: string; image?: string; name?: string } | null>(null);
   const [mounted, setMounted] = useState(false);
   const [copiedPublicKey, setCopiedPublicKey] = useState(false);
+  const [assetPrices, setAssetPrices] = useState<Record<string, TokenPrice | null>>({});
 
   const handleCloseReceive = useCallback(() => {
     setIsReceiveOpen(false);
@@ -114,10 +116,40 @@ export default function DashboardPage() {
   }, [activeWalletId, updateBalances, mounted]);
 
   const activeWallet = wallets.find(w => w.id === activeWalletId);
+  const assetPriceFetchKey = activeWallet
+    ? `${activeWallet.publicKey}:${activeWallet.balances.map((b: any) => `${b.asset_code || 'XLM'}_${b.asset_issuer || ''}`).join('|')}`
+    : '';
 
   const xlmBalance = activeWallet?.balances.find((b: any) => b.asset_type === 'native');
   const xlmBalanceStr = xlmBalance?.balance || '0';
   const [xlmWhole, xlmDec] = xlmBalanceStr.split('.');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchPrices = async () => {
+      if (!mounted || !activeWallet) {
+        setAssetPrices({});
+        return;
+      }
+
+      const assets = activeWallet.balances.map((balance: any) => ({
+        code: balance.asset_code || 'XLM',
+        issuer: balance.asset_issuer || '',
+      }));
+
+      const prices = await fetchWalletAssetPrices(assets);
+      if (!cancelled) {
+        setAssetPrices(prices);
+      }
+    };
+
+    fetchPrices();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted, activeWalletId, assetPriceFetchKey]);
 
   return (
     <main className="flex flex-col min-h-dvh bg-background">
@@ -216,6 +248,7 @@ export default function DashboardPage() {
                             code={balance.asset_code || 'XLM'}
                             issuer={balance.asset_issuer || ''}
                             balance={balance.balance}
+                            priceData={assetPrices[`${balance.asset_code || 'XLM'}_${balance.asset_issuer || ''}`] ?? null}
                             onClick={() => handleSelectAsset({
                               code: balance.asset_code || 'XLM',
                               issuer: balance.asset_issuer,

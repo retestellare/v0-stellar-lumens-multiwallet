@@ -4,15 +4,22 @@
  */
 
 const COINGECKO_API = 'https://api.coingecko.com/api/v3';
+const HORIZON_API = 'https://horizon.stellar.org';
+const USDC_ISSUER = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN';
 const PRICE_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-interface TokenPrice {
+export interface TokenPrice {
   usd: number;
   usd_24h_change: number;
 }
 
 interface CachedPrice extends TokenPrice {
   cachedAt: number;
+}
+
+export interface WalletAssetPriceInput {
+  code: string;
+  issuer?: string;
 }
 
 // Mapping of Stellar token codes to CoinGecko IDs
@@ -72,6 +79,28 @@ function getCoingeckoId(code: string): string | null {
   return TOKEN_COINGECKO_IDS[code] || null;
 }
 
+function getAssetKey(code: string, issuer = ''): string {
+  return `${code}_${issuer}`;
+}
+
+function getAssetType(code: string, issuer = ''): 'native' | 'credit_alphanum4' | 'credit_alphanum12' {
+  if (code === 'XLM' || !issuer) {
+    return 'native';
+  }
+  return code.length <= 4 ? 'credit_alphanum4' : 'credit_alphanum12';
+}
+
+function buildAssetQuery(prefix: string, code: string, issuer = ''): string {
+  const assetType = getAssetType(code, issuer);
+  const params = new URLSearchParams();
+  params.set(`${prefix}_asset_type`, assetType);
+  if (assetType !== 'native') {
+    params.set(`${prefix}_asset_code`, code);
+    params.set(`${prefix}_asset_issuer`, issuer);
+  }
+  return params.toString();
+}
+
 /**
  * Get cached price from localStorage
  */
@@ -84,6 +113,22 @@ function getCachedPrice(code: string): CachedPrice | null {
       const age = Date.now() - parsed.cachedAt;
       if (age < PRICE_CACHE_DURATION) {
         return parsed;
+      }
+
+      function getCachedAssetPrice(code: string, issuer = ''): CachedPrice | null {
+        try {
+          const key = `asset_price_${getAssetKey(code, issuer)}`;
+          const cached = localStorage.getItem(key);
+          if (cached) {
+            const parsed: CachedPrice = JSON.parse(cached);
+            if (Date.now() - parsed.cachedAt < PRICE_CACHE_DURATION) {
+              return parsed;
+            }
+          }
+        } catch (error) {
+          console.error('[v0] Error reading asset price cache:', error);
+        }
+        return null;
       }
     }
   } catch (error) {
@@ -105,6 +150,119 @@ function cachePrice(code: string, price: TokenPrice): void {
     localStorage.setItem(key, JSON.stringify(cached));
   } catch (error) {
     console.error('[v0] Error caching price:', error);
+  }
+
+  function cacheAssetPrice(code: string, issuer = '', price: TokenPrice): void {
+    try {
+      const key = `asset_price_${getAssetKey(code, issuer)}`;
+      const cached: CachedPrice = {
+        ...price,
+        cachedAt: Date.now(),
+      };
+      localStorage.setItem(key, JSON.stringify(cached));
+    } catch (error) {
+      console.error('[v0] Error caching asset price:', error);
+    }
+  }
+
+  async function fetchAssetUsdPriceFromHorizon(code: string, issuer = ''): Promise<number | null> {
+    if (code === 'USDC' && issuer === USDC_ISSUER) {
+      return 1;
+    }
+
+    const sourceParams = buildAssetQuery('source', code, issuer);
+    const destinationAsset = `credit_alphanum4:USDC:${USDC_ISSUER}`;
+    const url = `${HORIZON_API}/paths/strict-send?${sourceParams}&source_amount=1&destination_assets=${encodeURIComponent(destinationAsset)}`;
+
+    try {
+      const response = await fetch(url, { cache: 'no-store' });
+      if (!response.ok) {
+        return null;
+      }
+
+      const data = await response.json();
+      const bestPath = data?._embedded?.records?.[0];
+      if (!bestPath?.destination_amount) {
+        return null;
+      }
+
+      const usdPrice = parseFloat(bestPath.destination_amount);
+      return Number.isFinite(usdPrice) ? usdPrice : null;
+    } catch (error) {
+      console.error(`[v0] Error fetching Horizon USD path for ${code}:`, error);
+      return null;
+    }
+  }
+
+  async function fetchAsset24hChangeFromHorizon(code: string, issuer = ''): Promise<number> {
+    if (code === 'USDC' && issuer === USDC_ISSUER) {
+      return 0;
+    }
+
+    const now = Date.now();
+    const startTime = now - 24 * 60 * 60 * 1000;
+    const baseParams = buildAssetQuery('base', code, issuer);
+    const counterParams = new URLSearchParams({
+      counter_asset_type: 'credit_alphanum4',
+      counter_asset_code: 'USDC',
+      counter_asset_issuer: USDC_ISSUER,
+    }).toString();
+    const url = `${HORIZON_API}/trade_aggregations?${baseParams}&${counterParams}&resolution=3600000&start_time=${startTime}&end_time=${now}&order=asc&limit=24`;
+
+    try {
+      const response = await fetch(url, { cache: 'no-store' });
+      if (!response.ok) {
+        return 0;
+      }
+
+      const data = await response.json();
+      const records = data?._embedded?.records || [];
+      if (!Array.isArray(records) || records.length < 1) {
+        return 0;
+      }
+
+      const first = records[0];
+      const last = records[records.length - 1];
+      const open = parseFloat(first.open);
+      const close = parseFloat(last.close);
+      if (!Number.isFinite(open) || !Number.isFinite(close) || open <= 0) {
+        return 0;
+      }
+
+      const change = ((close - open) / open) * 100;
+      return Number.isFinite(change) ? change : 0;
+    } catch (error) {
+      console.error(`[v0] Error fetching 24h change for ${code}:`, error);
+      return 0;
+    }
+  }
+
+  export async function fetchAssetTokenPrice(code: string, issuer = ''): Promise<TokenPrice | null> {
+    const cached = getCachedAssetPrice(code, issuer);
+    if (cached) {
+      return cached;
+    }
+
+    const usd = await fetchAssetUsdPriceFromHorizon(code, issuer);
+    if (usd === null) {
+      return null;
+    }
+
+    const usd_24h_change = await fetchAsset24hChangeFromHorizon(code, issuer);
+    const price: TokenPrice = { usd, usd_24h_change };
+    cacheAssetPrice(code, issuer, price);
+    return price;
+  }
+
+  export async function fetchWalletAssetPrices(assets: WalletAssetPriceInput[]): Promise<Record<string, TokenPrice | null>> {
+    const entries = await Promise.all(
+      assets.map(async ({ code, issuer = '' }) => {
+        const key = getAssetKey(code, issuer);
+        const price = await fetchAssetTokenPrice(code, issuer);
+        return [key, price] as const;
+      })
+    );
+    return Object.fromEntries(entries);
   }
 }
 
