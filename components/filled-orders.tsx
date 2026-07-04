@@ -35,11 +35,6 @@ function formatSmartNumber(value: number, maxDecimals = 7): string {
   return value.toFixed(maxDecimals);
 }
 
-// Helper function to determine if an asset is a primary/quote asset
-function isPrimaryAsset(assetCode: string): boolean {
-  const primaryAssets = ['XLM', 'USD', 'USDC', 'USDT', 'EUR', 'GBP', 'JPY'];
-  return primaryAssets.includes(assetCode.toUpperCase());
-}
 
 export function FilledOrders({ orders, loading }: FilledOrdersProps) {
   const [reversedOrderIds, setReversedOrderIds] = useState<Set<string>>(new Set());
@@ -104,46 +99,33 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
           {orders.map((order) => {
             const baseAmt = parseFloat(order.baseAmount);
             const counterAmt = parseFloat(order.counterAmount);
-            
-            // Determine normalization: primary asset should always be quote (denominator)
-            const basePrimary = isPrimaryAsset(order.baseCode);
-            const counterPrimary = isPrimaryAsset(order.counterCode);
-            
-            // If base is primary and counter is secondary, or both/neither are primary, keep as-is
-            // If counter is primary and base is secondary, swap for display
-            const shouldSwap = counterPrimary && !basePrimary;
-            
-            // Normalized values for consistent display
-            const displayBaseCode = shouldSwap ? order.counterCode : order.baseCode;
-            const displayCounterCode = shouldSwap ? order.baseCode : order.counterCode;
-            const displayBaseAmount = shouldSwap ? counterAmt : baseAmt;
-            const displayCounterAmount = shouldSwap ? baseAmt : counterAmt;
-            
-            // Trading pair display (normalized: base / quote)
-            const tradingPair = `${displayBaseCode} / ${displayCounterCode}`;
-            
-            // Price calculation: Price = Quote / Base
-            const displayPrice = displayBaseAmount > 0 ? (displayCounterAmount / displayBaseAmount) : 0;
-            
-            // Determine if user was a buyer based on NORMALIZED view
-            // In normalized view: if user bought base (received more base than paid), it's a BUY
-            // If shouldSwap, we need to invert the isBuyer logic
-            const userWasBuyer = shouldSwap ? !order.isBuyer : order.isBuyer;
-            
-            // What was sold and received (in normalized terms)
-            const soldAsset = userWasBuyer ? displayCounterCode : displayBaseCode;
-            const soldAmount = userWasBuyer ? displayCounterAmount : displayBaseAmount;
-            const receivedAsset = userWasBuyer ? displayBaseCode : displayCounterCode;
-            const receivedAmount = userWasBuyer ? displayBaseAmount : displayCounterAmount;
-            
-            // Calculate display values based on reversed state
+
+            // isBuyer = true  → user received base asset, spent counter asset (BUY base)
+            // isBuyer = false → user spent base asset, received counter asset (SELL base)
+            // This is sourced directly from Horizon and already accounts for whether
+            // the user is the base_account or counter_account on the trade.
+            const userWasBuyer = order.isBuyer;
+
+            // Sold = what the user spent (outgoing, red, minus)
+            const soldAsset = userWasBuyer ? order.counterCode : order.baseCode;
+            const soldAmount = userWasBuyer ? counterAmt : baseAmt;
+
+            // Received = what the user got (incoming, green, plus)
+            const receivedAsset = userWasBuyer ? order.baseCode : order.counterCode;
+            const receivedAmount = userWasBuyer ? baseAmt : counterAmt;
+
+            // Trading pair: sold / received so the label reads naturally (e.g. SELL XLM / METJ)
+            const tradingPair = `${soldAsset} / ${receivedAsset}`;
+
+            // Price: how many received-asset units per 1 sold-asset unit
+            const displayPrice = soldAmount > 0 ? (receivedAmount / soldAmount) : 0;
+
+            // Reverse-view toggle: flip the pair and invert the price
             const isReversed = reversedOrderIds.has(order.id);
-            
-            // Reversed view: flip the pair and invert the price
-            const finalDisplayBaseCode = isReversed ? displayCounterCode : displayBaseCode;
-            const finalDisplayCounterCode = isReversed ? displayBaseCode : displayCounterCode;
+            const finalTradingPair = isReversed ? `${receivedAsset} / ${soldAsset}` : tradingPair;
             const finalDisplayPrice = isReversed && displayPrice > 0 ? (1 / displayPrice) : displayPrice;
-            const finalTradingPair = `${finalDisplayBaseCode} / ${finalDisplayCounterCode}`;
+            const finalDisplayBaseCode = isReversed ? receivedAsset : soldAsset;
+            const finalDisplayCounterCode = isReversed ? soldAsset : receivedAsset;
             
             return (
               <div
@@ -197,9 +179,9 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
                 
                 {/* Amount Flow - Stacked on mobile */}
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-2 border-t border-border/30">
-                  {/* You Sold */}
+                  {/* You Sold — outgoing: red, arrow points DOWN/OUT */}
                   <div className="flex items-center gap-2">
-                    <ArrowUpRight className="w-4 h-4 text-destructive flex-shrink-0" />
+                    <ArrowDownRight className="w-4 h-4 text-destructive flex-shrink-0" />
                     <div className="flex items-baseline gap-1.5">
                       <span className="text-base sm:text-lg font-bold font-mono text-destructive">
                         -{formatSmartNumber(soldAmount)}
@@ -209,9 +191,9 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
                     <span className="text-[10px] text-muted-foreground ml-1">Sold</span>
                   </div>
                   
-                  {/* You Received */}
+                  {/* You Received — incoming: green, arrow points UP/IN */}
                   <div className="flex items-center gap-2 sm:justify-end">
-                    <ArrowDownRight className="w-4 h-4 text-green-500 flex-shrink-0" />
+                    <ArrowUpRight className="w-4 h-4 text-green-500 flex-shrink-0" />
                     <div className="flex items-baseline gap-1.5">
                       <span className="text-base sm:text-lg font-bold font-mono text-green-500">
                         +{formatSmartNumber(receivedAmount)}
