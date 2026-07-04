@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { fetchTokenMetadataFromToml, getIssuerTokenIcon } from '@/lib/stellar-utils';
+import { fetchTokenPrice, formatPrice, formatChange } from '@/lib/price-service';
 import { getTokenPicks } from '@/lib/token-service';
 
 // Known tokens cache for instant metadata lookup
@@ -51,6 +52,9 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
   const [image, setImage] = useState<string | null>(cachedMeta?.image || null);
   const [domain, setDomain] = useState<string | null>(cachedMeta?.domain || null);
   const [imageError, setImageError] = useState(false);
+  const [price, setPrice] = useState<number | null>(null);
+  const [priceChange, setPriceChange] = useState<number | null>(null);
+  const [priceLoading, setPriceLoading] = useState(false);
 
   // When the token identity changes, reset all derived state immediately
   // so the previous token's image never bleeds into this render
@@ -59,9 +63,11 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
     setImage(meta?.image || null);
     setDomain(meta?.domain || null);
     setImageError(false);
+    setPrice(null);
+    setPriceChange(null);
   }, [tokenKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch image and domain for tokens not in the synchronous cache
+  // Fetch image, domain, and price for tokens not in the synchronous cache
   useEffect(() => {
     let cancelled = false;
 
@@ -83,6 +89,15 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
           setDomain(tomlMeta.domain);
         }
       }
+
+      // Fetch price data from CoinGecko
+      setPriceLoading(true);
+      const priceData = await fetchTokenPrice(code);
+      if (!cancelled && priceData) {
+        setPrice(priceData.usd);
+        setPriceChange(priceData.usd_24h_change);
+      }
+      setPriceLoading(false);
     };
 
     fetchMeta();
@@ -120,14 +135,32 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
         </p>
       </div>
 
-      {/* Balance */}
+      {/* Balance and Price */}
       <div className="text-right flex-shrink-0">
         <p className="text-sm font-semibold text-foreground num tabular-nums">
           {numBalance >= 1000
             ? numBalance.toLocaleString('en-US', { maximumFractionDigits: 2 })
             : numBalance.toFixed(numBalance === 0 ? 0 : 4)}
         </p>
-        <p className="text-xs text-muted-foreground">{code}</p>
+        <div className="flex items-center justify-end gap-1.5 mt-0.5">
+          {price && (
+            <>
+              <p className="text-xs text-muted-foreground">{formatPrice(price)}</p>
+              {priceChange !== null && (
+                <p className={`text-xs font-semibold tabular-nums ${
+                  priceChange >= 0 
+                    ? 'text-emerald-500' 
+                    : 'text-red-500'
+                }`}>
+                  {formatChange(priceChange).text}
+                </p>
+              )}
+            </>
+          )}
+          {!price && !priceLoading && (
+            <p className="text-xs text-muted-foreground">{code}</p>
+          )}
+        </div>
       </div>
     </button>
   );
