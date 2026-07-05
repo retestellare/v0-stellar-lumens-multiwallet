@@ -1,5 +1,9 @@
 'use client';
 
+import React from 'react';
+import { AlertCircle, RefreshCw, WifiOff, PackageOpen } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+
 /**
  * Skeleton loaders to prevent Cumulative Layout Shift (CLS) during content loading
  * These components maintain consistent heights and spacing while data loads
@@ -131,4 +135,100 @@ export function SkeletonWrapper({
 }) {
   if (isLoading) return <>{skeleton}</>;
   return <>{children}</>;
+}
+
+// ─── Error & Empty States ─────────────────────────────────────────────────────
+
+/**
+ * Generic error fallback — shows an icon, a message and an optional retry button.
+ */
+export function ErrorFallback({
+  message = 'Something went wrong.',
+  detail,
+  onRetry,
+}: {
+  message?: string;
+  detail?: string;
+  onRetry?: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-8 px-4 text-center rounded-xl border border-destructive/30 bg-destructive/5">
+      <AlertCircle className="w-8 h-8 text-destructive/70 flex-shrink-0" />
+      <div>
+        <p className="text-sm font-semibold text-destructive">{message}</p>
+        {detail && <p className="text-xs text-muted-foreground mt-1">{detail}</p>}
+      </div>
+      {onRetry && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onRetry}
+          className="gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          Retry
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Network / connectivity error state.
+ */
+export function NetworkErrorState({ onRetry }: { onRetry?: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-8 px-4 text-center rounded-xl border border-border/50 bg-muted/20">
+      <WifiOff className="w-8 h-8 text-muted-foreground/60 flex-shrink-0" />
+      <div>
+        <p className="text-sm font-semibold text-foreground">No connection</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          Check your internet connection and try again.
+        </p>
+      </div>
+      {onRetry && (
+        <Button size="sm" variant="outline" onClick={onRetry} className="gap-1.5">
+          <RefreshCw className="w-3.5 h-3.5" />
+          Try again
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Empty state — shown when data loaded successfully but the list is empty.
+ */
+export function EmptyState({
+  message = 'Nothing here yet.',
+  detail,
+  action,
+}: {
+  message?: string;
+  detail?: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-8 px-4 text-center">
+      <PackageOpen className="w-8 h-8 text-muted-foreground/50 flex-shrink-0" />
+      <div>
+        <p className="text-sm font-semibold text-foreground">{message}</p>
+        {detail && <p className="text-xs text-muted-foreground mt-1">{detail}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+/**
+ * Inline loading indicator — a subtle pulsing dot useful inside table cells
+ * or next to price values while data is loading.
+ */
+export function InlineLoader({ className = '' }: { className?: string }) {
+  return (
+    <span
+      className={`inline-block w-2 h-2 rounded-full bg-muted-foreground/40 animate-pulse ${className}`}
+      aria-label="Loading…"
+    />
+  );
 }
