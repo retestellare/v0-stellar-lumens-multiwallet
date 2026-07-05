@@ -15,6 +15,7 @@ import { TokenSelectorModal } from '@/components/token-selector-modal';
 import { CompactOrderForm } from '@/components/compact-order-form';
 import { OrderBookSkeleton, ChartSkeleton } from '@/components/skeleton-loaders';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, TrendingUp, ArrowRightLeft, X, Loader2, AlertCircle, History, ClipboardList, CheckCircle2, BarChart3 } from 'lucide-react';
 import { WalletSelectorDropdown } from '@/components/wallet-selector-dropdown';
 import Link from 'next/link';
@@ -91,16 +92,32 @@ export default function ExchangePage() {
   const [pendingTrustlineAsset, setPendingTrustlineAsset] = useState<{ code: string; issuer: string } | null>(null);
   const [showTrustlineAlert, setShowTrustlineAlert] = useState(false);
 
+  const router = useRouter();
+
   // Handle hash-based navigation for quick-access links from sidebar
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const hash = window.location.hash.slice(1); // Remove the #
-      if (hash === 'history') setActiveTab('history');
-      else if (hash === 'orders') setActiveTab('my-orders');
-      else if (hash === 'filled') setActiveTab('filled');
-      else if (hash === 'charts') setActiveTab('charts');
-    }
-  }, []);
+    const handleHashChange = () => {
+      if (typeof window !== 'undefined') {
+        const hash = window.location.hash.slice(1); // Remove the #
+        if (hash === 'history') setActiveTab('history');
+        else if (hash === 'orders') setActiveTab('my-orders');
+        else if (hash === 'filled') setActiveTab('filled');
+        else if (hash === 'charts') setActiveTab('charts');
+      }
+    };
+
+    // Handle initial hash on mount/ready
+    // Use a small delay to ensure the router is ready and hash is set
+    const timer = setTimeout(handleHashChange, 100);
+
+    // Listen for hash changes when clicking menu links
+    window.addEventListener('hashchange', handleHashChange);
+    
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('hashchange', handleHashChange);
+    };
+  }, [router]);
 
   useEffect(() => {
     setMounted(true);
