@@ -90,37 +90,29 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
       </div>
 
       {orders.length === 0 ? (
-        <div className="p-8 text-center text-muted-foreground">
-          <CheckCircle2 className="w-10 h-10 mx-auto mb-2 opacity-30" />
-          <p className="text-sm">No completed trades yet</p>
+        <div className="p-12 text-center">
+          <div className="flex justify-center mb-3">
+            <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+              <CheckCircle2 className="w-6 h-6 text-muted-foreground" />
+            </div>
+          </div>
+          <p className="text-sm font-medium text-muted-foreground">No completed trades yet</p>
+          <p className="text-xs text-muted-foreground/60 mt-1">Your filled orders will appear here</p>
         </div>
       ) : (
-        <div className="divide-y divide-border/30 max-h-[600px] overflow-y-auto">
+        <div className="space-y-2 p-3 sm:p-4 max-h-[700px] overflow-y-auto">
           {orders.map((order) => {
             const baseAmt = parseFloat(order.baseAmount);
             const counterAmt = parseFloat(order.counterAmount);
 
-            // isBuyer = true  → user received base asset, spent counter asset (BUY base)
-            // isBuyer = false → user spent base asset, received counter asset (SELL base)
-            // This is sourced directly from Horizon and already accounts for whether
-            // the user is the base_account or counter_account on the trade.
             const userWasBuyer = order.isBuyer;
-
-            // Sold = what the user spent (outgoing, red, minus)
             const soldAsset = userWasBuyer ? order.counterCode : order.baseCode;
             const soldAmount = userWasBuyer ? counterAmt : baseAmt;
-
-            // Received = what the user got (incoming, green, plus)
             const receivedAsset = userWasBuyer ? order.baseCode : order.counterCode;
             const receivedAmount = userWasBuyer ? baseAmt : counterAmt;
-
-            // Trading pair: sold / received so the label reads naturally (e.g. SELL XLM / METJ)
             const tradingPair = `${soldAsset} / ${receivedAsset}`;
-
-            // Price: how many received-asset units per 1 sold-asset unit
             const displayPrice = soldAmount > 0 ? (receivedAmount / soldAmount) : 0;
 
-            // Reverse-view toggle: flip the pair and invert the price
             const isReversed = reversedOrderIds.has(order.id);
             const finalTradingPair = isReversed ? `${receivedAsset} / ${soldAsset}` : tradingPair;
             const finalDisplayPrice = isReversed && displayPrice > 0 ? (1 / displayPrice) : displayPrice;
@@ -130,77 +122,87 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
             return (
               <div
                 key={order.id}
-                className={`p-3 sm:p-4 ${
-                  userWasBuyer ? 'border-l-4 border-l-primary' : 'border-l-4 border-l-destructive'
-                } hover:bg-muted/30 transition-colors`}
+                className="rounded-lg border border-border/50 bg-gradient-to-br from-background to-muted/20 overflow-hidden hover:border-border/80 hover:shadow-lg transition-all duration-200 group"
               >
-                {/* Header Row: Trading Pair + Badge + Time */}
-                <div className="flex items-start justify-between mb-2 gap-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                      userWasBuyer 
-                        ? 'bg-primary/20 text-primary' 
-                        : 'bg-destructive/20 text-destructive'
-                    }`}>
-                      {userWasBuyer ? 'BUY' : 'SELL'}
-                    </span>
-                    <span className="text-sm font-bold text-foreground">{finalTradingPair}</span>
-                    {order.isLPTrade && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400">
-                        LP
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1 text-[10px] text-muted-foreground whitespace-nowrap">
-                    <Clock className="w-3 h-3 flex-shrink-0" />
-                    <span className="hidden sm:inline">{formatTime(order.timestamp)}</span>
-                    <span className="sm:hidden">{new Date(order.timestamp).toLocaleDateString()}</span>
-                  </div>
-                </div>
+                {/* Top Accent Bar */}
+                <div className={`h-1 ${userWasBuyer ? 'bg-primary' : 'bg-destructive'}`} />
                 
-                {/* Price Per Unit with Reverse View Button */}
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <div className="text-xs">
-                    <span className="text-muted-foreground">Price: </span>
-                    <span className="font-mono font-semibold text-foreground">
-                      {formatSmartNumber(finalDisplayPrice)} {finalDisplayCounterCode}/{finalDisplayBaseCode}
-                    </span>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => toggleReversed(order.id)}
-                    className="h-6 w-6 p-0 rounded-full hover:bg-primary/20 text-primary flex-shrink-0"
-                    title="Reverse view"
-                  >
-                    <RotateCw className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-                
-                {/* Amount Flow - Stacked on mobile */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-2 border-t border-border/30">
-                  {/* You Sold — outgoing: red, arrow points DOWN/OUT */}
-                  <div className="flex items-center gap-2">
-                    <ArrowDownRight className="w-4 h-4 text-destructive flex-shrink-0" />
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-base sm:text-lg font-bold font-mono text-destructive">
-                        -{formatSmartNumber(soldAmount)}
+                <div className="p-4 space-y-3">
+                  {/* Header Row: Badge + Trading Pair + Time */}
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-bold px-2.5 py-1 rounded-md ${
+                        userWasBuyer 
+                          ? 'bg-primary/15 text-primary border border-primary/30' 
+                          : 'bg-destructive/15 text-destructive border border-destructive/30'
+                      }`}>
+                        {userWasBuyer ? 'BUY' : 'SELL'}
                       </span>
-                      <span className="text-xs font-medium text-muted-foreground">{soldAsset}</span>
+                      <span className="text-base font-bold text-foreground group-hover:text-primary transition-colors">{finalTradingPair}</span>
+                      {order.isLPTrade && (
+                        <span className="text-xs px-2 py-0.5 rounded-md bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">
+                          Liquidity Pool
+                        </span>
+                      )}
                     </div>
-                    <span className="text-[10px] text-muted-foreground ml-1">Sold</span>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline font-medium">{formatTime(order.timestamp)}</span>
+                      <span className="sm:hidden font-medium">{new Date(order.timestamp).toLocaleDateString()}</span>
+                    </div>
                   </div>
                   
-                  {/* You Received — incoming: green, arrow points UP/IN */}
-                  <div className="flex items-center gap-2 sm:justify-end">
-                    <ArrowUpRight className="w-4 h-4 text-green-500 flex-shrink-0" />
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-base sm:text-lg font-bold font-mono text-green-500">
-                        +{formatSmartNumber(receivedAmount)}
-                      </span>
-                      <span className="text-xs font-medium text-muted-foreground">{receivedAsset}</span>
+                  {/* Price Section with Reverse Button */}
+                  <div className="flex items-center justify-between gap-3 p-2.5 rounded-md bg-background/50 border border-border/30">
+                    <div className="flex-1">
+                      <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">Exchange Rate</p>
+                      <p className="text-sm font-mono font-semibold text-foreground mt-0.5">
+                        {formatSmartNumber(finalDisplayPrice)}
+                      </p>
+                      <p className="text-xs text-muted-foreground/70 mt-1">
+                        {finalDisplayCounterCode} per {finalDisplayBaseCode}
+                      </p>
                     </div>
-                    <span className="text-[10px] text-muted-foreground ml-1">Received</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => toggleReversed(order.id)}
+                      className="h-8 w-8 p-0 rounded-full hover:bg-primary/20 text-primary hover:text-primary flex-shrink-0 transition-colors"
+                      title="Reverse pair view"
+                    >
+                      <RotateCw className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  
+                  {/* Amount Flow Section */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                    {/* Sold */}
+                    <div className="flex items-start gap-2.5 p-2.5 rounded-md bg-destructive/5 border border-destructive/20">
+                      <div className="flex-shrink-0 w-7 h-7 rounded-full bg-destructive/15 flex items-center justify-center mt-0.5">
+                        <ArrowDownRight className="w-3.5 h-3.5 text-destructive" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">Sold</p>
+                        <p className="text-sm font-bold font-mono text-destructive mt-0.5 truncate">
+                          -{formatSmartNumber(soldAmount)}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">{soldAsset}</p>
+                      </div>
+                    </div>
+                    
+                    {/* Received */}
+                    <div className="flex items-start gap-2.5 p-2.5 rounded-md bg-green-500/5 border border-green-500/20">
+                      <div className="flex-shrink-0 w-7 h-7 rounded-full bg-green-500/15 flex items-center justify-center mt-0.5">
+                        <ArrowUpRight className="w-3.5 h-3.5 text-green-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">Received</p>
+                        <p className="text-sm font-bold font-mono text-green-500 mt-0.5 truncate">
+                          +{formatSmartNumber(receivedAmount)}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">{receivedAsset}</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
