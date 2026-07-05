@@ -97,7 +97,7 @@ export default function ExchangePage() {
       const hash = window.location.hash.slice(1); // Remove the #
       if (hash === 'history') setActiveTab('history');
       else if (hash === 'orders') setActiveTab('my-orders');
-      else if (hash === 'filled') setActiveTab('my-orders'); // Filled trades shown in my-orders tab
+      else if (hash === 'filled') setActiveTab('filled');
       else if (hash === 'charts') setActiveTab('charts');
     }
   }, []);
