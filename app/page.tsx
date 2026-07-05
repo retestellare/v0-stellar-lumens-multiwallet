@@ -10,7 +10,7 @@ import { useWallet } from '@/lib/wallet-context';
 import { Plus, Copy, Check } from 'lucide-react';
 import { AssetItem } from '@/components/asset-item';
 import { WalletBalanceSkeleton, AssetListSkeleton } from '@/components/skeleton-loaders';
-import { getTokenPicks } from '@/lib/token-service';
+import { useStellarStream } from '@/hooks/use-stellar-stream';
 
 // Lazy load heavy modals for better initial page performance
 const CreateWalletModal = dynamic(() => import('@/components/create-wallet-modal').then(mod => ({ default: mod.CreateWalletModal })), {
@@ -140,18 +140,25 @@ export default function DashboardPage() {
     setMounted(true);
   }, []);
 
+  // Fallback polling (every 60s) for environments where SSE is unavailable.
   useEffect(() => {
-    if (activeWalletId && mounted) {
-      const interval = setInterval(() => {
-        updateBalances(activeWalletId);
-      }, 30000); // Update every 30 seconds
-      
+    if (!activeWalletId || !mounted) return;
+    updateBalances(activeWalletId);
+    const interval = setInterval(() => {
       updateBalances(activeWalletId);
-      return () => clearInterval(interval);
-    }
+    }, 60_000);
+    return () => clearInterval(interval);
   }, [activeWalletId, updateBalances, mounted]);
 
+  // Real-time balance streaming — fires updateBalances immediately when a
+  // payment lands on the active wallet instead of waiting for the next poll.
   const activeWallet = wallets.find(w => w.id === activeWalletId);
+  useStellarStream({
+    publicKey: mounted && activeWallet ? activeWallet.publicKey : null,
+    onPayment: useCallback(() => {
+      if (activeWalletId) updateBalances(activeWalletId);
+    }, [activeWalletId, updateBalances]),
+  });
 
   const xlmBalance = activeWallet?.balances.find((b: any) => b.asset_type === 'native');
   const xlmBalanceStr = xlmBalance?.balance || '0';

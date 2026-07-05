@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { fetchTokenMetadataFromToml, getIssuerTokenIcon } from '@/lib/stellar-utils';
 import { fetchTokenPrice, formatPrice, formatChange } from '@/lib/price-service';
 import { getTokenPicks } from '@/lib/token-service';
+import { formatBalanceCompact, balanceToUsd } from '@/lib/math';
+import { InlineLoader } from '@/components/skeleton-loaders';
 
 // Known tokens cache for instant metadata lookup
 const KNOWN_TOKEN_METADATA: Record<string, { name: string; domain: string; image: string }> = {
@@ -56,6 +58,14 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
   const [priceChange, setPriceChange] = useState<number | null>(null);
   const [priceLoading, setPriceLoading] = useState(false);
 
+  // Mount animation: start invisible and slide in
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    // Defer one frame so the CSS transition fires on mount
+    const id = requestAnimationFrame(() => setVisible(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
   // When the token identity changes, reset all derived state immediately
   // so the previous token's image never bleeds into this render
   useEffect(() => {
@@ -97,20 +107,24 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
         setPrice(priceData.usd);
         setPriceChange(priceData.usd_24h_change);
       }
-      setPriceLoading(false);
+      if (!cancelled) setPriceLoading(false);
     };
 
     fetchMeta();
 
     return () => { cancelled = true; };
   }, [tokenKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  
-  const numBalance = parseFloat(balance);
+
+  // Use BigNumber for precise balance formatting
+  const displayBalance = formatBalanceCompact(balance);
+  // Show USD value when price is available
+  const usdValue = price !== null ? balanceToUsd(balance, price) : null;
 
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-transparent hover:border-border/50 hover:bg-muted/30 active:bg-muted/50 transition-all cursor-pointer text-left group"
+      style={{ opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(4px)' }}
+      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-transparent hover:border-border/50 hover:bg-muted/30 active:bg-muted/50 transition-all duration-200 cursor-pointer text-left group"
     >
       {/* Token Icon */}
       <div className="w-9 h-9 rounded-full bg-muted/60 flex items-center justify-center overflow-hidden border border-border/50 flex-shrink-0 shadow-sm">
@@ -138,18 +152,17 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
       {/* Balance and Price */}
       <div className="text-right flex-shrink-0">
         <p className="text-sm font-semibold text-foreground num tabular-nums">
-          {numBalance >= 1000
-            ? numBalance.toLocaleString('en-US', { maximumFractionDigits: 2 })
-            : numBalance.toFixed(numBalance === 0 ? 0 : 4)}
+          {displayBalance}
         </p>
         <div className="flex items-center justify-end gap-1.5 mt-0.5">
-          {price && (
+          {priceLoading && <InlineLoader />}
+          {!priceLoading && usdValue && (
             <>
-              <p className="text-xs text-muted-foreground">{formatPrice(price)}</p>
+              <p className="text-xs text-muted-foreground">{usdValue}</p>
               {priceChange !== null && (
                 <p className={`text-xs font-semibold tabular-nums ${
-                  priceChange >= 0 
-                    ? 'text-emerald-500' 
+                  priceChange >= 0
+                    ? 'text-emerald-500'
                     : 'text-red-500'
                 }`}>
                   {formatChange(priceChange).text}
@@ -157,7 +170,7 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
               )}
             </>
           )}
-          {!price && !priceLoading && (
+          {!priceLoading && !usdValue && (
             <p className="text-xs text-muted-foreground">{code}</p>
           )}
         </div>
