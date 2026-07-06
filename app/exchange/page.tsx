@@ -786,22 +786,27 @@ export default function ExchangePage() {
   ] as const;
 
   return (
-    <main className="min-h-dvh bg-background">
-      <Header />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center justify-between mb-8">
-          <Link href="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
-            <ArrowLeft className="w-4 h-4" />
-            Back to Dashboard
-          </Link>
-          <WalletSelectorDropdown />
-        </div>
+    <main className="h-[100dvh] w-full overflow-hidden overscroll-x-none bg-[#060814] select-none flex flex-col">
+      <div className="sticky top-0 z-50 shrink-0">
+        <Header />
+      </div>
+      <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+          <div className="sticky top-0 z-40 mb-5 flex items-center justify-between rounded-xl border border-zinc-800/60 bg-[#060814]/95 px-3 py-2 backdrop-blur-md">
+            <Link href="/" className="flex items-center gap-2 text-zinc-400 hover:text-zinc-100 transition-all duration-200 ease-in-out active:scale-[0.98]">
+              <ArrowLeft className="h-4 w-4 shrink-0" />
+              Back to Dashboard
+            </Link>
+            <div className="shrink-0">
+              <WalletSelectorDropdown />
+            </div>
+          </div>
 
-        <div className="space-y-6">
+          <div className="space-y-4 pb-6">
           {/* Header */}
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-3">
-              <TrendingUp className="w-8 h-8 text-primary" />
+              <TrendingUp className="w-8 h-8 text-primary shrink-0" />
               <div>
                 <h1 className="text-3xl sm:text-4xl font-bold text-foreground">Stellar DEX</h1>
                 <p className="text-muted-foreground text-sm">Trade on the Stellar Decentralized Exchange</p>
@@ -821,13 +826,13 @@ export default function ExchangePage() {
 
           {/* Token Pair Selector - Integrated Oval Design */}
           <div className="flex flex-col items-center gap-4">
-            <div className="glow-border rounded-full px-8 py-6 sm:px-12 sm:py-8 flex items-center justify-center gap-4 sm:gap-8 border-2">
+            <div className="rounded-[2rem] border border-zinc-800/60 bg-zinc-900/20 px-8 py-6 sm:px-12 sm:py-8 flex items-center justify-center gap-4 sm:gap-8 backdrop-blur-md">
               {/* Selling Token */}
               <button
                 onClick={() => setTokenModal('selling')}
-                className="flex flex-col items-center gap-2 hover:opacity-80 transition-opacity"
+                className="flex flex-col items-center gap-2 transition-all duration-200 ease-in-out hover:opacity-90 active:scale-[0.98]"
               >
-                <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-primary/40 to-primary/20 flex items-center justify-center border border-primary/50 hover:border-primary/80 transition-colors overflow-hidden">
+                <div className="w-12 h-12 sm:w-16 sm:h-16 shrink-0 rounded-full bg-gradient-to-br from-primary/40 to-primary/20 flex items-center justify-center border border-primary/50 hover:border-primary/80 transition-colors overflow-hidden">
                   {sellingMeta.image ? (
                     <img src={sellingMeta.image} alt={sellingAsset} className="w-full h-full object-cover" onError={(e) => e.currentTarget.style.display = 'none'} />
                   ) : (
@@ -843,17 +848,17 @@ export default function ExchangePage() {
               {/* Swap Button */}
               <button
                 onClick={handleSwapPair}
-                className="p-2 sm:p-3 rounded-full border border-primary/40 hover:border-primary/60 hover:bg-primary/20 transition-all"
+                className="p-2 sm:p-3 rounded-full border border-primary/40 hover:border-primary/60 hover:bg-primary/20 transition-all duration-200 ease-in-out active:scale-[0.98]"
               >
-                <ArrowRightLeft className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
+                <ArrowRightLeft className="w-5 h-5 sm:w-6 sm:h-6 text-primary shrink-0" />
               </button>
 
               {/* Buying Token */}
               <button
                 onClick={() => setTokenModal('buying')}
-                className="flex flex-col items-center gap-2 hover:opacity-80 transition-opacity"
+                className="flex flex-col items-center gap-2 transition-all duration-200 ease-in-out hover:opacity-90 active:scale-[0.98]"
               >
-                <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-accent/40 to-accent/20 flex items-center justify-center border border-accent/50 hover:border-accent/80 transition-colors overflow-hidden">
+                <div className="w-12 h-12 sm:w-16 sm:h-16 shrink-0 rounded-full bg-gradient-to-br from-accent/40 to-accent/20 flex items-center justify-center border border-accent/50 hover:border-accent/80 transition-colors overflow-hidden">
                   {buyingMeta.image ? (
                     <img src={buyingMeta.image} alt={buyingAsset} className="w-full h-full object-cover" onError={(e) => e.currentTarget.style.display = 'none'} />
                   ) : (
@@ -868,9 +873,9 @@ export default function ExchangePage() {
             </div>
 
             {/* Spread Display - Below Selector */}
-            <div className="glow-border p-3 sm:p-4 rounded-lg text-center">
-              <p className="text-xs text-muted-foreground mb-1">Spread</p>
-              <p className="text-lg sm:text-xl font-bold text-primary">{spread.toFixed(3)}%</p>
+            <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/20 p-3 sm:p-4 text-center backdrop-blur-md">
+              <p className="text-xs text-zinc-400 mb-1">Spread</p>
+              <p className="text-lg sm:text-xl font-bold text-primary font-mono tabular-nums">{spread.toFixed(3)}%</p>
             </div>
           </div>
 
@@ -895,7 +900,7 @@ export default function ExchangePage() {
           />
 
           {/* Main Content Grid */}
-          <div className="grid lg:grid-cols-3 gap-6">
+          <div className="grid lg:grid-cols-3 gap-4">
             {/* Left: Order Book */}
             <div className="lg:col-span-2">
               <OrderBook
@@ -913,22 +918,22 @@ export default function ExchangePage() {
             </div>
 
             {/* Right: Quick Stats */}
-            <div className="space-y-4">
-              <div className="glow-border p-4 rounded-lg text-center">
-                <p className="text-xs text-muted-foreground mb-2">Best Bid</p>
-                <p className="text-2xl font-bold text-primary">
+            <div className="space-y-3">
+              <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/20 p-4 text-center backdrop-blur-md">
+                <p className="text-xs text-zinc-400 mb-2">Best Bid</p>
+                <p className="text-2xl font-bold text-primary font-mono tabular-nums">
                   {bestBid ? parseFloat(bestBid).toFixed(6) : 'N/A'}
                 </p>
               </div>
-              <div className="glow-border p-4 rounded-lg text-center">
-                <p className="text-xs text-muted-foreground mb-2">Best Ask</p>
-                <p className="text-2xl font-bold text-destructive">
+              <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/20 p-4 text-center backdrop-blur-md">
+                <p className="text-xs text-zinc-400 mb-2">Best Ask</p>
+                <p className="text-2xl font-bold text-destructive font-mono tabular-nums">
                   {bestAsk ? parseFloat(bestAsk).toFixed(6) : 'N/A'}
                 </p>
               </div>
-              <div className="glow-border p-4 rounded-lg text-center">
-                <p className="text-xs text-muted-foreground mb-2">Total Orders</p>
-                <p className="text-2xl font-bold text-foreground">
+              <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/20 p-4 text-center backdrop-blur-md">
+                <p className="text-xs text-zinc-400 mb-2">Total Orders</p>
+                <p className="text-2xl font-bold text-foreground font-mono tabular-nums">
                   {orderBook.bids.length + orderBook.asks.length}
                 </p>
               </div>
@@ -936,18 +941,18 @@ export default function ExchangePage() {
           </div>
 
           {/* Tabs Navigation */}
-          <div className="flex flex-wrap gap-2 border-b border-border pb-4">
+          <div className="flex flex-wrap gap-2 border-b border-zinc-800/80 pb-4">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-4 py-2 font-medium transition-colors rounded-t-lg ${
+                className={`flex items-center gap-1.5 px-4 py-2 font-medium transition-all duration-200 ease-in-out active:scale-[0.98] rounded-t-lg ${
                   activeTab === tab.id
                     ? 'text-primary border-b-2 border-primary bg-primary/10'
-                    : 'text-muted-foreground hover:text-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-zinc-800/40'
                 }`}
               >
-                <tab.Icon className="w-3.5 h-3.5 flex-shrink-0" />
+                <tab.Icon className="w-3.5 h-3.5 shrink-0" />
                 {tab.label}
               </button>
             ))}
@@ -1001,6 +1006,7 @@ export default function ExchangePage() {
             )}
           </div>
         </div>
+      </div>
       </div>
 
       {/* Token Selector Modals */}
@@ -1092,5 +1098,4 @@ export default function ExchangePage() {
     </main>
   );
 }
-
 
