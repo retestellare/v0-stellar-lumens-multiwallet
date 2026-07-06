@@ -60,6 +60,29 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
     });
   };
 
+  // Determine if the trade is a BUY or SELL based on XLM as the base asset
+  const determineTradeType = (order: FilledOrder): 'BUY' | 'SELL' => {
+    // XLM is the base asset for all trades
+    const xlmIsBase = order.baseCode === 'XLM';
+    const xlmIsCounter = order.counterCode === 'XLM';
+
+    if (xlmIsBase) {
+      // XLM is the base asset
+      // If isBuyer=true: user bought base (XLM), so it's a BUY
+      // If isBuyer=false: user sold base (XLM), so it's a SELL
+      return order.isBuyer ? 'BUY' : 'SELL';
+    } else if (xlmIsCounter) {
+      // XLM is the counter asset
+      // If isBuyer=true: user bought base, which means sold XLM, so it's a SELL
+      // If isBuyer=false: user sold base, which means bought XLM, so it's a BUY
+      return order.isBuyer ? 'SELL' : 'BUY';
+    } else {
+      // Neither asset is XLM (shouldn't happen in normal wallet usage)
+      // Fall back to the original isBuyer logic
+      return order.isBuyer ? 'BUY' : 'SELL';
+    }
+  };
+
   if (loading) {
     return (
       <div className="glow-border p-8 rounded-lg text-center text-muted-foreground">
@@ -105,11 +128,63 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
             const baseAmt = parseFloat(order.baseAmount);
             const counterAmt = parseFloat(order.counterAmount);
 
-            const userWasBuyer = order.isBuyer;
-            const soldAsset = userWasBuyer ? order.counterCode : order.baseCode;
-            const soldAmount = userWasBuyer ? counterAmt : baseAmt;
-            const receivedAsset = userWasBuyer ? order.baseCode : order.counterCode;
-            const receivedAmount = userWasBuyer ? baseAmt : counterAmt;
+            // Determine trade type based on XLM as the base asset
+            const tradeType = determineTradeType(order);
+            const isXlmSell = tradeType === 'SELL';
+            
+            // Determine what was sold and received
+            // If selling XLM: sold asset is XLM, received is the counter
+            // If buying XLM: sold asset is the base, received is XLM
+            let soldAsset: string;
+            let soldAmount: number;
+            let receivedAsset: string;
+            let receivedAmount: number;
+
+            if (order.baseCode === 'XLM') {
+              // XLM is base
+              if (isXlmSell) {
+                // Selling XLM: base_is_seller = true
+                soldAsset = order.baseCode;
+                soldAmount = baseAmt;
+                receivedAsset = order.counterCode;
+                receivedAmount = counterAmt;
+              } else {
+                // Buying XLM: base_is_seller = false
+                soldAsset = order.counterCode;
+                soldAmount = counterAmt;
+                receivedAsset = order.baseCode;
+                receivedAmount = baseAmt;
+              }
+            } else if (order.counterCode === 'XLM') {
+              // XLM is counter
+              if (isXlmSell) {
+                // Selling XLM (counter): base_is_seller = true means user bought base
+                soldAsset = order.counterCode;
+                soldAmount = counterAmt;
+                receivedAsset = order.baseCode;
+                receivedAmount = baseAmt;
+              } else {
+                // Buying XLM (counter): base_is_seller = false means user sold base
+                soldAsset = order.baseCode;
+                soldAmount = baseAmt;
+                receivedAsset = order.counterCode;
+                receivedAmount = counterAmt;
+              }
+            } else {
+              // Neither is XLM - use original logic
+              if (order.isBuyer) {
+                soldAsset = order.counterCode;
+                soldAmount = counterAmt;
+                receivedAsset = order.baseCode;
+                receivedAmount = baseAmt;
+              } else {
+                soldAsset = order.baseCode;
+                soldAmount = baseAmt;
+                receivedAsset = order.counterCode;
+                receivedAmount = counterAmt;
+              }
+            }
+
             const tradingPair = `${soldAsset} / ${receivedAsset}`;
             const displayPrice = soldAmount > 0 ? (receivedAmount / soldAmount) : 0;
 
@@ -125,18 +200,18 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
                 className="rounded-lg border border-border/50 bg-gradient-to-br from-background to-muted/20 overflow-hidden hover:border-border/80 hover:shadow-lg transition-all duration-200 group"
               >
                 {/* Top Accent Bar */}
-                <div className={`h-1 ${userWasBuyer ? 'bg-primary' : 'bg-destructive'}`} />
+                <div className={`h-1 ${isXlmSell ? 'bg-destructive' : 'bg-primary'}`} />
                 
                 <div className="p-4 space-y-3">
                   {/* Header Row: Badge + Trading Pair + Time */}
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
                       <span className={`text-xs font-bold px-2.5 py-1 rounded-md ${
-                        userWasBuyer 
-                          ? 'bg-primary/15 text-primary border border-primary/30' 
-                          : 'bg-destructive/15 text-destructive border border-destructive/30'
+                        isXlmSell
+                          ? 'bg-destructive/15 text-destructive border border-destructive/30' 
+                          : 'bg-primary/15 text-primary border border-primary/30'
                       }`}>
-                        {userWasBuyer ? 'BUY' : 'SELL'}
+                        {tradeType}
                       </span>
                       <span className="text-base font-bold text-foreground group-hover:text-primary transition-colors">{finalTradingPair}</span>
                       {order.isLPTrade && (
