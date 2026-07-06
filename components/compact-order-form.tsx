@@ -58,6 +58,7 @@ export function CompactOrderForm({
   // Track the counter currency amounts
   const [buyCounterAmount, setBuyCounterAmount] = useState('');
   const [sellCounterAmount, setSellCounterAmount] = useState('');
+  const [activeSide, setActiveSide] = useState<'buy' | 'sell'>('buy');
 
   // Calculate counter amounts when price or amount changes
   useEffect(() => {
@@ -152,169 +153,186 @@ export function CompactOrderForm({
     : 0;
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:gap-3">
-      {/* Buy Form */}
-      <div className="glow-border p-2 sm:p-3 rounded-lg space-y-2">
-        <h3 className="text-xs sm:text-sm font-semibold text-primary">BUY {sellingAsset}</h3>
-
-        {bestAsk && (
-          <div className="text-xs text-muted-foreground truncate">Best: {formatAmount(bestAsk)}</div>
-        )}
-
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground block">Price ({buyingAsset})</label>
-          <Input
-            placeholder="Price"
-            type="text"
-            inputMode="decimal"
-            value={buyPrice}
-            onChange={(e) => onBuyPriceChange(e.target.value)}
-            className="bg-input border-border text-foreground h-7 text-xs font-mono"
-          />
-        </div>
-
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground block">Amt ({sellingAsset})</label>
-          <Input
-            placeholder="Amount"
-            type="text"
-            inputMode="decimal"
-            value={buyAmount}
-            onChange={(e) => onBuyAmountChange(e.target.value)}
-            className="bg-input border-border text-foreground h-7 text-xs font-mono"
-          />
-        </div>
-
-        {/* Counter currency amount field */}
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground block">Total ({buyingAsset})</label>
-          <Input
-            placeholder="Total cost"
-            type="text"
-            inputMode="decimal"
-            value={buyCounterAmount}
-            onChange={(e) => handleBuyCounterChange(e.target.value)}
-            className="bg-input border-border text-foreground h-7 text-xs font-mono"
-          />
-          <div className="text-right">
-            <span className="text-[10px] text-muted-foreground">
-              Balance: {formatAmount(buyingBalance)} {buyingAsset}
-            </span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-2 w-full">
-          {[10, 50, 100].map((pct) => (
-            <button
-              key={pct}
-              onClick={() => allocateBuyPercentage(pct)}
-              disabled={parseFloat(buyingBalance) <= 0}
-              className="px-2 py-1 text-xs rounded bg-background/50 text-primary ring-1 ring-primary/50 hover:ring-primary/80 hover:bg-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {pct}%
-            </button>
-          ))}
-        </div>
-
-        {/* Summary */}
-        <div className="bg-background/50 rounded p-1.5 border border-border/50">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-muted-foreground">Cost:</span>
-            <span className="font-mono text-primary truncate max-w-[60%]">
-              {formatAmount(buyTotal)} {buyingAsset}
-            </span>
-          </div>
-        </div>
-
-        <Button
-          onClick={() => onBuyClick(buyPrice, buyAmount)}
-          disabled={!buyPrice || !buyAmount || parseFloat(buyAmount) <= 0}
-          className="w-full h-7 bg-primary text-primary-foreground hover:bg-primary/90 text-xs"
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 rounded-2xl border border-zinc-800/70 bg-zinc-900/30 p-1 backdrop-blur-md md:hidden">
+        <button
+          onClick={() => setActiveSide('buy')}
+          className={`h-10 rounded-xl text-sm font-semibold transition-all duration-200 ease-in-out active:scale-[0.98] ${activeSide === 'buy' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'text-zinc-300 hover:bg-zinc-800/60'}`}
         >
-          BUY
-        </Button>
+          BUY {sellingAsset}
+        </button>
+        <button
+          onClick={() => setActiveSide('sell')}
+          className={`h-10 rounded-xl text-sm font-semibold transition-all duration-200 ease-in-out active:scale-[0.98] ${activeSide === 'sell' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'text-zinc-300 hover:bg-zinc-800/60'}`}
+        >
+          SELL {sellingAsset}
+        </button>
       </div>
 
-      {/* Sell Form */}
-      <div className="glow-border p-2 sm:p-3 rounded-lg space-y-2">
-        <h3 className="text-xs sm:text-sm font-semibold text-destructive">SELL {sellingAsset}</h3>
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className={`space-y-3 rounded-2xl border border-zinc-800/60 bg-zinc-900/20 p-3 backdrop-blur-md md:block ${activeSide === 'buy' ? 'block' : 'hidden'}`}>
+          <div className="flex items-center justify-between border-t-2 border-emerald-500/60 pt-2">
+            <h3 className="text-sm font-semibold text-emerald-300">BUY {sellingAsset}</h3>
+            {bestAsk && <div className="text-xs text-zinc-400 font-mono tabular-nums">Best: {formatAmount(bestAsk)}</div>}
+          </div>
 
-        {bestBid && (
-          <div className="text-xs text-muted-foreground truncate">Best: {formatAmount(bestBid)}</div>
-        )}
+          <div className="space-y-1.5">
+            <label className="block text-xs text-zinc-400">Price ({buyingAsset})</label>
+            <div className="rounded-xl border border-zinc-700/70 bg-zinc-950/70 focus-within:ring-1 focus-within:ring-yellow-500/50">
+              <Input
+                placeholder="Price"
+                type="text"
+                inputMode="decimal"
+                value={buyPrice}
+                onChange={(e) => onBuyPriceChange(e.target.value)}
+                className="h-12 border-0 bg-transparent text-center text-sm font-mono tabular-nums text-foreground placeholder:text-zinc-500 focus-visible:ring-0"
+              />
+            </div>
+          </div>
 
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground block">Price ({buyingAsset})</label>
-          <Input
-            placeholder="Price"
-            type="text"
-            inputMode="decimal"
-            value={sellPrice}
-            onChange={(e) => onSellPriceChange(e.target.value)}
-            className="bg-input border-border text-foreground h-7 text-xs font-mono"
-          />
+          <div className="space-y-1.5">
+            <label className="block text-xs text-zinc-400">Amount ({sellingAsset})</label>
+            <div className="rounded-xl border border-zinc-700/70 bg-zinc-950/70 focus-within:ring-1 focus-within:ring-yellow-500/50">
+              <Input
+                placeholder="Amount"
+                type="text"
+                inputMode="decimal"
+                value={buyAmount}
+                onChange={(e) => onBuyAmountChange(e.target.value)}
+                className="h-12 border-0 bg-transparent text-center text-sm font-mono tabular-nums text-foreground placeholder:text-zinc-500 focus-visible:ring-0"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-xs text-zinc-400">Total ({buyingAsset})</label>
+            <div className="rounded-xl border border-zinc-700/70 bg-zinc-950/70 focus-within:ring-1 focus-within:ring-yellow-500/50">
+              <Input
+                placeholder="Total cost"
+                type="text"
+                inputMode="decimal"
+                value={buyCounterAmount}
+                onChange={(e) => handleBuyCounterChange(e.target.value)}
+                className="h-12 border-0 bg-transparent text-center text-sm font-mono tabular-nums text-foreground placeholder:text-zinc-500 focus-visible:ring-0"
+              />
+            </div>
+            <div className="text-right text-[10px] text-zinc-500 font-mono tabular-nums">
+              Balance: {formatAmount(buyingBalance)} {buyingAsset}
+            </div>
+          </div>
+
+          <div className="grid w-full grid-cols-3 gap-2">
+            {[10, 50, 100].map((pct) => (
+              <button
+                key={pct}
+                onClick={() => allocateBuyPercentage(pct)}
+                disabled={parseFloat(buyingBalance) <= 0}
+                className="h-9 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-200 transition-all duration-200 ease-in-out active:scale-[0.98] hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {pct}%
+              </button>
+            ))}
+          </div>
+
+          <div className="rounded-xl border border-zinc-800/70 bg-zinc-950/50 p-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-zinc-400">Cost:</span>
+              <span className="max-w-[65%] truncate font-mono tabular-nums text-emerald-300">
+                {formatAmount(buyTotal)} {buyingAsset}
+              </span>
+            </div>
+          </div>
+
+          <Button
+            onClick={() => onBuyClick(buyPrice, buyAmount)}
+            disabled={!buyPrice || !buyAmount || parseFloat(buyAmount) <= 0}
+            className="h-11 w-full bg-emerald-500 text-emerald-950 transition-all duration-200 ease-in-out active:scale-[0.98] hover:bg-emerald-400"
+          >
+            BUY
+          </Button>
         </div>
 
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground block">Amt ({sellingAsset})</label>
-          <Input
-            placeholder="Amount"
-            type="text"
-            inputMode="decimal"
-            value={sellAmount}
-            onChange={(e) => onSellAmountChange(e.target.value)}
-            className="bg-input border-border text-foreground h-7 text-xs font-mono"
-          />
-          <div className="text-right">
-            <span className="text-[10px] text-muted-foreground">
+        <div className={`space-y-3 rounded-2xl border border-zinc-800/60 bg-zinc-900/20 p-3 backdrop-blur-md md:block ${activeSide === 'sell' ? 'block' : 'hidden'}`}>
+          <div className="flex items-center justify-between border-t-2 border-rose-500/60 pt-2">
+            <h3 className="text-sm font-semibold text-rose-300">SELL {sellingAsset}</h3>
+            {bestBid && <div className="text-xs text-zinc-400 font-mono tabular-nums">Best: {formatAmount(bestBid)}</div>}
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-xs text-zinc-400">Price ({buyingAsset})</label>
+            <div className="rounded-xl border border-zinc-700/70 bg-zinc-950/70 focus-within:ring-1 focus-within:ring-yellow-500/50">
+              <Input
+                placeholder="Price"
+                type="text"
+                inputMode="decimal"
+                value={sellPrice}
+                onChange={(e) => onSellPriceChange(e.target.value)}
+                className="h-12 border-0 bg-transparent text-center text-sm font-mono tabular-nums text-foreground placeholder:text-zinc-500 focus-visible:ring-0"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-xs text-zinc-400">Amount ({sellingAsset})</label>
+            <div className="rounded-xl border border-zinc-700/70 bg-zinc-950/70 focus-within:ring-1 focus-within:ring-yellow-500/50">
+              <Input
+                placeholder="Amount"
+                type="text"
+                inputMode="decimal"
+                value={sellAmount}
+                onChange={(e) => onSellAmountChange(e.target.value)}
+                className="h-12 border-0 bg-transparent text-center text-sm font-mono tabular-nums text-foreground placeholder:text-zinc-500 focus-visible:ring-0"
+              />
+            </div>
+            <div className="text-right text-[10px] text-zinc-500 font-mono tabular-nums">
               Balance: {formatAmount(sellingBalance)} {sellingAsset}
-            </span>
+            </div>
           </div>
-        </div>
 
-        {/* Counter currency amount field */}
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground block">Total ({buyingAsset})</label>
-          <Input
-            placeholder="Total receive"
-            type="text"
-            inputMode="decimal"
-            value={sellCounterAmount}
-            onChange={(e) => handleSellCounterChange(e.target.value)}
-            className="bg-input border-border text-foreground h-7 text-xs font-mono"
-          />
-        </div>
-
-        <div className="grid grid-cols-3 gap-2 w-full">
-          {[10, 50, 100].map((pct) => (
-            <button
-              key={pct}
-              onClick={() => allocateSellPercentage(pct)}
-              disabled={parseFloat(sellingBalance) <= 0}
-              className="px-2 py-1 text-xs rounded bg-background/50 text-destructive ring-1 ring-destructive/50 hover:ring-destructive/80 hover:bg-destructive/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {pct}%
-            </button>
-          ))}
-        </div>
-
-        {/* Summary */}
-        <div className="bg-background/50 rounded p-1.5 border border-border/50">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-muted-foreground">Receive:</span>
-            <span className="font-mono text-destructive truncate max-w-[60%]">
-              {formatAmount(sellTotal)} {buyingAsset}
-            </span>
+          <div className="space-y-1.5">
+            <label className="block text-xs text-zinc-400">Total ({buyingAsset})</label>
+            <div className="rounded-xl border border-zinc-700/70 bg-zinc-950/70 focus-within:ring-1 focus-within:ring-yellow-500/50">
+              <Input
+                placeholder="Total receive"
+                type="text"
+                inputMode="decimal"
+                value={sellCounterAmount}
+                onChange={(e) => handleSellCounterChange(e.target.value)}
+                className="h-12 border-0 bg-transparent text-center text-sm font-mono tabular-nums text-foreground placeholder:text-zinc-500 focus-visible:ring-0"
+              />
+            </div>
           </div>
-        </div>
 
-        <Button
-          onClick={() => onSellClick(sellPrice, sellAmount)}
-          disabled={!sellPrice || !sellAmount || parseFloat(sellAmount) <= 0}
-          className="w-full h-7 bg-destructive text-destructive-foreground hover:bg-destructive/90 text-xs"
-        >
-          SELL
-        </Button>
+          <div className="grid w-full grid-cols-3 gap-2">
+            {[10, 50, 100].map((pct) => (
+              <button
+                key={pct}
+                onClick={() => allocateSellPercentage(pct)}
+                disabled={parseFloat(sellingBalance) <= 0}
+                className="h-9 rounded-lg border border-rose-500/30 bg-rose-500/10 text-xs text-rose-200 transition-all duration-200 ease-in-out active:scale-[0.98] hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {pct}%
+              </button>
+            ))}
+          </div>
+
+          <div className="rounded-xl border border-zinc-800/70 bg-zinc-950/50 p-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-zinc-400">Receive:</span>
+              <span className="max-w-[65%] truncate font-mono tabular-nums text-rose-300">
+                {formatAmount(sellTotal)} {buyingAsset}
+              </span>
+            </div>
+          </div>
+
+          <Button
+            onClick={() => onSellClick(sellPrice, sellAmount)}
+            disabled={!sellPrice || !sellAmount || parseFloat(sellAmount) <= 0}
+            className="h-11 w-full bg-rose-500 text-rose-50 transition-all duration-200 ease-in-out active:scale-[0.98] hover:bg-rose-400"
+          >
+            SELL
+          </Button>
+        </div>
       </div>
     </div>
   );
