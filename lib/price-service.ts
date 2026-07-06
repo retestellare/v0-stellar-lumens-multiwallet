@@ -1,12 +1,24 @@
 /**
  * Token Price Service
- * Fetches token prices and 24h price change from Horizon and CoinGecko APIs
+ * Fetches token prices and 24h price change from CoinGecko and Horizon APIs.
+ *
+ * Caching strategy (fastest → slowest):
+ *   1. In-memory Map  — zero-cost, survives component unmounts
+ *   2. localStorage   — persists across page reloads
+ *   3. Network fetch  — updates both caches on success
+ *
+ * Stale-while-revalidate: if a cached value is older than PRICE_CACHE_DURATION
+ * it is returned immediately and a background refresh is scheduled so the UI
+ * stays responsive while the fresh value propagates on the next render cycle.
  */
 
 const COINGECKO_API = 'https://api.coingecko.com/api/v3';
 const HORIZON_API = 'https://horizon.stellar.org';
 const USDC_ISSUER = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN';
 const PRICE_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+// Stale-while-revalidate window: return stale data for up to 10 extra minutes
+// while a background re-fetch runs.
+const PRICE_STALE_WINDOW = 10 * 60 * 1000;
 
 export interface TokenPrice {
   usd: number;
@@ -21,6 +33,13 @@ export interface WalletAssetPriceInput {
   code: string;
   issuer?: string;
 }
+
+// ─── In-memory cache ─────────────────────────────────────────────────────────
+// Keyed by token code. Avoids JSON round-trips for repeated lookups.
+const memoryCache = new Map<string, CachedPrice>();
+
+// Track in-flight fetches to prevent duplicate network requests for the same token.
+const inflight = new Map<string, Promise<TokenPrice | null>>();
 
 // Mapping of Stellar token codes to CoinGecko IDs
 // This includes major Stellar-native tokens and popular assets
@@ -103,55 +122,72 @@ function buildAssetQuery(prefix: string, code: string, issuer = ''): string {
   return params.toString();
 }
 
+// ─── Memory cache helpers ─────────────────────────────────────────────────────
+
+function getMemoryCached(code: string): CachedPrice | null {
+  const entry = memoryCache.get(code);
+  if (!entry) return null;
+  // Within the full stale window (fresh + stale-while-revalidate)
+  if (Date.now() - entry.cachedAt < PRICE_CACHE_DURATION + PRICE_STALE_WINDOW) {
+    return entry;
+  }
+  memoryCache.delete(code);
+  return null;
+}
+
+function setMemoryCache(code: string, price: TokenPrice): void {
+  memoryCache.set(code, { ...price, cachedAt: Date.now() });
+}
+
+// ─── localStorage helpers ─────────────────────────────────────────────────────
+
 /**
- * Get cached price from localStorage
+ * Read a price from localStorage. Returns the entry (even if stale so it can
+ * be used for stale-while-revalidate) or null if absent / expired beyond the
+ * stale window.
  */
-function getCachedPrice(code: string): CachedPrice | null {
+function getLocalCached(code: string): CachedPrice | null {
   try {
-    const key = `price_${code}`;
-    const cached = localStorage.getItem(key);
-    if (cached) {
-      const parsed: CachedPrice = JSON.parse(cached);
-      if (Date.now() - parsed.cachedAt < PRICE_CACHE_DURATION) {
-        return parsed;
-      }
+    const raw = localStorage.getItem(`price_${code}`);
+    if (!raw) return null;
+    const parsed: CachedPrice = JSON.parse(raw);
+    const age = Date.now() - parsed.cachedAt;
+    if (age < PRICE_CACHE_DURATION + PRICE_STALE_WINDOW) {
+      return parsed;
     }
-  } catch (error) {
-    console.error('[v0] Error reading price cache:', error);
+    localStorage.removeItem(`price_${code}`);
+  } catch {
+    // Ignore localStorage errors (SSR, private browsing, quota, etc.)
   }
   return null;
+}
+
+function setLocalCache(code: string, price: TokenPrice): void {
+  try {
+    localStorage.setItem(
+      `price_${code}`,
+      JSON.stringify({ ...price, cachedAt: Date.now() })
+    );
+  } catch {
+    // Ignore localStorage errors
+  }
 }
 
 function getCachedAssetPrice(code: string, issuer = ''): CachedPrice | null {
   try {
     const key = `asset_price_${getAssetKey(code, issuer)}`;
-    const cached = localStorage.getItem(key);
-    if (cached) {
-      const parsed: CachedPrice = JSON.parse(cached);
-      if (Date.now() - parsed.cachedAt < PRICE_CACHE_DURATION) {
-        return parsed;
-      }
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed: CachedPrice = JSON.parse(raw);
+    const age = Date.now() - parsed.cachedAt;
+    if (age < PRICE_CACHE_DURATION + PRICE_STALE_WINDOW) {
+      return parsed;
     }
-  } catch (error) {
-    console.error('[v0] Error reading asset price cache:', error);
+    localStorage.removeItem(key);
+  } catch {
+    // Ignore localStorage errors
   }
   return null;
-}
-
-/**
- * Cache price to localStorage
- */
-function cachePrice(code: string, price: TokenPrice): void {
-  try {
-    const key = `price_${code}`;
-    const cached: CachedPrice = {
-      ...price,
-      cachedAt: Date.now(),
-    };
-    localStorage.setItem(key, JSON.stringify(cached));
-  } catch (error) {
-    console.error('[v0] Error caching price:', error);
-  }
 }
 
 function cacheAssetPrice(code: string, issuer = '', price: TokenPrice): void {
@@ -162,8 +198,8 @@ function cacheAssetPrice(code: string, issuer = '', price: TokenPrice): void {
       cachedAt: Date.now(),
     };
     localStorage.setItem(key, JSON.stringify(cached));
-  } catch (error) {
-    console.error('[v0] Error caching asset price:', error);
+  } catch {
+    // Ignore localStorage errors
   }
 }
 
@@ -190,8 +226,7 @@ async function fetchAssetUsdPriceFromHorizon(code: string, issuer = ''): Promise
 
     const usdPrice = parseFloat(bestPath.destination_amount);
     return Number.isFinite(usdPrice) ? usdPrice : null;
-  } catch (error) {
-    console.error(`[v0] Error fetching Horizon USD path for ${code}:`, error);
+  } catch {
     return null;
   }
 }
@@ -235,8 +270,7 @@ async function fetchAsset24hChangeFromHorizon(code: string, issuer = ''): Promis
 
     const change = ((close - open) / open) * 100;
     return Number.isFinite(change) ? change : 0;
-  } catch (error) {
-    console.error(`[v0] Error fetching 24h change for ${code}:`, error);
+  } catch {
     return 0;
   }
 }
@@ -275,22 +309,9 @@ export async function fetchWalletAssetPrices(assets: WalletAssetPriceInput[]): P
   return Object.fromEntries(entries);
 }
 
-/**
- * Fetch token price from CoinGecko
- */
-export async function fetchTokenPrice(code: string): Promise<TokenPrice | null> {
-  // Check cache first
-  const cached = getCachedPrice(code);
-  if (cached) {
-    return cached;
-  }
+// ─── Core fetch ──────────────────────────────────────────────────────────────
 
-  const coingeckoId = getCoingeckoId(code);
-  if (!coingeckoId) {
-    // Token not found in mapping, return null silently
-    return null;
-  }
-
+async function fetchFromNetwork(code: string, coingeckoId: string): Promise<TokenPrice | null> {
   try {
     const response = await fetch(
       `${COINGECKO_API}/simple/price?ids=${coingeckoId}&vs_currencies=usd&include_24hr_change=true`,
@@ -315,11 +336,95 @@ export async function fetchTokenPrice(code: string): Promise<TokenPrice | null> 
       usd_24h_change: priceData.usd_24h_change || 0,
     };
 
-    cachePrice(code, price);
+    // Populate both cache layers
+    setMemoryCache(code, price);
+    setLocalCache(code, price);
     return price;
   } catch (error) {
     console.error(`[v0] Error fetching price for ${code}:`, error);
     return null;
+  }
+}
+
+/**
+ * Fetch token price from CoinGecko with a two-tier cache and
+ * stale-while-revalidate semantics.
+ *
+ * 1. Check in-memory cache (fastest)
+ * 2. Check localStorage (survives page reload)
+ * 3. Fetch from network (de-duplicated via `inflight` map)
+ *
+ * If cached data is within PRICE_CACHE_DURATION it is returned immediately.
+ * If it falls in the stale-while-revalidate window the stale value is returned
+ * while a background network request updates both caches.
+ */
+export async function fetchTokenPrice(code: string): Promise<TokenPrice | null> {
+  const now = Date.now();
+
+  // 1. In-memory cache — still fresh?
+  const mem = getMemoryCached(code);
+  if (mem) {
+    const age = now - mem.cachedAt;
+    if (age < PRICE_CACHE_DURATION) {
+      return mem;
+    }
+    // Stale but within revalidate window — return stale and refresh in background
+    scheduleBackgroundRefresh(code);
+    return mem;
+  }
+
+  // 2. localStorage — still fresh?
+  const local = getLocalCached(code);
+  if (local) {
+    // Populate memory cache from localStorage
+    setMemoryCache(code, local);
+    const age = now - local.cachedAt;
+    if (age < PRICE_CACHE_DURATION) {
+      return local;
+    }
+    // Stale-while-revalidate
+    scheduleBackgroundRefresh(code);
+    return local;
+  }
+
+  const coingeckoId = getCoingeckoId(code);
+  if (!coingeckoId) return null;
+
+  // 3. Network fetch — de-duplicate concurrent requests for the same token
+  const existing = inflight.get(code);
+  if (existing) return existing;
+
+  const promise = fetchFromNetwork(code, coingeckoId).finally(() => {
+    inflight.delete(code);
+  });
+  inflight.set(code, promise);
+  return promise;
+}
+
+/**
+ * Fire a background re-fetch without blocking the caller.
+ * Guarded so only one refresh runs at a time per token.
+ */
+function scheduleBackgroundRefresh(code: string): void {
+  if (inflight.has(code)) return;
+  const coingeckoId = getCoingeckoId(code);
+  if (!coingeckoId) return;
+
+  const promise = fetchFromNetwork(code, coingeckoId).finally(() => {
+    inflight.delete(code);
+  });
+  inflight.set(code, promise);
+}
+
+/**
+ * Invalidate the cache for a specific token (useful after known price events).
+ */
+export function invalidatePriceCache(code: string): void {
+  memoryCache.delete(code);
+  try {
+    localStorage.removeItem(`price_${code}`);
+  } catch {
+    // Ignore localStorage errors
   }
 }
 

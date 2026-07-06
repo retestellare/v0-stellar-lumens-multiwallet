@@ -48,18 +48,18 @@ export function WalletSelectorDropdown({ compact = false }: WalletSelectorDropdo
       {/* Trigger Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-2 px-3 py-2 rounded-xl border border-border/60 bg-muted/30 hover:bg-muted/50 hover:border-primary/30 transition-all shadow-sm ${
+        className={`flex items-center gap-2 px-3 py-2 rounded-xl border border-border/60 bg-muted/30 hover:bg-muted/50 hover:border-primary/30 transition-all duration-200 ease-in-out active:scale-[0.98] shadow-sm ${
           compact ? 'text-xs' : 'text-sm'
         }`}
       >
-        <Wallet className={compact ? 'w-3 h-3' : 'w-4 h-4'} />
+        <Wallet className={compact ? 'w-3 h-3 shrink-0' : 'w-4 h-4 shrink-0'} />
         <span className="font-medium text-foreground truncate max-w-[120px] sm:max-w-[180px]">
           {activeWallet.name || truncateKey(activeWallet.publicKey)}
         </span>
         <span className="text-muted-foreground hidden sm:inline">
           {truncateKey(activeWallet.publicKey)}
         </span>
-        <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-in-out ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Dropdown Modal */}
@@ -101,7 +101,7 @@ export function WalletSelectorDropdown({ compact = false }: WalletSelectorDropdo
                     </div>
                     <button
                       onClick={(e) => handleCopyAddress(e, wallet.publicKey)}
-                      className="p-2 text-muted-foreground hover:text-foreground hover:bg-background/50 rounded transition-colors"
+                      className="p-2 text-muted-foreground hover:text-foreground hover:bg-background/50 rounded transition-all duration-200 ease-in-out active:scale-[0.98]"
                       title="Copy address"
                     >
                       {copiedId === wallet.publicKey ? (

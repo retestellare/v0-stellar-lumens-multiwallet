@@ -94,6 +94,7 @@ export function SwapPanel() {
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sendInputRef = useRef<HTMLInputElement>(null);
+  const receiveInputRef = useRef<HTMLInputElement>(null);
 
   // Load wallet tokens when active wallet changes
   useEffect(() => {
@@ -224,6 +225,13 @@ export function SwapPanel() {
     }
   };
 
+  const handleReceiveAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setReceiveAmount(value);
+    // Note: Reverse calculation (receive → send) would require additional API call
+    // For now, receive amount is informational only. Users should adjust send amount instead.
+  };
+
   const handleSwapTokens = () => {
     const prevSend = sendToken;
     const prevReceive = receiveToken;
@@ -314,9 +322,11 @@ export function SwapPanel() {
     } else {
       setReceiveToken({ code: token.code, issuer: token.issuer, balance: '0', displayBalance: '0.0000000' });
     }
+    // Clear best path and error, but keep receive amount to show during recalculation
+    // The receive amount will be updated by the useEffect that triggers on receiveToken change
     setBestPath(null);
-    setReceiveAmount('');
     setError(null);
+    // Don't clear receiveAmount - let it update naturally when bestPath is recalculated
   };
 
   // Computed exchange rate for display
@@ -481,12 +491,14 @@ export function SwapPanel() {
               <ChevronDown className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0" />
             </button>
 
-            {/* Estimated receive amount */}
-            <div className="flex-1 flex items-center justify-end">
+            {/* Estimated receive amount - read-only display */}
+            <div className="flex-1 min-w-0">
               {loading ? (
-                <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                <div className="flex justify-end">
+                  <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                </div>
               ) : (
-                <span className={`text-xl font-bold tabular-nums ${receiveAmount ? 'text-foreground' : 'text-muted-foreground/40'}`}>
+                <span className={`text-xl font-bold tabular-nums text-right block ${receiveAmount ? 'text-foreground' : 'text-muted-foreground/40'}`}>
                   {receiveAmount ? parseFloat(receiveAmount).toFixed(4) : '0.0000'}
                 </span>
               )}

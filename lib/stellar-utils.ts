@@ -3,6 +3,9 @@ import nacl from 'tweetnacl';
 
 export const HORIZON_URL = 'https://horizon.stellar.org';
 export const NETWORK_PASSPHRASE = Networks.PUBLIC;
+export const FETCH_TIMEOUT_MS = 15000; // 15 seconds
+export const MAX_RETRIES = 3;
+export const RETRY_DELAY_MS = 1000; // 1 second
 
 /**
  * Determine asset type based on code length
@@ -14,6 +17,62 @@ function getAssetType(code: string): string {
   if (code === 'XLM' || code === 'native') return 'native';
   return code.length <= 4 ? 'credit_alphanum4' : 'credit_alphanum12';
 }
+
+// Fetch with timeout and retry logic
+const fetchWithTimeout = async (
+  url: string,
+  options: RequestInit = {},
+  retries: number = MAX_RETRIES
+): Promise<Response> => {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+      
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeoutId);
+      
+      // Return on success or non-retryable errors
+      if (response.ok || response.status === 404) {
+        return response;
+      }
+      
+      // Retry on 5xx errors and connection issues
+      if (response.status >= 500 && attempt < retries - 1) {
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS * (attempt + 1)));
+        continue;
+      }
+      
+      return response;
+    } catch (error: any) {
+      // Retry on timeout and network errors
+      if ((error.name === 'AbortError' || error instanceof TypeError) && attempt < retries - 1) {
+        console.warn(`[v0] Network request timeout/failed (attempt ${attempt + 1}/${retries}), retrying...`);
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS * (attempt + 1)));
+        continue;
+      }
+      
+      // Non-retryable error
+      throw error;
+    }
+  }
+  
+  throw new Error('Max retries exceeded');
+};
+
+// Check network connectivity
+export const checkNetworkConnectivity = async (): Promise<boolean> => {
+  try {
+    const response = await fetchWithTimeout(`${HORIZON_URL}/`, {}, 1);
+    return response.ok || response.status === 404; // 404 is expected for root endpoint
+  } catch {
+    return false;
+  }
+};
 
 // Simple uint8 to string conversion
 const uint8ToString = (arr: Uint8Array): string => {
@@ -124,13 +183,21 @@ export const buildSendTransaction = async (
   return transaction.build().toEnvelope().toXDR();
 };
 
-// Fetch account details
+// Fetch account details with retry and timeout
 export const getAccountDetails = async (publicKey: string) => {
-  const response = await fetch(`${HORIZON_URL}/accounts/${publicKey}`);
-  if (!response.ok) {
-    throw new Error('Account not found');
+  try {
+    const response = await fetchWithTimeout(`${HORIZON_URL}/accounts/${publicKey}`);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error('Account not found');
+      }
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    return response.json();
+  } catch (error: any) {
+    console.error(`[v0] Failed to fetch account details for ${publicKey}:`, error.message);
+    throw error;
   }
-  return response.json();
 };
 
 // Fetch account balances (raw, may include LP shares)
@@ -138,8 +205,9 @@ export const getAccountBalances = async (publicKey: string) => {
   try {
     const account = await getAccountDetails(publicKey);
     return account.balances || [];
-  } catch {
-    return [];
+  } catch (error: any) {
+    console.error(`[v0] Balance fetch error for ${publicKey}:`, error.message);
+    throw error; // Propagate error instead of silently failing
   }
 };
 
@@ -199,32 +267,40 @@ export const getAccountBalancesClean = async (publicKey: string) => {
   }
 };
 
-// Fetch transactions
+// Fetch transactions with timeout
 export const getAccountTransactions = async (publicKey: string, limit = 10) => {
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${HORIZON_URL}/accounts/${publicKey}/transactions?limit=${limit}&order=desc`
     );
-    if (!response.ok) return [];
+    if (!response.ok) {
+      console.warn(`[v0] Failed to fetch transactions: HTTP ${response.status}`);
+      return [];
+    }
     const data = await response.json();
     return data._embedded?.records || data.records || [];
-  } catch {
+  } catch (error: any) {
+    console.error('[v0] Error fetching transactions:', error.message);
     return [];
   }
 };
 
 /**
- * Get account payment operations (sent/received)
+ * Get account payment operations (sent/received) with timeout
  */
 export const getAccountPayments = async (publicKey: string, limit = 50) => {
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${HORIZON_URL}/accounts/${publicKey}/payments?limit=${limit}&order=desc`
     );
-    if (!response.ok) return [];
+    if (!response.ok) {
+      console.warn(`[v0] Failed to fetch payments: HTTP ${response.status}`);
+      return [];
+    }
     const data = await response.json();
     return data._embedded?.records || data.records || [];
-  } catch {
+  } catch (error: any) {
+    console.error('[v0] Error fetching payments:', error.message);
     return [];
   }
 };
@@ -266,7 +342,7 @@ export const getOrderBook = async (
     const url = `${HORIZON_URL}/order_book?${params}`;
     console.log('[v0] Fetching order book from:', url);
     
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -612,6 +688,205 @@ export const submitManageSellOffer = async (
       errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
     }
     return { success: false, error: errorMessage };
+  }
+};
+
+/**
+ * Find strict send payment paths from Horizon
+ * This shows how much you would receive for a given send amount
+ */
+export const findStrictSendPaths = async (
+  sourceAssetCode: string,
+  sourceAssetIssuer: string | undefined,
+  destAssetCode: string,
+  destAssetIssuer: string | undefined,
+  sendAmount: string
+): Promise<any[]> => {
+  try {
+    const sourceAsset = sourceAssetCode === 'XLM' || sourceAssetCode === 'native'
+      ? 'native'
+      : `${sourceAssetCode}:${sourceAssetIssuer}`;
+    
+    const destAsset = destAssetCode === 'XLM' || destAssetCode === 'native'
+      ? 'native'
+      : `${destAssetCode}:${destAssetIssuer}`;
+    
+    const url = `${HORIZON_URL}/paths/strict-send?source_asset_type=${
+      sourceAssetCode === 'XLM' ? 'native' : getAssetType(sourceAssetCode)
+    }${sourceAssetCode !== 'XLM' ? `&source_asset_code=${sourceAssetCode}&source_asset_issuer=${sourceAssetIssuer}` : ''}&destination_assets=${destAsset}&source_amount=${sendAmount}`;
+    
+    const response = await fetch(url);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data._embedded?.records || [];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Execute a Path Payment Strict Send operation
+ * This is the core of atomic arbitrage - send exact amount, receive at least destMin
+ * If the path doesn't yield destMin, the transaction FAILS atomically (no loss)
+ * 
+ * @param secretKey - Secret key of the sender
+ * @param sendAssetCode - Asset code to send (e.g., 'XLM')
+ * @param sendAssetIssuer - Issuer of send asset (undefined for XLM)
+ * @param sendAmount - Exact amount to send
+ * @param destAssetCode - Asset code to receive (e.g., 'XLM' for round-trip)
+ * @param destAssetIssuer - Issuer of dest asset (undefined for XLM)
+ * @param destMin - MINIMUM amount to receive (anti-loss protection)
+ * @param path - Intermediate assets for the path (the arbitrage route)
+ * @param destPublicKey - Destination account (usually same as sender for arbitrage)
+ */
+export const pathPaymentStrictSend = async (
+  secretKey: string,
+  sendAssetCode: string,
+  sendAssetIssuer: string | undefined,
+  sendAmount: string,
+  destAssetCode: string,
+  destAssetIssuer: string | undefined,
+  destMin: string,
+  path: Array<{ code: string; issuer?: string }>,
+  destPublicKey?: string
+): Promise<{ success: boolean; hash?: string; destAmount?: string; feeCharged?: string; error?: string }> => {
+  try {
+    const server = new Horizon.Server(HORIZON_URL);
+    const keypair = Keypair.fromSecret(secretKey);
+    const sourcePublicKey = keypair.publicKey();
+    const destination = destPublicKey || sourcePublicKey; // Default: send to self (arbitrage)
+    
+    // Load source account
+    const account = await server.loadAccount(sourcePublicKey);
+    
+    // CRITICAL: Ensure amounts are properly formatted with 7 decimal places
+    // Stellar SDK requires string amounts with exact precision
+    const sendAmountStr = Number(sendAmount).toFixed(7);
+    const destMinStr = Number(destMin).toFixed(7);
+    
+    // Create send asset
+    const sendAsset = sendAssetCode === 'XLM' || sendAssetCode === 'native'
+      ? Asset.native()
+      : new Asset(sendAssetCode, sendAssetIssuer!);
+    
+    // Create destination asset
+    const destAsset = destAssetCode === 'XLM' || destAssetCode === 'native'
+      ? Asset.native()
+      : new Asset(destAssetCode, destAssetIssuer!);
+    
+    // Create path assets (intermediate hops)
+    const pathAssets = path.map(p => 
+      p.code === 'XLM' || p.code === 'native'
+        ? Asset.native()
+        : new Asset(p.code, p.issuer!)
+    );
+    
+    // Load LIVE network fees based on current congestion
+    // Use the mode (most common) fee charged, fall back to BASE_FEE
+    let dynamicFee = BASE_FEE;
+    try {
+      const feeStats = await server.feeStats();
+      // p70 of recent charged fees gives a good chance of inclusion without overpaying
+      const suggested = feeStats.fee_charged?.p70 || feeStats.last_ledger_base_fee;
+      if (suggested && Number(suggested) > Number(BASE_FEE)) {
+        dynamicFee = String(suggested);
+      }
+    } catch {
+      // If feeStats fails, keep BASE_FEE as a safe fallback
+    }
+    
+    // Build pathPaymentStrictSend transaction with live network fee
+    const transaction = new TransactionBuilder(account, {
+      fee: dynamicFee,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.pathPaymentStrictSend({
+          sendAsset: sendAsset,
+          sendAmount: sendAmountStr, // Properly formatted 7-decimal string
+          destination: destination,
+          destAsset: destAsset,
+          destMin: destMinStr, // Properly formatted 7-decimal string (anti-loss)
+          path: pathAssets,
+        })
+      )
+      .setTimeout(180)
+      .build();
+    
+    transaction.sign(keypair);
+    
+    const result = await server.submitTransaction(transaction);
+    
+    // Extract the actual amount received from the result
+    let destAmount: string | undefined;
+    try {
+      const opResult = (result as any).result_xdr;
+      // In practice, you'd parse the XDR to get exact amount
+      // For now, we return success and let the UI refresh balances
+    } catch {}
+    
+    return { success: true, hash: result.hash, destAmount, feeCharged: dynamicFee };
+  } catch (error: any) {
+    let errorMessage = error.message || 'Path payment failed';
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      const opCode = codes.operations?.[0];
+      
+      // Translate common error codes
+      if (opCode === 'op_under_dest_min') {
+        errorMessage = 'Arbitrage cancelled: profit below minimum threshold (anti-loss protection triggered)';
+      } else if (opCode === 'op_too_few_offers') {
+        errorMessage = 'No viable path found for this arbitrage';
+      } else if (opCode === 'op_cross_self') {
+        errorMessage = 'Cannot cross your own offers';
+      } else if (opCode === 'op_over_source_max') {
+        errorMessage = 'Insufficient balance for this operation';
+      } else {
+        errorMessage = opCode || codes.transaction || errorMessage;
+      }
+    }
+    return { success: false, error: errorMessage };
+  }
+};
+
+/**
+ * Get orderbook price for an asset pair
+ */
+export const getOrderbookPrice = async (
+  baseCode: string,
+  baseIssuer: string | undefined,
+  counterCode: string,
+  counterIssuer: string | undefined
+): Promise<{ bestBid: number; bestAsk: number } | null> => {
+  try {
+    let url = `${HORIZON_URL}/order_book?`;
+    
+    if (baseCode === 'XLM' || baseCode === 'native') {
+      url += 'selling_asset_type=native';
+    } else {
+      url += `selling_asset_type=${getAssetType(baseCode)}&selling_asset_code=${baseCode}&selling_asset_issuer=${baseIssuer}`;
+    }
+    
+    url += '&';
+    
+    if (counterCode === 'XLM' || counterCode === 'native') {
+      url += 'buying_asset_type=native';
+    } else {
+      url += `buying_asset_type=${getAssetType(counterCode)}&buying_asset_code=${counterCode}&buying_asset_issuer=${counterIssuer}`;
+    }
+    
+    url += '&limit=1';
+    
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const data = await response.json();
+    
+    const bestBid = data.bids?.[0]?.price ? parseFloat(data.bids[0].price) : 0;
+    const bestAsk = data.asks?.[0]?.price ? parseFloat(data.asks[0].price) : 0;
+    
+    return { bestBid, bestAsk };
+  } catch {
+    return null;
   }
 };
 
