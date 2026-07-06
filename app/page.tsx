@@ -140,15 +140,21 @@ export default function DashboardPage() {
     setMounted(true);
   }, []);
 
-  // Fallback polling (every 60s) for environments where SSE is unavailable.
+  // Fetch balances once when the active wallet changes (after mount)
   useEffect(() => {
     if (!activeWalletId || !mounted) return;
     updateBalances(activeWalletId);
+  }, [activeWalletId, mounted]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fallback polling (every 60s) — only runs after mount, re-creates only on wallet change
+  useEffect(() => {
+    if (!activeWalletId || !mounted) return;
+    const id = activeWalletId; // capture for closure
     const interval = setInterval(() => {
-      updateBalances(activeWalletId);
+      updateBalances(id);
     }, 60_000);
     return () => clearInterval(interval);
-  }, [activeWalletId, updateBalances, mounted]);
+  }, [activeWalletId, mounted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Real-time balance streaming — fires updateBalances immediately when a
   // payment lands on the active wallet instead of waiting for the next poll.
@@ -157,7 +163,7 @@ export default function DashboardPage() {
     publicKey: mounted && activeWallet ? activeWallet.publicKey : null,
     onPayment: useCallback(() => {
       if (activeWalletId) updateBalances(activeWalletId);
-    }, [activeWalletId, updateBalances]),
+    }, [activeWalletId]), // eslint-disable-line react-hooks/exhaustive-deps
   });
 
   const xlmBalance = activeWallet?.balances.find((b: any) => b.asset_type === 'native');

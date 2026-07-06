@@ -1,7 +1,7 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
-import { encryptSecret, decryptSecret, generateKeyPair, getPublicKeyFromSecret, getAccountBalances, getMultipleWalletBalances, parseWalletBalances, checkNetworkConnectivity } from '@/lib/stellar-utils';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { encryptSecret, decryptSecret, generateKeyPair, getPublicKeyFromSecret, getAccountBalances, getMultipleWalletBalances, parseWalletBalances } from '@/lib/stellar-utils';
 
 export interface Wallet {
   id: string;
@@ -9,11 +9,11 @@ export interface Wallet {
   publicKey: string;
   encryptedSecret: string;
   balances: any[];
-  poolShares: any[]; // Separate pool shares from regular balances
+  poolShares: any[];
   createdAt: Date;
   federationName?: string;
   homeDomain?: string;
-  fetchError?: string; // Error message if balance fetch failed
+  fetchError?: string;
 }
 
 export type PasswordSessionType = 'everytime' | 'after_hour' | 'never';
@@ -36,10 +36,8 @@ export interface WalletContextType {
   passwordSessionType: PasswordSessionType;
   setPasswordSessionType: (type: PasswordSessionType) => void;
   batchImportWallets: (entries: Array<{ privateKey: string; publicKey: string; accountName: string }>, password: string) => { successful: number; failed: number };
-  // Global decrypted secret — unlocked once on app open, cleared on wallet change
   globalDecryptedSecret: string | null;
   setGlobalDecryptedSecret: (secret: string | null) => void;
-  // Store the session password so wallet switches auto-decrypt without re-prompting
   setSessionPassword: (password: string) => void;
 }
 
@@ -48,201 +46,156 @@ const WalletContext = createContext<WalletContextType | undefined>(undefined);
 export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [activeWalletId, setActiveWalletId] = useState<string | null>(null);
-  
-  // Per-wallet decrypted secret cache — stored in RAM only, cleared on page reload.
+
+  // Per-wallet decrypted secret cache — stored in RAM only
   const [walletSecrets, setWalletSecrets] = useState<Record<string, string>>({});
 
-  // Session password — cached in RAM after the first successful unlock so that
-  // switching wallets can silently decrypt the new wallet without re-prompting.
-  const sessionPasswordRef = React.useRef<string | null>(null);
+  // Session password ref — not state, so changes don't trigger re-renders
+  const sessionPasswordRef = useRef<string | null>(null);
 
-  // globalDecryptedSecret is the secret for the *currently active* wallet.
+  // globalDecryptedSecret is the secret for the currently active wallet
   const globalDecryptedSecret = activeWalletId ? (walletSecrets[activeWalletId] ?? null) : null;
 
-  // When the active wallet changes, try to auto-decrypt it with the cached session password.
+  // Use a ref for wallets inside updateBalances to avoid stale closures
+  // without adding wallets to the useCallback dependency array
+  const walletsRef = useRef<Wallet[]>(wallets);
+  useEffect(() => {
+    walletsRef.current = wallets;
+  }, [wallets]);
+
+  // When the active wallet changes, try to auto-decrypt with cached session password
   useEffect(() => {
     if (!activeWalletId || !sessionPasswordRef.current) return;
-    // Already unlocked for this wallet in this session — nothing to do.
     if (walletSecrets[activeWalletId]) return;
 
-    const wallet = wallets.find(w => w.id === activeWalletId || w.publicKey === activeWalletId);
+    const wallet = walletsRef.current.find(w => w.id === activeWalletId || w.publicKey === activeWalletId);
     if (!wallet) return;
 
     try {
       const secret = decryptSecret(wallet.encryptedSecret, sessionPasswordRef.current);
       setWalletSecrets(prev => ({ ...prev, [activeWalletId]: secret }));
     } catch {
-      // Password doesn't match this wallet — modal will appear as a fallback.
+      // Password doesn't match this wallet — modal will appear as a fallback
     }
-  }, [activeWalletId, wallets]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeWalletId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setSessionPassword = useCallback((password: string) => {
     sessionPasswordRef.current = password;
   }, []);
 
   const setGlobalDecryptedSecret = useCallback((secret: string | null) => {
-    if (!activeWalletId) return;
-    setWalletSecrets(prev => {
-      if (secret === null) {
-        const next = { ...prev };
-        delete next[activeWalletId];
-        return next;
-      }
-      return { ...prev, [activeWalletId]: secret };
+    setActiveWalletId(prev => {
+      if (!prev) return prev;
+      setWalletSecrets(prevSecrets => {
+        if (secret === null) {
+          const next = { ...prevSecrets };
+          delete next[prev];
+          return next;
+        }
+        return { ...prevSecrets, [prev]: secret };
+      });
+      return prev;
     });
-  }, [activeWalletId]);
+  }, []);
 
-  // Password session management - stored in RAM only
+  // Password session management — stored in RAM only
   const [passwordSessionType, setPasswordSessionType] = useState<PasswordSessionType>('everytime');
   const [passwordSessions, setPasswordSessions] = useState<Record<string, { password: string; timestamp: number }>>({});
-  const timeoutRefs = React.useRef<Record<string, NodeJS.Timeout>>({});
+  const timeoutRefs = useRef<Record<string, NodeJS.Timeout>>({});
 
-  // Network connectivity state
-  const [isNetworkConnected, setIsNetworkConnected] = useState(true);
-  const networkCheckRef = React.useRef<NodeJS.Timeout | null>(null);
-
-  // Compute active wallet
+  // Compute active wallet from memo — stable as long as wallets/activeWalletId don't change
   const activeWallet = useMemo(() => {
     return wallets.find(w => w.id === activeWalletId || w.publicKey === activeWalletId) || null;
   }, [wallets, activeWalletId]);
 
-  // Persist wallets to localStorage whenever they change
+  // Persist wallets to localStorage whenever they change (single effect, not duplicated)
   useEffect(() => {
     if (wallets.length > 0) {
       localStorage.setItem('stellar_wallets', JSON.stringify(wallets));
     }
   }, [wallets]);
 
-  // Periodic network connectivity check (every 30 seconds)
-  useEffect(() => {
-    const checkConnection = async () => {
-      const isConnected = await checkNetworkConnectivity();
-      setIsNetworkConnected(isConnected);
-      if (!isConnected) {
-        console.warn('[v0] Network connectivity lost');
-      }
-    };
-
-    // Check immediately on mount
-    checkConnection();
-
-    // Set up periodic checks
-    networkCheckRef.current = setInterval(checkConnection, 30000); // 30 seconds
-
-    return () => {
-      if (networkCheckRef.current) {
-        clearInterval(networkCheckRef.current);
-      }
-    };
-  }, []);
-
-  // Load wallets from localStorage on mount and fetch balances with batching
+  // Load wallets from localStorage on mount only
   useEffect(() => {
     const loadWallets = async () => {
       const stored = localStorage.getItem('stellar_wallets');
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored);
-          // Clean up balances when loading from storage to remove duplicates
-          const cleanedWallets = parsed.map((wallet: any) => {
-            if (wallet.balances && Array.isArray(wallet.balances)) {
-              const { assets, poolShares } = parseWalletBalances(wallet.balances);
-              return { ...wallet, balances: assets, poolShares: poolShares || [] };
-            }
-            return { ...wallet, poolShares: wallet.poolShares || [] };
-          });
-          setWallets(cleanedWallets);
-          if (cleanedWallets.length > 0) {
-            setActiveWalletId(cleanedWallets[0].id || cleanedWallets[0].publicKey);
-          }
+      if (!stored) return;
 
-          // Batch fetch balances for all wallets in the background
-          const walletsNeedingFetch = cleanedWallets.filter(w => !w.balances || w.balances.length === 0);
-          if (walletsNeedingFetch.length > 0) {
-            // Check connectivity before attempting network requests
-            const isConnected = await checkNetworkConnectivity();
-            if (!isConnected) {
-              console.warn('[v0] No network connectivity, skipping balance fetch');
-              setIsNetworkConnected(false);
-              return;
-            }
-
-            const publicKeys = walletsNeedingFetch.map((w: any) => w.publicKey);
-            try {
-              const batchResults = await getMultipleWalletBalances(publicKeys, 5, 150);
-              
-              // Update wallets with fetched balances
-              setWallets(prevWallets =>
-                prevWallets.map(wallet => {
-                  const result = batchResults[wallet.publicKey];
-                  if (result && walletsNeedingFetch.find(w => w.id === wallet.id)) {
-                    if (result.error) {
-                      return { ...wallet, fetchError: result.error };
-                    } else {
-                      const { assets, poolShares } = parseWalletBalances(result.balances);
-                      return { ...wallet, balances: assets, poolShares: poolShares || [], fetchError: undefined };
-                    }
-                  }
-                  return wallet;
-                })
-              );
-            } catch (error) {
-              console.error('[v0] Error batch fetching wallets:', error);
-              setIsNetworkConnected(false);
-            }
+      try {
+        const parsed = JSON.parse(stored);
+        const cleanedWallets = parsed.map((wallet: any) => {
+          if (wallet.balances && Array.isArray(wallet.balances)) {
+            const { assets, poolShares } = parseWalletBalances(wallet.balances);
+            return { ...wallet, balances: assets, poolShares: poolShares || [] };
           }
-        } catch (error) {
-          console.error('[v0] Error loading wallets:', error);
+          return { ...wallet, poolShares: wallet.poolShares || [] };
+        });
+
+        setWallets(cleanedWallets);
+        if (cleanedWallets.length > 0) {
+          setActiveWalletId(cleanedWallets[0].id || cleanedWallets[0].publicKey);
         }
+
+        // Only fetch balances for wallets that have none cached
+        const walletsNeedingFetch = cleanedWallets.filter(
+          (w: any) => !w.balances || w.balances.length === 0
+        );
+        if (walletsNeedingFetch.length === 0) return;
+
+        const publicKeys = walletsNeedingFetch.map((w: any) => w.publicKey);
+        try {
+          const batchResults = await getMultipleWalletBalances(publicKeys, 5, 150);
+          setWallets(prev =>
+            prev.map(wallet => {
+              const result = batchResults[wallet.publicKey];
+              if (result && walletsNeedingFetch.find((w: any) => w.id === wallet.id)) {
+                if (result.error) {
+                  return { ...wallet, fetchError: result.error };
+                }
+                const { assets, poolShares } = parseWalletBalances(result.balances);
+                return { ...wallet, balances: assets, poolShares: poolShares || [], fetchError: undefined };
+              }
+              return wallet;
+            })
+          );
+        } catch (error) {
+          console.error('[v0] Error batch fetching wallets on load:', error);
+        }
+      } catch (error) {
+        console.error('[v0] Error loading wallets from storage:', error);
       }
     };
 
     loadWallets();
-  }, []);
-
-  // Save wallets to localStorage whenever they change
-  useEffect(() => {
-    if (wallets.length > 0) {
-      localStorage.setItem('stellar_wallets', JSON.stringify(wallets));
-    }
-  }, [wallets]);
+  }, []); // runs once on mount only
 
   const addWallet = useCallback((name: string, secret: string, password: string) => {
-    try {
-      const publicKey = getPublicKeyFromSecret(secret);
-      const encryptedSecret = encryptSecret(secret, password);
-      const id = `wallet_${Date.now()}`;
-      
-      const newWallet: Wallet = {
-        id,
-        name,
-        publicKey,
-        encryptedSecret,
-        balances: [],
-        poolShares: [],
-        createdAt: new Date(),
-      };
+    const publicKey = getPublicKeyFromSecret(secret);
+    const encryptedSecret = encryptSecret(secret, password);
+    const id = `wallet_${Date.now()}`;
 
-      setWallets(prev => [...prev, newWallet]);
-      setActiveWalletId(id);
-    } catch (error) {
-      throw error;
-    }
+    const newWallet: Wallet = {
+      id,
+      name,
+      publicKey,
+      encryptedSecret,
+      balances: [],
+      poolShares: [],
+      createdAt: new Date(),
+    };
+
+    setWallets(prev => [...prev, newWallet]);
+    setActiveWalletId(id);
   }, []);
 
   const createWallet = useCallback((name: string, password: string) => {
-    try {
-      const { publicKey, secret } = generateKeyPair();
-      addWallet(name, secret, password);
-    } catch (error) {
-      throw error;
-    }
+    const { publicKey, secret } = generateKeyPair();
+    addWallet(name, secret, password);
   }, [addWallet]);
 
   const removeWallet = useCallback((id: string) => {
     setWallets(prev => {
       const filtered = prev.filter(w => w.id !== id && w.publicKey !== id);
-      // Update localStorage immediately
       if (filtered.length > 0) {
         localStorage.setItem('stellar_wallets', JSON.stringify(filtered));
       } else {
@@ -250,41 +203,36 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       return filtered;
     });
-    if (activeWalletId === id) {
-      setActiveWalletId(wallets.length > 1 ? wallets[0].id : null);
-    }
-  }, [activeWalletId, wallets]);
+    setActiveWalletId(prev => {
+      if (prev !== id) return prev;
+      const remaining = walletsRef.current.filter(w => w.id !== id && w.publicKey !== id);
+      return remaining.length > 0 ? remaining[0].id : null;
+    });
+  }, []);
 
   const updateWalletName = useCallback((id: string, name: string) => {
     setWallets(prev =>
-      prev.map(w =>
-        (w.id === id || w.publicKey === id) ? { ...w, name } : w
-      )
+      prev.map(w => (w.id === id || w.publicKey === id) ? { ...w, name } : w)
     );
   }, []);
 
   const updateWalletDetails = useCallback((id: string, details: { name?: string; federationName?: string; homeDomain?: string }) => {
     setWallets(prev =>
-      prev.map(w =>
-        (w.id === id || w.publicKey === id) ? { ...w, ...details } : w
-      )
+      prev.map(w => (w.id === id || w.publicKey === id) ? { ...w, ...details } : w)
     );
   }, []);
 
   const unlockWallet = useCallback((walletId: string, password: string): string => {
-    const wallet = wallets.find(w => w.id === walletId || w.publicKey === walletId);
+    const wallet = walletsRef.current.find(w => w.id === walletId || w.publicKey === walletId);
     if (!wallet) throw new Error('Wallet not found');
-    
     try {
       return decryptSecret(wallet.encryptedSecret, password);
-    } catch (error) {
+    } catch {
       throw new Error('Incorrect password');
     }
-  }, [wallets]);
+  }, []); // no wallets dep — uses walletsRef
 
-  // Save password to memory with session type
   const savePasswordSession = useCallback((walletId: string, password: string, sessionType: PasswordSessionType) => {
-    // Clear any existing timeout for this wallet
     if (timeoutRefs.current[walletId]) {
       clearTimeout(timeoutRefs.current[walletId]);
       delete timeoutRefs.current[walletId];
@@ -292,41 +240,30 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     setPasswordSessions(prev => ({
       ...prev,
-      [walletId]: {
-        password,
-        timestamp: Date.now(),
-      },
+      [walletId]: { password, timestamp: Date.now() },
     }));
 
-    // If after_hour, set a timeout to clear the password after 60 minutes
     if (sessionType === 'after_hour') {
-      const timeoutId = setTimeout(() => {
+      timeoutRefs.current[walletId] = setTimeout(() => {
         setPasswordSessions(prev => {
           const updated = { ...prev };
           delete updated[walletId];
           return updated;
         });
         delete timeoutRefs.current[walletId];
-      }, 60 * 60 * 1000); // 60 minutes in milliseconds
-
-      timeoutRefs.current[walletId] = timeoutId;
+      }, 60 * 60 * 1000);
     }
   }, []);
 
-  // Retrieve password if valid based on session type
   const getPasswordSession = useCallback((walletId: string): string | null => {
-    if (passwordSessionType === 'everytime') {
-      return null; // Always ask for password
-    }
+    if (passwordSessionType === 'everytime') return null;
 
     const session = passwordSessions[walletId];
     if (!session) return null;
 
     if (passwordSessionType === 'after_hour') {
-      const ageInMs = Date.now() - session.timestamp;
-      const ageInMinutes = ageInMs / (60 * 1000);
+      const ageInMinutes = (Date.now() - session.timestamp) / 60000;
       if (ageInMinutes > 60) {
-        // Password expired, remove it
         setPasswordSessions(prev => {
           const updated = { ...prev };
           delete updated[walletId];
@@ -334,17 +271,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         });
         return null;
       }
-      return session.password;
     }
 
-    if (passwordSessionType === 'never') {
-      return session.password; // Return password indefinitely
-    }
-
-    return null;
+    return session.password;
   }, [passwordSessionType, passwordSessions]);
 
-  // Clear password session for a specific wallet
   const clearPasswordSession = useCallback((walletId: string) => {
     if (timeoutRefs.current[walletId]) {
       clearTimeout(timeoutRefs.current[walletId]);
@@ -357,41 +288,27 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   }, []);
 
+  // updateBalances uses walletsRef so it never needs wallets in its dep array
+  // This prevents the infinite loop: wallets change → updateBalances ref changes
+  // → useEffects re-run → fetch → wallets change → repeat
   const updateBalances = useCallback(async (walletId: string) => {
-    const wallet = wallets.find(w => w.id === walletId || w.publicKey === walletId);
+    const wallet = walletsRef.current.find(w => w.id === walletId || w.publicKey === walletId);
     if (!wallet) return;
-    
-    // Fetch balances asynchronously in the background
-    try {
-      // Check connectivity before attempting to fetch
-      const isConnected = await checkNetworkConnectivity();
-      if (!isConnected) {
-        console.warn('[v0] No network connectivity, cannot update balances');
-        setIsNetworkConnected(false);
-        setWallets(current =>
-          current.map(w =>
-            (w.id === walletId || w.publicKey === walletId)
-              ? { ...w, fetchError: 'Network unreachable' }
-              : w
-          )
-        );
-        return;
-      }
 
-      setIsNetworkConnected(true);
+    try {
       const rawBalances = await getAccountBalances(wallet.publicKey);
       const { assets, poolShares } = parseWalletBalances(rawBalances);
-      
+
       setWallets(current =>
         current.map(w =>
-          (w.id === walletId || w.publicKey === walletId) 
-            ? { ...w, balances: assets, poolShares: poolShares || [], fetchError: undefined } 
+          (w.id === walletId || w.publicKey === walletId)
+            ? { ...w, balances: assets, poolShares: poolShares || [], fetchError: undefined }
             : w
         )
       );
     } catch (error: any) {
       console.error('[v0] Balance fetch error for', wallet.publicKey, ':', error?.message);
-      setIsNetworkConnected(false);
+      // Only store error — do NOT clear existing balances on failure
       setWallets(current =>
         current.map(w =>
           (w.id === walletId || w.publicKey === walletId)
@@ -400,14 +317,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         )
       );
     }
-  }, [wallets]);
-
-  // Auto-refresh balances when active wallet changes
-  useEffect(() => {
-    if (activeWalletId) {
-      updateBalances(activeWalletId);
-    }
-  }, [activeWalletId, updateBalances]);
+  }, []); // stable — no dependencies, uses walletsRef
 
   const batchImportWallets = useCallback((entries: Array<{ privateKey: string; publicKey: string; accountName: string }>, password: string) => {
     let successful = 0;
@@ -418,8 +328,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       try {
         const encryptedSecret = encryptSecret(entry.privateKey, password);
         const id = `wallet_${Date.now()}_${Math.random()}`;
-        
-        const newWallet: Wallet = {
+        newWalletsToAdd.push({
           id,
           name: entry.accountName,
           publicKey: entry.publicKey,
@@ -427,22 +336,16 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           balances: [],
           poolShares: [],
           createdAt: new Date(),
-        };
-
-        newWalletsToAdd.push(newWallet);
+        });
         successful++;
-      } catch (error) {
+      } catch {
         failed++;
       }
     });
 
-    // Add all wallets at once and set active to the first newly imported one
     if (successful > 0) {
       setWallets(prev => [...prev, ...newWalletsToAdd]);
-      // Set first new wallet as active
-      if (newWalletsToAdd.length > 0) {
-        setActiveWalletId(newWalletsToAdd[0].id);
-      }
+      setActiveWalletId(newWalletsToAdd[0].id);
     }
 
     return { successful, failed };
