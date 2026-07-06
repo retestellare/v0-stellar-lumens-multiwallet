@@ -155,6 +155,24 @@ export function PriceChart({
         </div>
       </div>
 
+      {/* Timeframe Selector */}
+      {onTimeRangeChange && (
+        <div className="flex gap-1 flex-wrap">
+          {['1h', '4h', '1d', '1w', '1m'].map((range) => (
+            <Button
+              key={range}
+              variant={timeRange === range ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => onTimeRangeChange(range as '1h' | '4h' | '1d' | '1w' | '1m')}
+              className="text-xs h-7 px-3"
+              title={`${range} timeframe`}
+            >
+              {range.toUpperCase()}
+            </Button>
+          ))}
+        </div>
+      )}
+
       {/* Chart Type Toggle */}
       <div className="flex gap-2">
         <Button
