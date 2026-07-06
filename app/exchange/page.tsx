@@ -163,7 +163,7 @@ export default function ExchangePage() {
       updateBalances(activeWalletId);
     }
     prevWalletIdRef.current = activeWalletId;
-  }, [activeWalletId, mounted, updateBalances]);
+  }, [activeWalletId, mounted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch order book
   useEffect(() => {
