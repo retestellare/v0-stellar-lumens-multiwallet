@@ -297,22 +297,22 @@ export function PriceChart({
 
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-3 pt-2">
-        <div className="p-3 rounded-lg bg-background/50 border border-border/30">
-          <p className="text-xs text-muted-foreground mb-1">High</p>
-          <p className="font-semibold text-foreground text-sm">{maxPrice.toFixed(6)}</p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 pt-3">
+        <div className="min-w-0 p-2 sm:p-3 rounded-lg bg-background/50 border border-border/30">
+          <p className="text-xs text-muted-foreground mb-1 truncate">High</p>
+          <p className="font-semibold text-foreground text-xs sm:text-sm truncate">{maxPrice.toFixed(2)}</p>
         </div>
-        <div className="p-3 rounded-lg bg-background/50 border border-border/30">
-          <p className="text-xs text-muted-foreground mb-1">Low</p>
-          <p className="font-semibold text-foreground text-sm">{minPrice.toFixed(6)}</p>
+        <div className="min-w-0 p-2 sm:p-3 rounded-lg bg-background/50 border border-border/30">
+          <p className="text-xs text-muted-foreground mb-1 truncate">Low</p>
+          <p className="font-semibold text-foreground text-xs sm:text-sm truncate">{minPrice.toFixed(2)}</p>
         </div>
-        <div className="p-3 rounded-lg bg-background/50 border border-border/30">
-          <p className="text-xs text-muted-foreground mb-1">Volume</p>
-          <p className="font-semibold text-foreground text-sm">{formatNumber(totalVolume)}</p>
+        <div className="min-w-0 p-2 sm:p-3 rounded-lg bg-background/50 border border-border/30">
+          <p className="text-xs text-muted-foreground mb-1 truncate">Volume</p>
+          <p className="font-semibold text-foreground text-xs sm:text-sm truncate">{formatNumber(totalVolume)}</p>
         </div>
-        <div className="p-3 rounded-lg bg-background/50 border border-border/30">
-          <p className="text-xs text-muted-foreground mb-1">Trades</p>
-          <p className="font-semibold text-foreground text-sm">
+        <div className="min-w-0 p-2 sm:p-3 rounded-lg bg-background/50 border border-border/30">
+          <p className="text-xs text-muted-foreground mb-1 truncate">Trades</p>
+          <p className="font-semibold text-foreground text-xs sm:text-sm truncate">
             {formatNumber(data.reduce((sum, d) => sum + (d.trade_count || 0), 0))}
           </p>
         </div>
