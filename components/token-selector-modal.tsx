@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Search, X, Star, Loader2 } from 'lucide-react';
 import { TokenMetadata } from '@/types/token';
-import { getTokenPicks } from '@/lib/token-service';
+import { getTokenPicks, searchTokens } from '@/lib/token-service';
 import { getIssuerTokenIcon } from '@/lib/stellar-utils';
 import {
   getFavoriteTokens,
@@ -250,27 +250,42 @@ export function TokenSelectorModal({
     }
   }, [isOpen]);
 
-  // Handle search - FILTER wallet tokens only (no external search)
+  // Handle search - search full Stellar network, not just wallet
   useEffect(() => {
     if (searchQuery.length >= 2) {
       setIsSearching(true);
-      // Simulate brief loading then filter wallet tokens
-      const timer = setTimeout(() => {
-        const query = searchQuery.toUpperCase();
-        const filtered = walletTokens.filter(
-          (t) =>
-            t.code.toUpperCase().includes(query) ||
-            (t.name && t.name.toUpperCase().includes(query)) ||
-            (t.issuer && t.issuer.toUpperCase().includes(query))
-        );
-        setDisplayTokens(filtered);
-        setIsSearching(false);
-      }, 200);
-      return () => clearTimeout(timer);
+      let cancelled = false;
+      
+      searchTokens(searchQuery)
+        .then((results) => {
+          if (!cancelled) {
+            // Enrich results with metadata and mark source
+            const enrichedResults = results.map((token) => ({
+              code: token.code,
+              issuer: token.issuer,
+              name: token.name,
+              domain: token.domain,
+              image: token.image,
+              verified: token.verified,
+              source: 'search' as const,
+            }));
+            setDisplayTokens(enrichedResults);
+            setIsSearching(false);
+          }
+        })
+        .catch((err) => {
+          console.error('[v0] Token search error:', err);
+          if (!cancelled) {
+            setDisplayTokens([]);
+            setIsSearching(false);
+          }
+        });
+      
+      return () => { cancelled = true; };
     } else {
       setIsSearching(false);
     }
-  }, [searchQuery, walletTokens]);
+  }, [searchQuery]);
 
   // Update display tokens based on tab (always filtered to wallet assets)
   useEffect(() => {
@@ -355,7 +370,7 @@ export function TokenSelectorModal({
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Search your wallet assets..."
+              placeholder="Search by token name, domain, or issuer..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="bg-input border-border text-foreground pl-10 pr-10"
@@ -394,13 +409,13 @@ export function TokenSelectorModal({
           {isSearching ? (
             <div className="flex flex-col items-center justify-center h-48 gap-3">
               <Loader2 className="w-8 h-8 text-primary animate-spin" />
-              <p className="text-muted-foreground">Searching your wallet...</p>
+              <p className="text-muted-foreground">Searching all Stellar tokens...</p>
             </div>
           ) : displayTokens.length === 0 ? (
             <div className="flex items-center justify-center h-48">
               <p className="text-muted-foreground text-center">
                 {showingSearch
-                  ? 'No matching assets in your wallet.'
+                  ? 'No tokens found. Try searching by token name, domain, or issuer address.'
                   : activeTab === 'favorites'
                   ? 'No favorites in your wallet. Star tokens to add them here.'
                   : activeTab === 'picks'

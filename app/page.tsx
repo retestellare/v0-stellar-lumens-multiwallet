@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { useWallet } from '@/lib/wallet-context';
 import { Plus, Copy, Check } from 'lucide-react';
 import { AssetItem } from '@/components/asset-item';
+import { WalletBalanceSkeleton, AssetListSkeleton } from '@/components/skeleton-loaders';
+import { useStellarStream } from '@/hooks/use-stellar-stream';
 
 // Lazy load heavy modals for better initial page performance
 const CreateWalletModal = dynamic(() => import('@/components/create-wallet-modal').then(mod => ({ default: mod.CreateWalletModal })), {
@@ -23,6 +25,43 @@ const SendModal = dynamic(() => import('@/components/send-modal').then(mod => ({
 const ReceiveModal = dynamic(() => import('@/components/receive-modal').then(mod => ({ default: mod.ReceiveModal })), {
   loading: () => null,
 });
+
+// Curated list of verified/main assets in priority order
+const PRIORITY_TOKENS = [
+  'XLM', // Native asset - always first
+  'USDC',
+  'EURC',
+  'USDT',
+  'BTC',
+  'ETH',
+  'AQUA',
+  'VELO',
+];
+
+// Helper function to sort assets: XLM first, then verified tokens, then others
+function sortAssets(balances: any[]): any[] {
+  return [...balances].sort((a, b) => {
+    const aCode = a.asset_code || 'XLM';
+    const bCode = b.asset_code || 'XLM';
+    
+    // XLM (native) always first
+    if (aCode === 'XLM' && bCode !== 'XLM') return -1;
+    if (bCode === 'XLM' && aCode !== 'XLM') return 1;
+    
+    // Priority tokens by predefined order
+    const aPriority = PRIORITY_TOKENS.indexOf(aCode);
+    const bPriority = PRIORITY_TOKENS.indexOf(bCode);
+    
+    if (aPriority !== -1 && bPriority !== -1) {
+      return aPriority - bPriority; // Both in priority list, sort by priority
+    }
+    if (aPriority !== -1) return -1; // a is prioritized, comes first
+    if (bPriority !== -1) return 1;  // b is prioritized, comes first
+    
+    // For non-priority tokens, maintain alphabetical order
+    return aCode.localeCompare(bCode);
+  });
+}
 
 export default function DashboardPage() {
   const { wallets, activeWalletId, setActiveWallet, removeWallet, updateBalances } = useWallet();
@@ -101,22 +140,31 @@ export default function DashboardPage() {
     setMounted(true);
   }, []);
 
+  // Fetch balances once when the active wallet changes (after mount)
   useEffect(() => {
-    if (activeWalletId && mounted) {
-      const interval = setInterval(() => {
-        updateBalances(activeWalletId);
-      }, 30000); // Update every 30 seconds
-      
-      updateBalances(activeWalletId);
-      return () => clearInterval(interval);
-    }
-  }, [activeWalletId, updateBalances, mounted]);
+    if (!activeWalletId || !mounted) return;
+    updateBalances(activeWalletId);
+  }, [activeWalletId, mounted]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!mounted) {
-    return null;
-  }
+  // Fallback polling (every 60s) — only runs after mount, re-creates only on wallet change
+  useEffect(() => {
+    if (!activeWalletId || !mounted) return;
+    const id = activeWalletId; // capture for closure
+    const interval = setInterval(() => {
+      updateBalances(id);
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [activeWalletId, mounted]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Real-time balance streaming — fires updateBalances immediately when a
+  // payment lands on the active wallet instead of waiting for the next poll.
   const activeWallet = wallets.find(w => w.id === activeWalletId);
+  useStellarStream({
+    publicKey: mounted && activeWallet ? activeWallet.publicKey : null,
+    onPayment: useCallback(() => {
+      if (activeWalletId) updateBalances(activeWalletId);
+    }, [activeWalletId]), // eslint-disable-line react-hooks/exhaustive-deps
+  });
 
   const xlmBalance = activeWallet?.balances.find((b: any) => b.asset_type === 'native');
   const xlmBalanceStr = xlmBalance?.balance || '0';
@@ -152,78 +200,86 @@ export default function DashboardPage() {
             <div className="space-y-4 min-w-0">
 
               {/* Balance hero card */}
-              {activeWallet && (
-                <div className="relative overflow-hidden rounded-2xl border border-primary/25 bg-card p-5 shadow-xl shadow-black/30 ring-1 ring-primary/8">
-                  {/* subtle accent glow */}
-                  <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-primary/8 blur-3xl pointer-events-none" />
-                  <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-secondary/5 blur-2xl pointer-events-none" />
+              {mounted ? (
+                activeWallet ? (
+                  <div className="relative overflow-hidden rounded-2xl border border-primary/25 bg-card p-5 shadow-xl shadow-black/30 ring-1 ring-primary/8 min-h-32">
+                    {/* subtle accent glow */}
+                    <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-primary/8 blur-3xl pointer-events-none" />
+                    <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-secondary/5 blur-2xl pointer-events-none" />
 
-                  <div className="relative z-10 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-                    {/* Left */}
-                    <div>
-                      <p className="section-label mb-2">Active Wallet</p>
-                      <h1 className="text-lg font-bold text-foreground leading-tight tracking-tight">{activeWallet.name}</h1>
-                      <div className="flex items-center gap-1.5 mt-1.5">
-                        <code className="text-xs text-muted-foreground font-mono bg-muted/40 px-2 py-0.5 rounded-md border border-border/40">
-                          {activeWallet.publicKey.substring(0, 10)}...{activeWallet.publicKey.substring(activeWallet.publicKey.length - 8)}
-                        </code>
-                        <button
-                          onClick={handleCopyPublicKey}
-                          className="p-1.5 rounded-lg hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
-                          aria-label="Copy public key"
-                          title="Copy full public key"
-                        >
-                          {copiedPublicKey
-                            ? <Check className="w-3.5 h-3.5 text-success" />
-                            : <Copy className="w-3.5 h-3.5" />
-                          }
-                        </button>
+                    <div className="relative z-10 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+                      {/* Left */}
+                      <div>
+                        <p className="section-label mb-2">Active Wallet</p>
+                        <h1 className="text-lg font-bold text-foreground leading-tight tracking-tight">{activeWallet.name}</h1>
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          <code className="text-xs text-muted-foreground font-mono bg-muted/40 px-2 py-0.5 rounded-md border border-border/40">
+                            {activeWallet.publicKey.substring(0, 10)}...{activeWallet.publicKey.substring(activeWallet.publicKey.length - 8)}
+                          </code>
+                          <button
+                            onClick={handleCopyPublicKey}
+                            className="p-1.5 rounded-lg hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
+                            aria-label="Copy public key"
+                            title="Copy full public key"
+                          >
+                            {copiedPublicKey
+                              ? <Check className="w-3.5 h-3.5 text-success" />
+                              : <Copy className="w-3.5 h-3.5" />
+                            }
+                          </button>
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Right - Balance */}
-                    <div className="sm:text-right">
-                      <p className="section-label mb-1">XLM Balance</p>
-                      <div className="flex items-baseline sm:justify-end gap-0.5">
-                        <span className="text-4xl font-bold text-primary num tracking-tight">{parseInt(xlmWhole).toLocaleString()}</span>
-                        <span className="text-xl text-primary/60 num">.{xlmDec || '00'}</span>
-                        <span className="text-sm font-semibold text-muted-foreground ml-1">XLM</span>
+                      {/* Right - Balance */}
+                      <div className="sm:text-right">
+                        <p className="section-label mb-1">XLM Balance</p>
+                        <div className="flex items-baseline sm:justify-end gap-0.5">
+                          <span className="text-4xl font-bold text-primary num tracking-tight">{parseInt(xlmWhole).toLocaleString()}</span>
+                          <span className="text-xl text-primary/60 num">.{xlmDec || '00'}</span>
+                          <span className="text-sm font-semibold text-muted-foreground ml-1">XLM</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {activeWallet.balances.length} asset{activeWallet.balances.length !== 1 ? 's' : ''}
+                        </p>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {activeWallet.balances.length} asset{activeWallet.balances.length !== 1 ? 's' : ''}
-                      </p>
                     </div>
                   </div>
-                </div>
+                ) : null
+              ) : (
+                <WalletBalanceSkeleton />
               )}
 
               {/* Assets list */}
-              {activeWallet && (
-                <div className="rounded-2xl border border-border/70 bg-card overflow-hidden shadow-sm">
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 bg-muted/10">
-                    <h2 className="text-sm font-semibold text-foreground tracking-tight">Assets</h2>
-                    <span className="text-xs text-muted-foreground bg-muted/40 px-2 py-0.5 rounded-full border border-border/40">{activeWallet.balances.length} total</span>
+              {mounted ? (
+                activeWallet ? (
+                  <div className="rounded-2xl border border-border/70 bg-card overflow-hidden shadow-sm">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 bg-muted/10">
+                      <h2 className="text-sm font-semibold text-foreground tracking-tight">Assets</h2>
+                      <span className="text-xs text-muted-foreground bg-muted/40 px-2 py-0.5 rounded-full border border-border/40">{activeWallet.balances.length} total</span>
+                    </div>
+                    <div className="p-2 space-y-0.5 min-h-20">
+                      {activeWallet.balances.length === 0 ? (
+                        <p className="text-xs text-muted-foreground text-center py-6">No assets yet. Fund your wallet to get started.</p>
+                      ) : (
+                        sortAssets(activeWallet.balances).map((balance: any) => (
+                          <AssetItem
+                            key={`${balance.asset_code || 'XLM'}_${balance.asset_issuer || ''}`}
+                            code={balance.asset_code || 'XLM'}
+                            issuer={balance.asset_issuer || ''}
+                            balance={balance.balance}
+                            onClick={() => handleSelectAsset({
+                              code: balance.asset_code || 'XLM',
+                              issuer: balance.asset_issuer,
+                              balance: balance.balance,
+                            })}
+                          />
+                        ))
+                      )}
+                    </div>
                   </div>
-                  <div className="p-2 space-y-0.5">
-                    {activeWallet.balances.length === 0 ? (
-                      <p className="text-xs text-muted-foreground text-center py-6">No assets yet. Fund your wallet to get started.</p>
-                    ) : (
-                      activeWallet.balances.map((balance: any, idx: number) => (
-                        <AssetItem
-                          key={idx}
-                          code={balance.asset_code || 'XLM'}
-                          issuer={balance.asset_issuer || ''}
-                          balance={balance.balance}
-                          onClick={() => handleSelectAsset({
-                            code: balance.asset_code || 'XLM',
-                            issuer: balance.asset_issuer,
-                            balance: balance.balance,
-                          })}
-                        />
-                      ))
-                    )}
-                  </div>
-                </div>
+                ) : null
+              ) : (
+                <AssetListSkeleton count={3} />
               )}
             </div>
 

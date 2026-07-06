@@ -2,7 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { fetchTokenMetadataFromToml, getIssuerTokenIcon } from '@/lib/stellar-utils';
+import { fetchTokenPrice, formatPrice, formatChange } from '@/lib/price-service';
 import { getTokenPicks } from '@/lib/token-service';
+import { formatBalanceCompact, balanceToUsd } from '@/lib/math';
+import { InlineLoader } from '@/components/skeleton-loaders';
 
 // Known tokens cache for instant metadata lookup
 const KNOWN_TOKEN_METADATA: Record<string, { name: string; domain: string; image: string }> = {
@@ -42,46 +45,86 @@ interface AssetItemProps {
 }
 
 export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
-  // Try instant lookup first
+  // Derive the stable cache key for this specific token
+  const tokenKey = `${code}_${issuer || ''}`;
+
+  // Initialise from the synchronous lookup so known tokens render instantly
   const cachedMeta = getTokenMetadata(code, issuer);
-  
+
   const [image, setImage] = useState<string | null>(cachedMeta?.image || null);
   const [domain, setDomain] = useState<string | null>(cachedMeta?.domain || null);
   const [imageError, setImageError] = useState(false);
-  
-  // Fetch image and domain
+  const [price, setPrice] = useState<number | null>(null);
+  const [priceChange, setPriceChange] = useState<number | null>(null);
+  const [priceLoading, setPriceLoading] = useState(false);
+
+  // Mount animation: start invisible and slide in
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    // Defer one frame so the CSS transition fires on mount
+    const id = requestAnimationFrame(() => setVisible(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  // When the token identity changes, reset all derived state immediately
+  // so the previous token's image never bleeds into this render
+  useEffect(() => {
+    const meta = getTokenMetadata(code, issuer);
+    setImage(meta?.image || null);
+    setDomain(meta?.domain || null);
+    setImageError(false);
+    setPrice(null);
+    setPriceChange(null);
+  }, [tokenKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch image, domain, and price for tokens not in the synchronous cache
   useEffect(() => {
     let cancelled = false;
-    
+
     const fetchMeta = async () => {
-      // Fetch icon with caching
-      if (!image) {
+      const meta = getTokenMetadata(code, issuer);
+
+      // Only hit the network when we don't already have an image
+      if (!meta?.image) {
         const iconUrl = await getIssuerTokenIcon(code, issuer);
         if (!cancelled && iconUrl) {
           setImage(iconUrl);
         }
       }
-      
-      // Fetch domain from TOML if not cached
-      if (!domain && issuer) {
-        const meta = await fetchTokenMetadataFromToml(issuer);
-        if (!cancelled && meta.domain) {
-          setDomain(meta.domain);
+
+      // Only hit the network when we don't already have a domain
+      if (!meta?.domain && issuer) {
+        const tomlMeta = await fetchTokenMetadataFromToml(issuer);
+        if (!cancelled && tomlMeta.domain) {
+          setDomain(tomlMeta.domain);
         }
       }
+
+      // Fetch price data from CoinGecko
+      setPriceLoading(true);
+      const priceData = await fetchTokenPrice(code);
+      if (!cancelled && priceData) {
+        setPrice(priceData.usd);
+        setPriceChange(priceData.usd_24h_change);
+      }
+      if (!cancelled) setPriceLoading(false);
     };
-    
+
     fetchMeta();
-    
+
     return () => { cancelled = true; };
-  }, [code, issuer, image, domain]);
-  
-  const numBalance = parseFloat(balance);
+  }, [tokenKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Use BigNumber for precise balance formatting
+  const displayBalance = formatBalanceCompact(balance);
+  // Show USD value when price is available
+  const usdValue = price !== null ? balanceToUsd(balance, price) : null;
 
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-transparent hover:border-border/50 hover:bg-muted/30 active:bg-muted/50 transition-all cursor-pointer text-left group"
+      style={{ opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(4px)' }}
+      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-transparent hover:border-border/50 hover:bg-muted/30 active:bg-muted/50 transition-all duration-200 cursor-pointer text-left group"
     >
       {/* Token Icon */}
       <div className="w-9 h-9 rounded-full bg-muted/60 flex items-center justify-center overflow-hidden border border-border/50 flex-shrink-0 shadow-sm">
@@ -106,14 +149,31 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
         </p>
       </div>
 
-      {/* Balance */}
+      {/* Balance and Price */}
       <div className="text-right flex-shrink-0">
         <p className="text-sm font-semibold text-foreground num tabular-nums">
-          {numBalance >= 1000
-            ? numBalance.toLocaleString('en-US', { maximumFractionDigits: 2 })
-            : numBalance.toFixed(numBalance === 0 ? 0 : 4)}
+          {displayBalance}
         </p>
-        <p className="text-xs text-muted-foreground">{code}</p>
+        <div className="flex items-center justify-end gap-1.5 mt-0.5">
+          {priceLoading && <InlineLoader />}
+          {!priceLoading && usdValue && (
+            <>
+              <p className="text-xs text-muted-foreground">{usdValue}</p>
+              {priceChange !== null && (
+                <p className={`text-xs font-semibold tabular-nums ${
+                  priceChange >= 0
+                    ? 'text-emerald-500'
+                    : 'text-red-500'
+                }`}>
+                  {formatChange(priceChange).text}
+                </p>
+              )}
+            </>
+          )}
+          {!priceLoading && !usdValue && (
+            <p className="text-xs text-muted-foreground">{code}</p>
+          )}
+        </div>
       </div>
     </button>
   );

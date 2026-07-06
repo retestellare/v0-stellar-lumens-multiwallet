@@ -119,44 +119,63 @@ export function AssetDetailModal({ isOpen, onClose, asset, onSend, onReceive, on
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md bg-card border border-border rounded-xl shadow-2xl max-h-[90vh] flex flex-col">
+      <div className="w-full max-w-md bg-card border border-border rounded-xl shadow-2xl max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="p-4 border-b border-border flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            {displayImage ? (
-              <Image 
-                src={displayImage} 
-                alt={asset.code} 
-                width={40} 
-                height={40} 
-                className="rounded-full"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            ) : (
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/50 flex items-center justify-center text-primary-foreground font-bold">
-                {asset.code.charAt(0)}
-              </div>
-            )}
-            <div>
-              <h2 className="font-bold text-lg">{asset.code}</h2>
-              <p className="text-xs text-muted-foreground">{displayDomain}</p>
+        <div className="p-4 border-b border-border shrink-0">
+          {/* Top row: icon + name + close button */}
+          <div className="flex items-start gap-3">
+            <div className="shrink-0">
+              {displayImage ? (
+                <Image
+                  src={displayImage}
+                  alt={asset.code}
+                  width={40}
+                  height={40}
+                  className="rounded-full"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/50 flex items-center justify-center text-primary-foreground font-bold">
+                  {asset.code.charAt(0)}
+                </div>
+              )}
+            </div>
+
+            {/* Name + full public key (two lines) */}
+            <div className="flex-1 min-w-0">
+              <h2 className="font-bold text-lg leading-tight">{asset.code}</h2>
+              {asset.issuer ? (
+                <p className="text-xs text-muted-foreground font-mono break-all leading-tight mt-0.5">
+                  {asset.issuer.slice(0, Math.ceil(asset.issuer.length / 2))}
+                  <br />
+                  {asset.issuer.slice(Math.ceil(asset.issuer.length / 2))}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-0.5">Native XLM</p>
+              )}
+            </div>
+
+            {/* Close button — in flow, never pushed off screen */}
+            <button
+              onClick={onClose}
+              className="shrink-0 p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Balance row */}
+          <div className="mt-3 flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">{displayDomain}</p>
+            <div className="text-right">
+              <p className="font-bold text-base">{parseFloat(asset.balance).toFixed(7).replace(/\.?0+$/, '')}</p>
+              <p className="text-xs text-muted-foreground">≈ $0.00 USD</p>
             </div>
           </div>
-          <div className="text-right">
-            <p className="font-bold text-lg">{parseFloat(asset.balance).toFixed(7).replace(/\.?0+$/, '')}</p>
-            <p className="text-xs text-muted-foreground">≈ $0.00 USD</p>
-          </div>
         </div>
-
-        {/* Close button */}
-        <button 
-          onClick={onClose}
-          className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
-        >
-          <X className="w-5 h-5" />
-        </button>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4">

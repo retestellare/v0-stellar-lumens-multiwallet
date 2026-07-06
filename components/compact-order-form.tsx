@@ -33,8 +33,8 @@ const formatAmount = (num: number | string): string => {
     return n.toFixed(7).replace(/\.?0+$/, "");
   }
   
-  // For standard amounts, use 4 decimals with trailing zeros removed
-  return n.toFixed(4).replace(/\.?0+$/, "");
+  // For standard amounts, use 6 decimals with trailing zeros removed
+  return n.toFixed(6).replace(/\.?0+$/, "");
 };
 
 export function CompactOrderForm({

@@ -13,8 +13,10 @@ import { FilledOrders } from '@/components/filled-orders';
 import { PriceChart } from '@/components/price-chart';
 import { TokenSelectorModal } from '@/components/token-selector-modal';
 import { CompactOrderForm } from '@/components/compact-order-form';
+import { OrderBookSkeleton, ChartSkeleton } from '@/components/skeleton-loaders';
 import { useState, useEffect } from 'react';
-import { ArrowLeft, TrendingUp, ArrowRightLeft, X, Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, TrendingUp, ArrowRightLeft, X, Loader2, AlertCircle, History, ClipboardList, CheckCircle2, BarChart3 } from 'lucide-react';
 import { WalletSelectorDropdown } from '@/components/wallet-selector-dropdown';
 import Link from 'next/link';
 
@@ -23,7 +25,7 @@ interface OrderBookData {
   asks: Array<{ price: string; amount: string }>;
 }
 
-type TabType = 'history' | 'my-orders' | 'charts';
+type TabType = 'history' | 'my-orders' | 'charts' | 'filled';
 type TokenModalType = 'selling' | 'buying' | null;
 
 export default function ExchangePage() {
@@ -86,6 +88,37 @@ export default function ExchangePage() {
   const [availableBuyingBalance, setAvailableBuyingBalance] = useState('0');
   const [balancesLoading, setBalancesLoading] = useState(false);
 
+  // Trustline retry state
+  const [pendingTrustlineAsset, setPendingTrustlineAsset] = useState<{ code: string; issuer: string } | null>(null);
+  const [showTrustlineAlert, setShowTrustlineAlert] = useState(false);
+
+  const router = useRouter();
+
+  // Handle hash-based navigation for quick-access links from sidebar
+  useEffect(() => {
+    const handleHashChange = () => {
+      if (typeof window !== 'undefined') {
+        const hash = window.location.hash.slice(1); // Remove the #
+        if (hash === 'history') setActiveTab('history');
+        else if (hash === 'orders') setActiveTab('my-orders');
+        else if (hash === 'filled') setActiveTab('filled');
+        else if (hash === 'charts') setActiveTab('charts');
+      }
+    };
+
+    // Handle initial hash on mount/ready
+    // Use a small delay to ensure the router is ready and hash is set
+    const timer = setTimeout(handleHashChange, 100);
+
+    // Listen for hash changes when clicking menu links
+    window.addEventListener('hashchange', handleHashChange);
+    
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('hashchange', handleHashChange);
+    };
+  }, [router]);
+
   useEffect(() => {
     setMounted(true);
     
@@ -130,7 +163,7 @@ export default function ExchangePage() {
       updateBalances(activeWalletId);
     }
     prevWalletIdRef.current = activeWalletId;
-  }, [activeWalletId, mounted, updateBalances]);
+  }, [activeWalletId, mounted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch order book
   useEffect(() => {
@@ -598,10 +631,15 @@ export default function ExchangePage() {
       } else {
         // Handle op_buy_no_trust error - trustline may have failed or been needed but not created
         if (result.error && (result.error.includes('op_buy_no_trust') || result.error.includes('no_trust'))) {
+          // Keep pendingOrder alive so handleCreateTrustlineAndRetry can reuse it
+          setPendingTrustlineAsset({ code: buyingAsset, issuer: buyingIssuer });
+          setShowTrustlineAlert(true);
           setTxResult({ 
             success: false, 
-            message: `Trustline for ${buyingAsset} needs to be created first. Please try again.` 
+            message: `Trustline for ${buyingAsset} needs to be created.` 
           });
+          setIsSubmitting(false);
+          return; // skip the finally clearance below
         } else {
           setTxResult({ success: false, message: result.error || 'Failed to submit order' });
         }
@@ -614,6 +652,51 @@ export default function ExchangePage() {
     }
   };
   
+  const handleCreateTrustlineAndRetry = async () => {
+    if (!globalDecryptedSecret || !pendingTrustlineAsset || !pendingOrder) {
+      setTxResult({ success: false, message: 'Missing required information to create trustline.' });
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      setShowTrustlineAlert(false);
+
+      // Create the trustline
+      const trustResult = await addTrustline(
+        globalDecryptedSecret,
+        pendingTrustlineAsset.code,
+        pendingTrustlineAsset.issuer
+      );
+
+      if (!trustResult.success) {
+        setTxResult({ success: false, message: `Failed to create trustline: ${trustResult.error}` });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Refresh balances after adding trustline
+      if (activeWalletId) {
+        await updateBalances(activeWalletId);
+      }
+
+      // Small delay to let the blockchain confirm
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      setTxResult({ success: true, message: `Trustline created for ${pendingTrustlineAsset.code}. Retrying order...` });
+
+      // Retry the order submission
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await submitOrder(pendingOrder, globalDecryptedSecret);
+
+      setPendingTrustlineAsset(null);
+    } catch (error: any) {
+      setTxResult({ success: false, message: error.message || 'Failed to create trustline' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleCancelOrder = (id: string) => {
     if (!globalDecryptedSecret) {
       setTxResult({ success: false, message: 'Wallet is locked. Please restart the app to unlock.' });
@@ -661,23 +744,45 @@ export default function ExchangePage() {
     }
   };
 
+  // Smart number formatter to remove excessive decimals
+  const formatNumber = (num: string | number): string => {
+    const n = typeof num === 'string' ? parseFloat(num) : num;
+    if (!n || n === 0) return '0';
+    
+    // For very small numbers (< 0.01), use up to 7 decimals
+    if (n < 0.01) {
+      return n.toFixed(7).replace(/\.?0+$/, '');
+    }
+    
+    // For standard numbers, use up to 6 decimals
+    return n.toFixed(6).replace(/\.?0+$/, '');
+  };
+
   // Clicking a BID order = someone wants to BUY, so you can SELL to them
   const handleSelectBidOrder = (price: string, amount: string) => {
-    setSellPrice(price);
-    setSellAmount(amount);
+    const formattedPrice = formatNumber(price);
+    const formattedAmount = formatNumber(amount);
+    setSellPrice(formattedPrice);
+    setSellAmount(formattedAmount);
+    // Also populate BUY side with the same price for comparison
+    setBuyPrice(formattedPrice);
   };
 
   // Clicking an ASK order = someone wants to SELL, so you can BUY from them
   const handleSelectAskOrder = (price: string, amount: string) => {
-    setBuyPrice(price);
-    setBuyAmount(amount);
+    const formattedPrice = formatNumber(price);
+    const formattedAmount = formatNumber(amount);
+    setBuyPrice(formattedPrice);
+    setBuyAmount(formattedAmount);
+    // Also populate SELL side with the same price for comparison
+    setSellPrice(formattedPrice);
   };
 
   const tabs = [
-    { id: 'history', label: 'History', icon: '����' },
-    { id: 'my-orders', label: 'My Orders', icon: '📋' },
-    { id: 'filled', label: 'Filled', icon: '✅' },
-    { id: 'charts', label: 'Charts', icon: '📈' },
+    { id: 'history', label: 'History', Icon: History },
+    { id: 'my-orders', label: 'My Orders', Icon: ClipboardList },
+    { id: 'filled', label: 'Filled', Icon: CheckCircle2 },
+    { id: 'charts', label: 'Charts', Icon: BarChart3 },
   ] as const;
 
   return (
@@ -830,60 +935,69 @@ export default function ExchangePage() {
             </div>
           </div>
 
-          {/* Tabs Navigation - History, My Orders, Charts only */}
+          {/* Tabs Navigation */}
           <div className="flex flex-wrap gap-2 border-b border-border pb-4">
-            {tabs.filter(t => t.id !== 'form').map((tab) => (
+            {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2 font-medium transition-colors rounded-t-lg ${
+                className={`flex items-center gap-1.5 px-4 py-2 font-medium transition-colors rounded-t-lg ${
                   activeTab === tab.id
                     ? 'text-primary border-b-2 border-primary bg-primary/10'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                {tab.icon} {tab.label}
+                <tab.Icon className="w-3.5 h-3.5 flex-shrink-0" />
+                {tab.label}
               </button>
             ))}
           </div>
 
-          {/* Tab Content */}
-          <div className="min-h-96">
+          {/* Tab Content — only the active tab is rendered */}
+          <div className="mt-2 min-h-96">
             {activeTab === 'history' && (
-              <TradeHistory
-                trades={trades}
-                loading={tradesLoading}
-                buyingAsset={buyingAsset}
-                sellingAsset={sellingAsset}
-              />
+              tradesLoading
+                ? <OrderBookSkeleton />
+                : <TradeHistory
+                    trades={trades}
+                    loading={tradesLoading}
+                    buyingAsset={buyingAsset}
+                    sellingAsset={sellingAsset}
+                  />
             )}
 
             {activeTab === 'my-orders' && (
-              <MyOrders
-                orders={myOrders}
-                loading={ordersLoading}
-                onCancelOrder={handleCancelOrder}
-                buyingAsset={buyingAsset}
-                sellingAsset={sellingAsset}
-              />
+              ordersLoading
+                ? <OrderBookSkeleton />
+                : <MyOrders
+                    orders={myOrders}
+                    loading={ordersLoading}
+                    onCancelOrder={handleCancelOrder}
+                    buyingAsset={buyingAsset}
+                    sellingAsset={sellingAsset}
+                  />
             )}
 
             {activeTab === 'filled' && (
-              <FilledOrders
-                orders={filledOrders}
-                loading={filledLoading}
-              />
+              filledLoading
+                ? <OrderBookSkeleton />
+                : <FilledOrders
+                    orders={filledOrders}
+                    loading={filledLoading}
+                  />
             )}
 
             {activeTab === 'charts' && (
-              <PriceChart
-                data={chartData}
-                loading={chartLoading}
-                sellingAsset={sellingAsset}
-                buyingAsset={buyingAsset}
-                timeRange={chartTimeRange}
-                onTimeRangeChange={setChartTimeRange}
-              />
+              chartLoading
+                ? <ChartSkeleton />
+                : <PriceChart
+                    data={chartData}
+                    loading={chartLoading}
+                    sellingAsset={sellingAsset}
+                    buyingAsset={buyingAsset}
+                    timeRange={chartTimeRange}
+                    onTimeRangeChange={setChartTimeRange}
+                  />
             )}
           </div>
         </div>
@@ -907,6 +1021,49 @@ export default function ExchangePage() {
       
 
       
+      {/* Trustline Alert Modal */}
+      {showTrustlineAlert && pendingTrustlineAsset && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+          <div className="bg-card rounded-2xl border border-border/70 p-6 max-w-sm space-y-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-6 h-6 text-warning flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-semibold text-foreground mb-1">Create Trustline</h3>
+                <p className="text-sm text-muted-foreground">
+                  A trustline must be created for <span className="font-mono font-semibold text-foreground">{pendingTrustlineAsset.code}</span> before you can receive it.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowTrustlineAlert(false);
+                  setPendingTrustlineAsset(null);
+                  setPendingOrder(null);
+                }}
+                className="flex-1 px-4 py-2 rounded-lg border border-border/60 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateTrustlineAndRetry}
+                disabled={isSubmitting}
+                className="flex-1 px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  'Create Trustline & Retry'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Transaction Result Toast */}
       {txResult && (
         <div className={`fixed bottom-4 right-4 z-50 p-4 rounded-lg border ${
