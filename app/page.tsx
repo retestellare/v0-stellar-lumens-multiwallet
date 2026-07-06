@@ -26,6 +26,43 @@ const ReceiveModal = dynamic(() => import('@/components/receive-modal').then(mod
   loading: () => null,
 });
 
+// Curated list of verified/main assets in priority order
+const PRIORITY_TOKENS = [
+  'XLM', // Native asset - always first
+  'USDC',
+  'EURC',
+  'USDT',
+  'BTC',
+  'ETH',
+  'AQUA',
+  'VELO',
+];
+
+// Helper function to sort assets: XLM first, then verified tokens, then others
+function sortAssets(balances: any[]): any[] {
+  return [...balances].sort((a, b) => {
+    const aCode = a.asset_code || 'XLM';
+    const bCode = b.asset_code || 'XLM';
+    
+    // XLM (native) always first
+    if (aCode === 'XLM' && bCode !== 'XLM') return -1;
+    if (bCode === 'XLM' && aCode !== 'XLM') return 1;
+    
+    // Priority tokens by predefined order
+    const aPriority = PRIORITY_TOKENS.indexOf(aCode);
+    const bPriority = PRIORITY_TOKENS.indexOf(bCode);
+    
+    if (aPriority !== -1 && bPriority !== -1) {
+      return aPriority - bPriority; // Both in priority list, sort by priority
+    }
+    if (aPriority !== -1) return -1; // a is prioritized, comes first
+    if (bPriority !== -1) return 1;  // b is prioritized, comes first
+    
+    // For non-priority tokens, maintain alphabetical order
+    return aCode.localeCompare(bCode);
+  });
+}
+
 export default function DashboardPage() {
   const { wallets, activeWalletId, setActiveWallet, removeWallet, updateBalances } = useWallet();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -218,7 +255,7 @@ export default function DashboardPage() {
                       {activeWallet.balances.length === 0 ? (
                         <p className="text-xs text-muted-foreground text-center py-6">No assets yet. Fund your wallet to get started.</p>
                       ) : (
-                        activeWallet.balances.map((balance: any) => (
+                        sortAssets(activeWallet.balances).map((balance: any) => (
                           <AssetItem
                             key={`${balance.asset_code || 'XLM'}_${balance.asset_issuer || ''}`}
                             code={balance.asset_code || 'XLM'}

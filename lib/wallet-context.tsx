@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
-import { encryptSecret, decryptSecret, generateKeyPair, getPublicKeyFromSecret, getAccountBalances, getMultipleWalletBalances, parseWalletBalances } from '@/lib/stellar-utils';
+import { encryptSecret, decryptSecret, generateKeyPair, getPublicKeyFromSecret, getAccountBalances, getMultipleWalletBalances, parseWalletBalances, checkNetworkConnectivity } from '@/lib/stellar-utils';
 
 export interface Wallet {
   id: string;
@@ -97,6 +97,10 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [passwordSessions, setPasswordSessions] = useState<Record<string, { password: string; timestamp: number }>>({});
   const timeoutRefs = React.useRef<Record<string, NodeJS.Timeout>>({});
 
+  // Network connectivity state
+  const [isNetworkConnected, setIsNetworkConnected] = useState(true);
+  const networkCheckRef = React.useRef<NodeJS.Timeout | null>(null);
+
   // Compute active wallet
   const activeWallet = useMemo(() => {
     return wallets.find(w => w.id === activeWalletId || w.publicKey === activeWalletId) || null;
@@ -108,6 +112,29 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       localStorage.setItem('stellar_wallets', JSON.stringify(wallets));
     }
   }, [wallets]);
+
+  // Periodic network connectivity check (every 30 seconds)
+  useEffect(() => {
+    const checkConnection = async () => {
+      const isConnected = await checkNetworkConnectivity();
+      setIsNetworkConnected(isConnected);
+      if (!isConnected) {
+        console.warn('[v0] Network connectivity lost');
+      }
+    };
+
+    // Check immediately on mount
+    checkConnection();
+
+    // Set up periodic checks
+    networkCheckRef.current = setInterval(checkConnection, 30000); // 30 seconds
+
+    return () => {
+      if (networkCheckRef.current) {
+        clearInterval(networkCheckRef.current);
+      }
+    };
+  }, []);
 
   // Load wallets from localStorage on mount and fetch balances with batching
   useEffect(() => {
@@ -132,6 +159,14 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           // Batch fetch balances for all wallets in the background
           const walletsNeedingFetch = cleanedWallets.filter(w => !w.balances || w.balances.length === 0);
           if (walletsNeedingFetch.length > 0) {
+            // Check connectivity before attempting network requests
+            const isConnected = await checkNetworkConnectivity();
+            if (!isConnected) {
+              console.warn('[v0] No network connectivity, skipping balance fetch');
+              setIsNetworkConnected(false);
+              return;
+            }
+
             const publicKeys = walletsNeedingFetch.map((w: any) => w.publicKey);
             try {
               const batchResults = await getMultipleWalletBalances(publicKeys, 5, 150);
@@ -153,6 +188,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               );
             } catch (error) {
               console.error('[v0] Error batch fetching wallets:', error);
+              setIsNetworkConnected(false);
             }
           }
         } catch (error) {
@@ -322,38 +358,49 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, []);
 
   const updateBalances = useCallback(async (walletId: string) => {
-    setWallets(prevWallets => {
-      const wallet = prevWallets.find(w => w.id === walletId || w.publicKey === walletId);
-      if (!wallet) return prevWallets;
+    const wallet = wallets.find(w => w.id === walletId || w.publicKey === walletId);
+    if (!wallet) return;
+    
+    // Fetch balances asynchronously in the background
+    try {
+      // Check connectivity before attempting to fetch
+      const isConnected = await checkNetworkConnectivity();
+      if (!isConnected) {
+        console.warn('[v0] No network connectivity, cannot update balances');
+        setIsNetworkConnected(false);
+        setWallets(current =>
+          current.map(w =>
+            (w.id === walletId || w.publicKey === walletId)
+              ? { ...w, fetchError: 'Network unreachable' }
+              : w
+          )
+        );
+        return;
+      }
+
+      setIsNetworkConnected(true);
+      const rawBalances = await getAccountBalances(wallet.publicKey);
+      const { assets, poolShares } = parseWalletBalances(rawBalances);
       
-      // Fetch balances asynchronously in the background
-      (async () => {
-        try {
-          const rawBalances = await getAccountBalances(wallet.publicKey);
-          const { assets, poolShares } = parseWalletBalances(rawBalances);
-          
-          setWallets(current =>
-            current.map(w =>
-              (w.id === walletId || w.publicKey === walletId) 
-                ? { ...w, balances: assets, poolShares: poolShares || [], fetchError: undefined } 
-                : w
-            )
-          );
-        } catch (error: any) {
-          console.error('[v0] Balance fetch error:', error?.message);
-          setWallets(current =>
-            current.map(w =>
-              (w.id === walletId || w.publicKey === walletId)
-                ? { ...w, fetchError: error?.message || 'Network Error' }
-                : w
-            )
-          );
-        }
-      })();
-      
-      return prevWallets;
-    });
-  }, []);
+      setWallets(current =>
+        current.map(w =>
+          (w.id === walletId || w.publicKey === walletId) 
+            ? { ...w, balances: assets, poolShares: poolShares || [], fetchError: undefined } 
+            : w
+        )
+      );
+    } catch (error: any) {
+      console.error('[v0] Balance fetch error for', wallet.publicKey, ':', error?.message);
+      setIsNetworkConnected(false);
+      setWallets(current =>
+        current.map(w =>
+          (w.id === walletId || w.publicKey === walletId)
+            ? { ...w, fetchError: error?.message || 'Network Error' }
+            : w
+        )
+      );
+    }
+  }, [wallets]);
 
   // Auto-refresh balances when active wallet changes
   useEffect(() => {

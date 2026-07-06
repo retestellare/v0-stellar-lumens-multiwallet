@@ -3,6 +3,9 @@ import nacl from 'tweetnacl';
 
 export const HORIZON_URL = 'https://horizon.stellar.org';
 export const NETWORK_PASSPHRASE = Networks.PUBLIC;
+export const FETCH_TIMEOUT_MS = 15000; // 15 seconds
+export const MAX_RETRIES = 3;
+export const RETRY_DELAY_MS = 1000; // 1 second
 
 /**
  * Determine asset type based on code length
@@ -14,6 +17,62 @@ function getAssetType(code: string): string {
   if (code === 'XLM' || code === 'native') return 'native';
   return code.length <= 4 ? 'credit_alphanum4' : 'credit_alphanum12';
 }
+
+// Fetch with timeout and retry logic
+const fetchWithTimeout = async (
+  url: string,
+  options: RequestInit = {},
+  retries: number = MAX_RETRIES
+): Promise<Response> => {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+      
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeoutId);
+      
+      // Return on success or non-retryable errors
+      if (response.ok || response.status === 404) {
+        return response;
+      }
+      
+      // Retry on 5xx errors and connection issues
+      if (response.status >= 500 && attempt < retries - 1) {
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS * (attempt + 1)));
+        continue;
+      }
+      
+      return response;
+    } catch (error: any) {
+      // Retry on timeout and network errors
+      if ((error.name === 'AbortError' || error instanceof TypeError) && attempt < retries - 1) {
+        console.warn(`[v0] Network request timeout/failed (attempt ${attempt + 1}/${retries}), retrying...`);
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS * (attempt + 1)));
+        continue;
+      }
+      
+      // Non-retryable error
+      throw error;
+    }
+  }
+  
+  throw new Error('Max retries exceeded');
+};
+
+// Check network connectivity
+export const checkNetworkConnectivity = async (): Promise<boolean> => {
+  try {
+    const response = await fetchWithTimeout(`${HORIZON_URL}/`, {}, 1);
+    return response.ok || response.status === 404; // 404 is expected for root endpoint
+  } catch {
+    return false;
+  }
+};
 
 // Simple uint8 to string conversion
 const uint8ToString = (arr: Uint8Array): string => {
@@ -124,13 +183,21 @@ export const buildSendTransaction = async (
   return transaction.build().toEnvelope().toXDR();
 };
 
-// Fetch account details
+// Fetch account details with retry and timeout
 export const getAccountDetails = async (publicKey: string) => {
-  const response = await fetch(`${HORIZON_URL}/accounts/${publicKey}`);
-  if (!response.ok) {
-    throw new Error('Account not found');
+  try {
+    const response = await fetchWithTimeout(`${HORIZON_URL}/accounts/${publicKey}`);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error('Account not found');
+      }
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    return response.json();
+  } catch (error: any) {
+    console.error(`[v0] Failed to fetch account details for ${publicKey}:`, error.message);
+    throw error;
   }
-  return response.json();
 };
 
 // Fetch account balances (raw, may include LP shares)
@@ -138,8 +205,9 @@ export const getAccountBalances = async (publicKey: string) => {
   try {
     const account = await getAccountDetails(publicKey);
     return account.balances || [];
-  } catch {
-    return [];
+  } catch (error: any) {
+    console.error(`[v0] Balance fetch error for ${publicKey}:`, error.message);
+    throw error; // Propagate error instead of silently failing
   }
 };
 
@@ -199,32 +267,40 @@ export const getAccountBalancesClean = async (publicKey: string) => {
   }
 };
 
-// Fetch transactions
+// Fetch transactions with timeout
 export const getAccountTransactions = async (publicKey: string, limit = 10) => {
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${HORIZON_URL}/accounts/${publicKey}/transactions?limit=${limit}&order=desc`
     );
-    if (!response.ok) return [];
+    if (!response.ok) {
+      console.warn(`[v0] Failed to fetch transactions: HTTP ${response.status}`);
+      return [];
+    }
     const data = await response.json();
     return data._embedded?.records || data.records || [];
-  } catch {
+  } catch (error: any) {
+    console.error('[v0] Error fetching transactions:', error.message);
     return [];
   }
 };
 
 /**
- * Get account payment operations (sent/received)
+ * Get account payment operations (sent/received) with timeout
  */
 export const getAccountPayments = async (publicKey: string, limit = 50) => {
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${HORIZON_URL}/accounts/${publicKey}/payments?limit=${limit}&order=desc`
     );
-    if (!response.ok) return [];
+    if (!response.ok) {
+      console.warn(`[v0] Failed to fetch payments: HTTP ${response.status}`);
+      return [];
+    }
     const data = await response.json();
     return data._embedded?.records || data.records || [];
-  } catch {
+  } catch (error: any) {
+    console.error('[v0] Error fetching payments:', error.message);
     return [];
   }
 };
@@ -266,7 +342,7 @@ export const getOrderBook = async (
     const url = `${HORIZON_URL}/order_book?${params}`;
     console.log('[v0] Fetching order book from:', url);
     
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
