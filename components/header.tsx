@@ -23,6 +23,7 @@ export function Header({ onOpenBulkWallet }: HeaderProps) {
     { href: '/portfolio', label: 'Portfolio' },
     { href: '/exchange', label: 'Exchange' },
     { href: '/pools', label: 'Pools' },
+    { href: '/arbitrage', label: 'Arbitrage' },
     { href: '/history', label: 'History' },
   ];
 

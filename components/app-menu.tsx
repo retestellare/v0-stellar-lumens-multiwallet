@@ -39,6 +39,7 @@ const menuItems: { icon: LucideIcon; label: string; href: string }[] = [
   { icon: ArrowRightLeft, label: 'Swap', href: '/swap' },
   { icon: ArrowRightLeft, label: 'Exchange', href: '/exchange' },
   { icon: Droplets, label: 'Pools', href: '/pools' },
+  { icon: Zap, label: 'Arbitrage', href: '/arbitrage' },
   { icon: TrendingUp, label: 'Portfolio', href: '/portfolio' },
   { icon: History, label: 'History', href: '/history' },
   { icon: Bot, label: 'Trading Bot', href: '/bot' },
