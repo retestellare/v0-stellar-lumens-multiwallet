@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Loader2, BarChart3, TrendingUp } from 'lucide-react';
+import { Loader2, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface ChartDataPoint {
@@ -60,9 +60,6 @@ export function PriceChart({
   timeRange = '1h',
   onTimeRangeChange
 }: PriceChartProps) {
-  const [showMA20, setShowMA20] = useState(false);
-  const [showMA50, setShowMA50] = useState(false);
-  const [showBB, setShowBB] = useState(false);
   const [chartType, setChartType] = useState<'area' | 'candlestick'>('area');
 
   if (loading) {
@@ -97,57 +94,7 @@ export function PriceChart({
   const chartMax = maxPrice + padding;
   const chartRange = chartMax - chartMin;
 
-  // Calculate moving averages - always calculate for accurate rendering
-  const calculateMA = (period: number): (number | null)[] => {
-    if (prices.length < period) {
-      return prices.map(() => null);
-    }
-    
-    const ma: (number | null)[] = [];
-    for (let i = 0; i < prices.length; i++) {
-      if (i < period - 1) {
-        ma.push(null);
-      } else {
-        const sum = prices.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0);
-        ma.push(sum / period);
-      }
-    }
-    return ma;
-  };
 
-  // Always calculate, but only use when needed
-  const ma20Full = calculateMA(Math.min(20, Math.max(2, prices.length)));
-  const ma50Full = calculateMA(Math.min(50, Math.max(2, prices.length)));
-  
-  // Filter based on toggle state
-  const ma20 = showMA20 ? ma20Full : [];
-  const ma50 = showMA50 ? ma50Full : [];
-
-  // Calculate Bollinger Bands
-  const calculateBB = () => {
-    const period = 20;
-    const stdDev = 2;
-    const bands: { upper: number | null; middle: number | null; lower: number | null }[] = [];
-    
-    for (let i = 0; i < prices.length; i++) {
-      if (i < period - 1) {
-        bands.push({ upper: null, middle: null, lower: null });
-      } else {
-        const slice = prices.slice(i - period + 1, i + 1);
-        const mean = slice.reduce((a, b) => a + b, 0) / period;
-        const variance = slice.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / period;
-        const std = Math.sqrt(variance);
-        bands.push({
-          middle: mean,
-          upper: mean + std * stdDev,
-          lower: mean - std * stdDev
-        });
-      }
-    }
-    return bands;
-  };
-
-  const bollinger = showBB ? calculateBB() : [];
 
   // Chart dimensions
   const width = 100;
@@ -180,52 +127,7 @@ export function PriceChart({
     return { x, candleWidth, y_high, y_low, y_open, y_close, isUp };
   });
 
-  // MA20 path - generate only non-null values
-  const generateMAPath = (maValues: (number | null)[]): string => {
-    const points: { x: number; y: number }[] = [];
-    
-    maValues.forEach((val, i) => {
-      if (val !== null && val !== undefined) {
-        const x = (i / Math.max(1, data.length - 1)) * 100;
-        const y = ((chartMax - val) / chartRange) * height;
-        // Only add valid points
-        if (isFinite(x) && isFinite(y)) {
-          points.push({ x, y });
-        }
-      }
-    });
-    
-    if (points.length < 2) return '';
-    
-    // Generate SVG path from points
-    return points
-      .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
-      .join(' ');
-  };
 
-  const ma20Path = showMA20 ? generateMAPath(ma20Full) : '';
-  const ma50Path = showMA50 ? generateMAPath(ma50Full) : '';
-
-  // Bollinger Bands paths
-  const bbUpperPath = bollinger
-    .map((band, i) => {
-      if (band.upper === null) return '';
-      const x = (i / (data.length - 1)) * 100;
-      const y = ((chartMax - band.upper) / chartRange) * height;
-      return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
-    })
-    .filter(p => p)
-    .join(' ');
-
-  const bbLowerPath = bollinger
-    .map((band, i) => {
-      if (band.lower === null) return '';
-      const x = (i / (data.length - 1)) * 100;
-      const y = ((chartMax - band.lower) / chartRange) * height;
-      return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
-    })
-    .filter(p => p)
-    .join(' ');
 
   // Area path (for gradient fill)
   const areaPath = `${linePath} L 100 ${height} L 0 ${height} Z`;
@@ -253,29 +155,13 @@ export function PriceChart({
         </div>
       </div>
 
-      {/* Time Range Selector */}
-      <div className="flex flex-wrap gap-2">
-        {(['1h', '4h', '1d', '1w', '1m'] as const).map(range => (
-          <Button
-            key={range}
-            variant={timeRange === range ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => onTimeRangeChange?.(range)}
-            className="text-xs h-7 px-3"
-          >
-            {range}
-          </Button>
-        ))}
-      </div>
-
-      {/* Analysis Tools and Chart Type */}
-      <div className="flex flex-wrap gap-2">
-        {/* Chart Type Toggle */}
+      {/* Chart Type Toggle */}
+      <div className="flex gap-2">
         <Button
           variant={chartType === 'area' ? 'default' : 'outline'}
           size="sm"
           onClick={() => setChartType('area')}
-          className="text-xs h-7 px-3"
+          className="text-xs h-8 px-4"
           title="Area chart"
         >
           Area
@@ -284,47 +170,16 @@ export function PriceChart({
           variant={chartType === 'candlestick' ? 'default' : 'outline'}
           size="sm"
           onClick={() => setChartType('candlestick')}
-          className="text-xs h-7 px-3"
+          className="text-xs h-8 px-4"
           title="Candlestick chart"
         >
-          <BarChart3 className="w-3.5 h-3.5" />
-        </Button>
-
-        {/* Divider */}
-        <div className="w-px bg-border/30"></div>
-
-        {/* Analysis Tools */}
-        <Button
-          variant={showMA20 ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setShowMA20(!showMA20)}
-          className="text-xs h-7 px-3"
-          title="Moving Average 20"
-        >
-          MA20
-        </Button>
-        <Button
-          variant={showMA50 ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setShowMA50(!showMA50)}
-          className="text-xs h-7 px-3"
-          title="Moving Average 50"
-        >
-          MA50
-        </Button>
-        <Button
-          variant={showBB ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setShowBB(!showBB)}
-          className="text-xs h-7 px-3"
-          title="Bollinger Bands"
-        >
-          BB
+          <BarChart3 className="w-4 h-4 mr-1" />
+          Candlestick
         </Button>
       </div>
 
       {/* Chart */}
-      <div className="relative w-full h-52 border border-border/50 rounded bg-background/30 overflow-hidden">
+      <div className="relative w-full h-64 border border-border/40 rounded-lg bg-gradient-to-br from-background to-background/50 overflow-hidden shadow-lg">
         <svg
           viewBox={`0 0 100 ${height}`}
           preserveAspectRatio="none"
@@ -333,10 +188,18 @@ export function PriceChart({
           {/* Gradient definition */}
           <defs>
             <linearGradient id="chartGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor={isPositive ? '#10b981' : '#ef4444'} stopOpacity="0.3" />
-              <stop offset="100%" stopColor={isPositive ? '#10b981' : '#ef4444'} stopOpacity="0.02" />
+              <stop offset="0%" stopColor={isPositive ? '#10b981' : '#ef4444'} stopOpacity="0.4" />
+              <stop offset="50%" stopColor={isPositive ? '#10b981' : '#ef4444'} stopOpacity="0.15" />
+              <stop offset="100%" stopColor={isPositive ? '#10b981' : '#ef4444'} stopOpacity="0.01" />
+            </linearGradient>
+            <linearGradient id="gridGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="white" stopOpacity="0.08" />
+              <stop offset="100%" stopColor="white" stopOpacity="0.02" />
             </linearGradient>
           </defs>
+
+          {/* Grid background */}
+          <rect width="100" height={height} fill="url(#gridGradient)" />
 
           {/* Grid lines */}
           {[0.25, 0.5, 0.75].map((ratio, i) => (
@@ -347,85 +210,13 @@ export function PriceChart({
               x2="100"
               y2={height * ratio}
               stroke="currentColor"
-              strokeOpacity="0.1"
+              strokeOpacity="0.08"
+              strokeWidth="0.3"
               className="text-muted-foreground"
             />
           ))}
 
-          {/* Bollinger Bands fill */}
-          {showBB && bbUpperPath && bbLowerPath && (
-            <path
-              d={`${bbUpperPath} L 100 ${height} L 0 ${height} Z`}
-              fill="#3b82f6"
-              fillOpacity="0.05"
-            />
-          )}
 
-          {/* Bollinger Bands lines */}
-          {showBB && bbUpperPath && (
-            <path
-              d={bbUpperPath}
-              fill="none"
-              stroke="#3b82f6"
-              strokeWidth="0.3"
-              strokeDasharray="2,2"
-              vectorEffect="non-scaling-stroke"
-            />
-          )}
-          {showBB && bbLowerPath && (
-            <path
-              d={bbLowerPath}
-              fill="none"
-              stroke="#3b82f6"
-              strokeWidth="0.3"
-              strokeDasharray="2,2"
-              vectorEffect="non-scaling-stroke"
-            />
-          )}
-
-          {/* MA20 line with enhanced visibility */}
-          {showMA20 && ma20Path && ma20Path.length > 0 && (
-            <>
-              <path
-                d={ma20Path}
-                fill="none"
-                stroke="#f59e0b"
-                strokeWidth="0.8"
-                vectorEffect="non-scaling-stroke"
-                opacity="1"
-              />
-              <path
-                d={ma20Path}
-                fill="none"
-                stroke="#f59e0b"
-                strokeWidth="0.3"
-                vectorEffect="non-scaling-stroke"
-                opacity="0.4"
-              />
-            </>
-          )}
-
-          {/* MA50 line with enhanced visibility */}
-          {showMA50 && ma50Path && ma50Path.length > 0 && (
-            <>
-              <path
-                d={ma50Path}
-                fill="none"
-                stroke="#8b5cf6"
-                strokeWidth="0.8"
-                vectorEffect="non-scaling-stroke"
-                opacity="1"
-              />
-              <path
-                d={ma50Path}
-                fill="none"
-                stroke="#8b5cf6"
-                strokeWidth="0.3"
-                vectorEffect="non-scaling-stroke"
-                opacity="0.4"
-              />
-            </>
-          )}
 
           {/* Candlestick Chart */}
           {chartType === 'candlestick' && (
@@ -467,8 +258,10 @@ export function PriceChart({
                 d={linePath}
                 fill="none"
                 stroke={isPositive ? '#10b981' : '#ef4444'}
-                strokeWidth="0.5"
+                strokeWidth="1"
                 vectorEffect="non-scaling-stroke"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               />
             </>
           )}
@@ -483,47 +276,25 @@ export function PriceChart({
         </div>
       </div>
 
-      {/* Legend */}
-      {(showMA20 || showMA50 || showBB) && (
-        <div className="flex flex-wrap gap-3 text-xs">
-          {showMA20 && (
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-0.5 bg-amber-500"></div>
-              <span className="text-muted-foreground">MA20</span>
-            </div>
-          )}
-          {showMA50 && (
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-0.5 bg-violet-500"></div>
-              <span className="text-muted-foreground">MA50</span>
-            </div>
-          )}
-          {showBB && (
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-0.5 bg-blue-500"></div>
-              <span className="text-muted-foreground">Bollinger Bands</span>
-            </div>
-          )}
-        </div>
-      )}
+
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 text-center">
-        <div>
-          <p className="text-xs text-muted-foreground">High</p>
-          <p className="font-medium text-foreground">{maxPrice.toFixed(6)}</p>
+      <div className="grid grid-cols-4 gap-3 pt-2">
+        <div className="p-3 rounded-lg bg-background/50 border border-border/30">
+          <p className="text-xs text-muted-foreground mb-1">High</p>
+          <p className="font-semibold text-foreground text-sm">{maxPrice.toFixed(6)}</p>
         </div>
-        <div>
-          <p className="text-xs text-muted-foreground">Low</p>
-          <p className="font-medium text-foreground">{minPrice.toFixed(6)}</p>
+        <div className="p-3 rounded-lg bg-background/50 border border-border/30">
+          <p className="text-xs text-muted-foreground mb-1">Low</p>
+          <p className="font-semibold text-foreground text-sm">{minPrice.toFixed(6)}</p>
         </div>
-        <div>
-          <p className="text-xs text-muted-foreground">Volume</p>
-          <p className="font-medium text-foreground">{formatNumber(totalVolume)}</p>
+        <div className="p-3 rounded-lg bg-background/50 border border-border/30">
+          <p className="text-xs text-muted-foreground mb-1">Volume</p>
+          <p className="font-semibold text-foreground text-sm">{formatNumber(totalVolume)}</p>
         </div>
-        <div>
-          <p className="text-xs text-muted-foreground">Trades</p>
-          <p className="font-medium text-foreground">
+        <div className="p-3 rounded-lg bg-background/50 border border-border/30">
+          <p className="text-xs text-muted-foreground mb-1">Trades</p>
+          <p className="font-semibold text-foreground text-sm">
             {formatNumber(data.reduce((sum, d) => sum + (d.trade_count || 0), 0))}
           </p>
         </div>
