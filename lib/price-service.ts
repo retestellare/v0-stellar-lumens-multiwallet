@@ -1,12 +1,26 @@
 /**
  * Token Price Service
- * Fetches token prices and 24h price change from CoinGecko API
+ * Fetches token prices and 24h price change from CoinGecko and Horizon APIs.
+ *
+ * Caching strategy (fastest → slowest):
+ *   1. In-memory Map  — zero-cost, survives component unmounts
+ *   2. localStorage   — persists across page reloads
+ *   3. Network fetch  — updates both caches on success
+ *
+ * Stale-while-revalidate: if a cached value is older than PRICE_CACHE_DURATION
+ * it is returned immediately and a background refresh is scheduled so the UI
+ * stays responsive while the fresh value propagates on the next render cycle.
  */
 
 const COINGECKO_API = 'https://api.coingecko.com/api/v3';
+const HORIZON_API = 'https://horizon.stellar.org';
+const USDC_ISSUER = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN';
 const PRICE_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+// Stale-while-revalidate window: return stale data for up to 10 extra minutes
+// while a background re-fetch runs.
+const PRICE_STALE_WINDOW = 10 * 60 * 1000;
 
-interface TokenPrice {
+export interface TokenPrice {
   usd: number;
   usd_24h_change: number;
 }
@@ -15,54 +29,66 @@ interface CachedPrice extends TokenPrice {
   cachedAt: number;
 }
 
+export interface WalletAssetPriceInput {
+  code: string;
+  issuer?: string;
+}
+
+// ─── In-memory cache ─────────────────────────────────────────────────────────
+// Keyed by token code. Avoids JSON round-trips for repeated lookups.
+const memoryCache = new Map<string, CachedPrice>();
+
+// Track in-flight fetches to prevent duplicate network requests for the same token.
+const inflight = new Map<string, Promise<TokenPrice | null>>();
+
 // Mapping of Stellar token codes to CoinGecko IDs
 // This includes major Stellar-native tokens and popular assets
 const TOKEN_COINGECKO_IDS: Record<string, string> = {
   // Major tokens
-  'XLM': 'stellar',
-  'USDC': 'usd-coin',
-  'EURC': 'euro-coin',
-  
+  XLM: 'stellar',
+  USDC: 'usd-coin',
+  EURC: 'euro-coin',
+
   // Cryptocurrencies
-  'BTC': 'bitcoin',
-  'ETH': 'ethereum',
-  'DOGE': 'dogecoin',
-  
+  BTC: 'bitcoin',
+  ETH: 'ethereum',
+  DOGE: 'dogecoin',
+
   // Stellar ecosystem tokens
-  'AQUA': 'aqua',
-  'SHX': 'stronghold',
-  'VELO': 'velo',
-  'RIO': 'realio-token',
-  'ARST': 'ars-token',
-  'BRLT': 'brl-token',
-  'DBTK': 'digibank-token',
-  'FORGE': 'stellarforge',
-  'GRAT': 'grat-token',
-  'yXLM': 'ultrastellar-yield-xlm',
-  
+  AQUA: 'aqua',
+  SHX: 'stronghold',
+  VELO: 'velo',
+  RIO: 'realio-token',
+  ARST: 'ars-token',
+  BRLT: 'brl-token',
+  DBTK: 'digibank-token',
+  FORGE: 'stellarforge',
+  GRAT: 'grat-token',
+  yXLM: 'ultrastellar-yield-xlm',
+
   // StellarForge ecosystem
-  'OOPS': 'oops-token',
-  'SPARK': 'spark-token',
-  'STROLL': 'stroll-token',
-  'WEEDCOIN': 'weedcoin',
-  
+  OOPS: 'oops-token',
+  SPARK: 'spark-token',
+  STROLL: 'stroll-token',
+  WEEDCOIN: 'weedcoin',
+
   // USD variants
-  'yUSDC': 'usd-coin',
-  
+  yUSDC: 'usd-coin',
+
   // Stablecoins and wrapped tokens
-  'USDT': 'tether',
-  'BUSD': 'binance-usd',
-  'LUMIN': 'luminex',
-  'CETES': 'cetes-token',
-  
+  USDT: 'tether',
+  BUSD: 'binance-usd',
+  LUMIN: 'luminex',
+  CETES: 'cetes-token',
+
   // Additional tokens
-  'ETN': 'electroneum',
-  'HOLDING': 'holding-token',
-  'JOHN': 'john-token',
-  'KING': 'king-token',
-  'TERN': 'tern-token',
-  'USDH': 'usdh-token',
-  'MOBI': 'mobi-token',
+  ETN: 'electroneum',
+  HOLDING: 'holding-token',
+  JOHN: 'john-token',
+  KING: 'king-token',
+  TERN: 'tern-token',
+  USDH: 'usdh-token',
+  MOBI: 'mobi-token',
 };
 
 /**
@@ -72,58 +98,220 @@ function getCoingeckoId(code: string): string | null {
   return TOKEN_COINGECKO_IDS[code] || null;
 }
 
+function getAssetKey(code: string, issuer = ''): string {
+  return `${code}_${issuer}`;
+}
+
+function getAssetType(code: string, issuer = ''): 'native' | 'credit_alphanum4' | 'credit_alphanum12' {
+  if (code === 'XLM' || !issuer) {
+    return 'native';
+  }
+  return code.length <= 4 ? 'credit_alphanum4' : 'credit_alphanum12';
+}
+
+function buildAssetQuery(prefix: string, code: string, issuer = ''): string {
+  const assetType = getAssetType(code, issuer);
+  const params = new URLSearchParams();
+  params.set(`${prefix}_asset_type`, assetType);
+
+  if (assetType !== 'native') {
+    params.set(`${prefix}_asset_code`, code);
+    params.set(`${prefix}_asset_issuer`, issuer);
+  }
+
+  return params.toString();
+}
+
+// ─── Memory cache helpers ─────────────────────────────────────────────────────
+
+function getMemoryCached(code: string): CachedPrice | null {
+  const entry = memoryCache.get(code);
+  if (!entry) return null;
+  // Within the full stale window (fresh + stale-while-revalidate)
+  if (Date.now() - entry.cachedAt < PRICE_CACHE_DURATION + PRICE_STALE_WINDOW) {
+    return entry;
+  }
+  memoryCache.delete(code);
+  return null;
+}
+
+function setMemoryCache(code: string, price: TokenPrice): void {
+  memoryCache.set(code, { ...price, cachedAt: Date.now() });
+}
+
+// ─── localStorage helpers ─────────────────────────────────────────────────────
+
 /**
- * Get cached price from localStorage
+ * Read a price from localStorage. Returns the entry (even if stale so it can
+ * be used for stale-while-revalidate) or null if absent / expired beyond the
+ * stale window.
  */
-function getCachedPrice(code: string): CachedPrice | null {
+function getLocalCached(code: string): CachedPrice | null {
   try {
-    const key = `price_${code}`;
-    const cached = localStorage.getItem(key);
-    if (cached) {
-      const parsed: CachedPrice = JSON.parse(cached);
-      const age = Date.now() - parsed.cachedAt;
-      if (age < PRICE_CACHE_DURATION) {
-        return parsed;
-      }
+    const raw = localStorage.getItem(`price_${code}`);
+    if (!raw) return null;
+    const parsed: CachedPrice = JSON.parse(raw);
+    const age = Date.now() - parsed.cachedAt;
+    if (age < PRICE_CACHE_DURATION + PRICE_STALE_WINDOW) {
+      return parsed;
     }
-  } catch (error) {
-    console.error('[v0] Error reading price cache:', error);
+    localStorage.removeItem(`price_${code}`);
+  } catch {
+    // Ignore localStorage errors (SSR, private browsing, quota, etc.)
   }
   return null;
 }
 
-/**
- * Cache price to localStorage
- */
-function cachePrice(code: string, price: TokenPrice): void {
+function setLocalCache(code: string, price: TokenPrice): void {
   try {
-    const key = `price_${code}`;
+    localStorage.setItem(
+      `price_${code}`,
+      JSON.stringify({ ...price, cachedAt: Date.now() })
+    );
+  } catch {
+    // Ignore localStorage errors
+  }
+}
+
+function getCachedAssetPrice(code: string, issuer = ''): CachedPrice | null {
+  try {
+    const key = `asset_price_${getAssetKey(code, issuer)}`;
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed: CachedPrice = JSON.parse(raw);
+    const age = Date.now() - parsed.cachedAt;
+    if (age < PRICE_CACHE_DURATION + PRICE_STALE_WINDOW) {
+      return parsed;
+    }
+    localStorage.removeItem(key);
+  } catch {
+    // Ignore localStorage errors
+  }
+  return null;
+}
+
+function cacheAssetPrice(code: string, issuer = '', price: TokenPrice): void {
+  try {
+    const key = `asset_price_${getAssetKey(code, issuer)}`;
     const cached: CachedPrice = {
       ...price,
       cachedAt: Date.now(),
     };
     localStorage.setItem(key, JSON.stringify(cached));
-  } catch (error) {
-    console.error('[v0] Error caching price:', error);
+  } catch {
+    // Ignore localStorage errors
   }
 }
 
-/**
- * Fetch token price from CoinGecko
- */
-export async function fetchTokenPrice(code: string): Promise<TokenPrice | null> {
-  // Check cache first
-  const cached = getCachedPrice(code);
+async function fetchAssetUsdPriceFromHorizon(code: string, issuer = ''): Promise<number | null> {
+  if (code === 'USDC' && issuer === USDC_ISSUER) {
+    return 1;
+  }
+
+  const sourceParams = buildAssetQuery('source', code, issuer);
+  const destinationAsset = `credit_alphanum4:USDC:${USDC_ISSUER}`;
+  const url = `${HORIZON_API}/paths/strict-send?${sourceParams}&source_amount=1&destination_assets=${encodeURIComponent(destinationAsset)}`;
+
+  try {
+    const response = await fetch(url, { cache: 'no-store' });
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    const bestPath = data?._embedded?.records?.[0];
+    if (!bestPath?.destination_amount) {
+      return null;
+    }
+
+    const usdPrice = parseFloat(bestPath.destination_amount);
+    return Number.isFinite(usdPrice) ? usdPrice : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchAsset24hChangeFromHorizon(code: string, issuer = ''): Promise<number> {
+  if (code === 'USDC' && issuer === USDC_ISSUER) {
+    return 0;
+  }
+
+  const now = Date.now();
+  const startTime = now - 24 * 60 * 60 * 1000;
+  const baseParams = buildAssetQuery('base', code, issuer);
+  const counterParams = new URLSearchParams({
+    counter_asset_type: 'credit_alphanum4',
+    counter_asset_code: 'USDC',
+    counter_asset_issuer: USDC_ISSUER,
+  }).toString();
+
+  const url = `${HORIZON_API}/trade_aggregations?${baseParams}&${counterParams}&resolution=3600000&start_time=${startTime}&end_time=${now}&order=asc&limit=24`;
+
+  try {
+    const response = await fetch(url, { cache: 'no-store' });
+    if (!response.ok) {
+      return 0;
+    }
+
+    const data = await response.json();
+    const records = data?._embedded?.records || [];
+    if (!Array.isArray(records) || records.length < 1) {
+      return 0;
+    }
+
+    const first = records[0];
+    const last = records[records.length - 1];
+    const open = parseFloat(first.open);
+    const close = parseFloat(last.close);
+
+    if (!Number.isFinite(open) || !Number.isFinite(close) || open <= 0) {
+      return 0;
+    }
+
+    const change = ((close - open) / open) * 100;
+    return Number.isFinite(change) ? change : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function fetchAssetTokenPrice(code: string, issuer = ''): Promise<TokenPrice | null> {
+  const cached = getCachedAssetPrice(code, issuer);
   if (cached) {
     return cached;
   }
 
-  const coingeckoId = getCoingeckoId(code);
-  if (!coingeckoId) {
-    // Token not found in mapping, return null silently
+  const usd = await fetchAssetUsdPriceFromHorizon(code, issuer);
+  if (usd === null) {
     return null;
   }
 
+  const usd_24h_change = await fetchAsset24hChangeFromHorizon(code, issuer);
+  const price: TokenPrice = { usd, usd_24h_change };
+  cacheAssetPrice(code, issuer, price);
+  return price;
+}
+
+export async function fetchWalletAssetPrices(assets: WalletAssetPriceInput[]): Promise<Record<string, TokenPrice | null>> {
+  const uniqueAssets = assets.filter((asset, index, arr) => {
+    const key = getAssetKey(asset.code, asset.issuer || '');
+    return index === arr.findIndex((candidate) => getAssetKey(candidate.code, candidate.issuer || '') === key);
+  });
+
+  const entries = await Promise.all(
+    uniqueAssets.map(async ({ code, issuer = '' }) => {
+      const key = getAssetKey(code, issuer);
+      const price = await fetchAssetTokenPrice(code, issuer);
+      return [key, price] as const;
+    })
+  );
+
+  return Object.fromEntries(entries);
+}
+
+// ─── Core fetch ──────────────────────────────────────────────────────────────
+
+async function fetchFromNetwork(code: string, coingeckoId: string): Promise<TokenPrice | null> {
   try {
     const response = await fetch(
       `${COINGECKO_API}/simple/price?ids=${coingeckoId}&vs_currencies=usd&include_24hr_change=true`,
@@ -148,11 +336,95 @@ export async function fetchTokenPrice(code: string): Promise<TokenPrice | null> 
       usd_24h_change: priceData.usd_24h_change || 0,
     };
 
-    cachePrice(code, price);
+    // Populate both cache layers
+    setMemoryCache(code, price);
+    setLocalCache(code, price);
     return price;
   } catch (error) {
     console.error(`[v0] Error fetching price for ${code}:`, error);
     return null;
+  }
+}
+
+/**
+ * Fetch token price from CoinGecko with a two-tier cache and
+ * stale-while-revalidate semantics.
+ *
+ * 1. Check in-memory cache (fastest)
+ * 2. Check localStorage (survives page reload)
+ * 3. Fetch from network (de-duplicated via `inflight` map)
+ *
+ * If cached data is within PRICE_CACHE_DURATION it is returned immediately.
+ * If it falls in the stale-while-revalidate window the stale value is returned
+ * while a background network request updates both caches.
+ */
+export async function fetchTokenPrice(code: string): Promise<TokenPrice | null> {
+  const now = Date.now();
+
+  // 1. In-memory cache — still fresh?
+  const mem = getMemoryCached(code);
+  if (mem) {
+    const age = now - mem.cachedAt;
+    if (age < PRICE_CACHE_DURATION) {
+      return mem;
+    }
+    // Stale but within revalidate window — return stale and refresh in background
+    scheduleBackgroundRefresh(code);
+    return mem;
+  }
+
+  // 2. localStorage — still fresh?
+  const local = getLocalCached(code);
+  if (local) {
+    // Populate memory cache from localStorage
+    setMemoryCache(code, local);
+    const age = now - local.cachedAt;
+    if (age < PRICE_CACHE_DURATION) {
+      return local;
+    }
+    // Stale-while-revalidate
+    scheduleBackgroundRefresh(code);
+    return local;
+  }
+
+  const coingeckoId = getCoingeckoId(code);
+  if (!coingeckoId) return null;
+
+  // 3. Network fetch — de-duplicate concurrent requests for the same token
+  const existing = inflight.get(code);
+  if (existing) return existing;
+
+  const promise = fetchFromNetwork(code, coingeckoId).finally(() => {
+    inflight.delete(code);
+  });
+  inflight.set(code, promise);
+  return promise;
+}
+
+/**
+ * Fire a background re-fetch without blocking the caller.
+ * Guarded so only one refresh runs at a time per token.
+ */
+function scheduleBackgroundRefresh(code: string): void {
+  if (inflight.has(code)) return;
+  const coingeckoId = getCoingeckoId(code);
+  if (!coingeckoId) return;
+
+  const promise = fetchFromNetwork(code, coingeckoId).finally(() => {
+    inflight.delete(code);
+  });
+  inflight.set(code, promise);
+}
+
+/**
+ * Invalidate the cache for a specific token (useful after known price events).
+ */
+export function invalidatePriceCache(code: string): void {
+  memoryCache.delete(code);
+  try {
+    localStorage.removeItem(`price_${code}`);
+  } catch {
+    // Ignore localStorage errors
   }
 }
 

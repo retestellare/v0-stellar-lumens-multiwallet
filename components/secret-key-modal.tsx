@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   X,
   Key,
@@ -21,32 +21,13 @@ interface SecretKeyModalProps {
 }
 
 export function SecretKeyModal({ isOpen, onClose }: SecretKeyModalProps) {
-  const { activeWallet, getPasswordSession, savePasswordSession, passwordSessionType } = useWallet();
+  const { activeWallet } = useWallet();
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [secretKey, setSecretKey] = useState<string | null>(null);
   const [showSecret, setShowSecret] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
-
-  // Check for existing session password when modal opens
-  useEffect(() => {
-    if (isOpen && activeWallet) {
-      const sessionPassword = getPasswordSession(activeWallet.id);
-      if (sessionPassword) {
-        // Valid session exists, auto-decrypt
-        try {
-          const decrypted = decryptSecret(activeWallet.encryptedSecret, sessionPassword);
-          setSecretKey(decrypted);
-          setError('');
-        } catch (e) {
-          // Session password is invalid, clear state and show form
-          setSecretKey(null);
-          setError('');
-        }
-      }
-    }
-  }, [isOpen, activeWallet, getPasswordSession]);
 
   const handleReveal = () => {
     if (!activeWallet || !password) return;
@@ -55,8 +36,6 @@ export function SecretKeyModal({ isOpen, onClose }: SecretKeyModalProps) {
       const decrypted = decryptSecret(activeWallet.encryptedSecret, password);
       setSecretKey(decrypted);
       setError('');
-      // Save password to session with current session type
-      savePasswordSession(activeWallet.id, password, passwordSessionType);
       setPassword('');
     } catch (e) {
       setError('Invalid password');

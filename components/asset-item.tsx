@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { fetchTokenMetadataFromToml, getIssuerTokenIcon } from '@/lib/stellar-utils';
-import { fetchTokenPrice, formatPrice, formatChange } from '@/lib/price-service';
 import { getTokenPicks } from '@/lib/token-service';
 
 // Known tokens cache for instant metadata lookup
@@ -43,125 +42,73 @@ interface AssetItemProps {
 }
 
 export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
-  // Derive the stable cache key for this specific token
-  const tokenKey = `${code}_${issuer || ''}`;
-
-  // Initialise from the synchronous lookup so known tokens render instantly
+  // Try instant lookup first
   const cachedMeta = getTokenMetadata(code, issuer);
-
+  
   const [image, setImage] = useState<string | null>(cachedMeta?.image || null);
   const [domain, setDomain] = useState<string | null>(cachedMeta?.domain || null);
   const [imageError, setImageError] = useState(false);
-  const [price, setPrice] = useState<number | null>(null);
-  const [priceChange, setPriceChange] = useState<number | null>(null);
-  const [priceLoading, setPriceLoading] = useState(false);
-
-  // When the token identity changes, reset all derived state immediately
-  // so the previous token's image never bleeds into this render
-  useEffect(() => {
-    const meta = getTokenMetadata(code, issuer);
-    setImage(meta?.image || null);
-    setDomain(meta?.domain || null);
-    setImageError(false);
-    setPrice(null);
-    setPriceChange(null);
-  }, [tokenKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Fetch image, domain, and price for tokens not in the synchronous cache
+  
+  // Fetch image and domain
   useEffect(() => {
     let cancelled = false;
-
+    
     const fetchMeta = async () => {
-      const meta = getTokenMetadata(code, issuer);
-
-      // Only hit the network when we don't already have an image
-      if (!meta?.image) {
+      // Fetch icon with caching
+      if (!image) {
         const iconUrl = await getIssuerTokenIcon(code, issuer);
         if (!cancelled && iconUrl) {
           setImage(iconUrl);
         }
       }
-
-      // Only hit the network when we don't already have a domain
-      if (!meta?.domain && issuer) {
-        const tomlMeta = await fetchTokenMetadataFromToml(issuer);
-        if (!cancelled && tomlMeta.domain) {
-          setDomain(tomlMeta.domain);
+      
+      // Fetch domain from TOML if not cached
+      if (!domain && issuer) {
+        const meta = await fetchTokenMetadataFromToml(issuer);
+        if (!cancelled && meta.domain) {
+          setDomain(meta.domain);
         }
       }
-
-      // Fetch price data from CoinGecko
-      setPriceLoading(true);
-      const priceData = await fetchTokenPrice(code);
-      if (!cancelled && priceData) {
-        setPrice(priceData.usd);
-        setPriceChange(priceData.usd_24h_change);
-      }
-      setPriceLoading(false);
     };
-
+    
     fetchMeta();
-
+    
     return () => { cancelled = true; };
-  }, [tokenKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [code, issuer, image, domain]);
   
-  const numBalance = parseFloat(balance);
-
   return (
-    <button
+    <button 
       onClick={onClick}
-      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-transparent hover:border-border/50 hover:bg-muted/30 active:bg-muted/50 transition-all cursor-pointer text-left group"
+      className="w-full flex items-center justify-between p-2 bg-background/30 rounded border border-border/50 hover:border-primary/30 hover:bg-primary/5 transition-colors cursor-pointer"
     >
-      {/* Token Icon */}
-      <div className="w-9 h-9 rounded-full bg-muted/60 flex items-center justify-center overflow-hidden border border-border/50 flex-shrink-0 shadow-sm">
-        {image && !imageError ? (
-          <img
-            src={image}
-            alt={code}
-            className="w-full h-full object-cover"
-            onError={() => setImageError(true)}
-            loading="lazy"
-          />
-        ) : (
-          <span className="text-xs font-bold text-primary">{code.charAt(0)}</span>
-        )}
-      </div>
-
-      {/* Token Info */}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-foreground leading-tight tracking-tight">{code}</p>
-        <p className="text-xs text-muted-foreground truncate leading-tight mt-0.5">
-          {domain || (issuer ? 'Custom token' : 'Native XLM')}
-        </p>
-      </div>
-
-      {/* Balance and Price */}
-      <div className="text-right flex-shrink-0">
-        <p className="text-sm font-semibold text-foreground num tabular-nums">
-          {numBalance >= 1000
-            ? numBalance.toLocaleString('en-US', { maximumFractionDigits: 2 })
-            : numBalance.toFixed(numBalance === 0 ? 0 : 4)}
-        </p>
-        <div className="flex items-center justify-end gap-1.5 mt-0.5">
-          {price && (
-            <>
-              <p className="text-xs text-muted-foreground">{formatPrice(price)}</p>
-              {priceChange !== null && (
-                <p className={`text-xs font-semibold tabular-nums ${
-                  priceChange >= 0 
-                    ? 'text-emerald-500' 
-                    : 'text-red-500'
-                }`}>
-                  {formatChange(priceChange).text}
-                </p>
-              )}
-            </>
-          )}
-          {!price && !priceLoading && (
-            <p className="text-xs text-muted-foreground">{code}</p>
+      <div className="flex items-center gap-2">
+        {/* Token Image */}
+        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center overflow-hidden border border-primary/30 flex-shrink-0">
+          {image && !imageError ? (
+            <img 
+              src={image} 
+              alt={code} 
+              className="w-full h-full object-cover"
+              onError={() => setImageError(true)}
+            />
+          ) : (
+            <span className="text-xs font-bold text-primary">{code.charAt(0)}</span>
           )}
         </div>
+        
+        {/* Token Info */}
+        <div className="flex-1 min-w-0 text-left">
+          <p className="text-xs font-medium text-foreground">{code}</p>
+          <p className="text-xs text-muted-foreground truncate">
+            {domain || (issuer ? `${issuer.substring(0, 8)}...` : 'Native')}
+          </p>
+        </div>
       </div>
+      
+      {/* Balance */}
+      <p className="text-sm font-semibold text-primary ml-2">
+        {parseFloat(balance).toFixed(4)}
+      </p>
     </button>
   );
 }

@@ -3,8 +3,6 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { WalletProvider } from '@/lib/wallet-context'
 import { NotificationProvider } from '@/lib/notification-context'
-import { AppUnlockModal } from '@/components/app-unlock-modal'
-import { PersistentBotFrame } from '@/components/persistent-bot-frame'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -59,10 +57,10 @@ export const metadata: Metadata = {
 
 export const viewport = {
   themeColor: '#0a0e27',
+  userScalable: false,
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 5,
-  viewportFit: 'cover',
+  maximumScale: 1,
 }
 
 export default function RootLayout({
@@ -71,13 +69,11 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark bg-background">
+    <html lang="en" className="dark">
       <body className="font-sans antialiased bg-background text-foreground">
         <WalletProvider>
           <NotificationProvider>
-            <AppUnlockModal />
             {children}
-            <PersistentBotFrame />
           </NotificationProvider>
         </WalletProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}

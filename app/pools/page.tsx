@@ -6,13 +6,12 @@ import { useWallet } from '@/lib/wallet-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { WalletSelectorDropdown } from '@/components/wallet-selector-dropdown';
-import { PoolListSkeleton } from '@/components/skeleton-loaders';
 import { 
   getLiquidityPoolDetails, 
   depositToLiquidityPool, 
   withdrawFromLiquidityPool,
-  getAccountBalances,
-  getIssuerTokenIcon
+  decryptSecret,
+  getAccountBalances
 } from '@/lib/stellar-utils';
 import { 
   ArrowLeft, 
@@ -30,45 +29,6 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
-// Token icon component with fallback
-function TokenIcon({ code, issuer, className = "w-8 h-8" }: { code: string; issuer?: string; className?: string }) {
-  const [iconUrl, setIconUrl] = useState<string | null>(null);
-  const [imageError, setImageError] = useState(false);
-  
-  useEffect(() => {
-    let cancelled = false;
-    
-    const fetchIcon = async () => {
-      if (code === 'XLM') {
-        setIconUrl('https://assets.coingecko.com/coins/images/100/small/Stellar_symbol_black_RGB.png');
-        return;
-      }
-      const url = await getIssuerTokenIcon(code, issuer || '');
-      if (!cancelled && url) {
-        setIconUrl(url);
-      }
-    };
-    
-    fetchIcon();
-    return () => { cancelled = true; };
-  }, [code, issuer]);
-  
-  return (
-    <div className={`${className} rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold border-2 border-background overflow-hidden`}>
-      {iconUrl && !imageError ? (
-        <img 
-          src={iconUrl} 
-          alt={code} 
-          className="w-full h-full object-cover"
-          onError={() => setImageError(true)}
-        />
-      ) : (
-        <span>{code?.slice(0, 2) || '??'}</span>
-      )}
-    </div>
-  );
-}
-
 interface PoolShare {
   liquidity_pool_id: string;
   balance: string;
@@ -82,7 +42,7 @@ interface PoolShare {
 }
 
 export default function PoolsPage() {
-  const { wallets, activeWalletId, updateBalances, globalDecryptedSecret } = useWallet();
+  const { wallets, activeWalletId, updateBalances } = useWallet();
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [poolShares, setPoolShares] = useState<PoolShare[]>([]);
@@ -100,6 +60,8 @@ export default function PoolsPage() {
   // Transaction state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [txResult, setTxResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [password, setPassword] = useState('');
   const [pendingAction, setPendingAction] = useState<'deposit' | 'withdraw' | null>(null);
   
   // Pool reserves for auto-calculation
@@ -276,35 +238,35 @@ export default function PoolsPage() {
   const handleDeposit = async () => {
     if (!selectedPool || !amountA || !amountB) return;
     setPendingAction('deposit');
-    await executeTransaction('deposit');
+    setShowPasswordModal(true);
   };
 
   // Handle withdraw
   const handleWithdraw = async () => {
     if (!selectedPool || !withdrawAmount) return;
     setPendingAction('withdraw');
-    await executeTransaction('withdraw');
+    setShowPasswordModal(true);
   };
 
-  // Execute transaction using the globally unlocked secret
-  const executeTransaction = async (action?: 'deposit' | 'withdraw') => {
-    const resolvedAction = action || pendingAction;
-    if (!activeWallet || !resolvedAction || !selectedPool) return;
-
-    if (!globalDecryptedSecret) {
-      setTxResult({ success: false, message: 'Wallet is locked. Please restart the app to unlock.' });
-      return;
-    }
+  // Execute transaction after password
+  const executeTransaction = async () => {
+    if (!activeWallet || !password || !pendingAction || !selectedPool) return;
     
+    setShowPasswordModal(false);
     setIsSubmitting(true);
     setTxResult(null);
     
     try {
-      const secret = globalDecryptedSecret;
+      const secret = await decryptSecret(activeWallet.encryptedSecret, password);
+      if (!secret) {
+        setTxResult({ success: false, message: 'Invalid password' });
+        setIsSubmitting(false);
+        return;
+      }
       
       let result;
       
-      if (resolvedAction === 'deposit') {
+      if (pendingAction === 'deposit') {
         const slippageFactor = parseFloat(slippage) / 100;
         const priceRatio = parseFloat(amountA) / parseFloat(amountB);
         const minPrice = { n: Math.floor(priceRatio * (1 - slippageFactor) * 10000000), d: 10000000 };
@@ -345,6 +307,7 @@ export default function PoolsPage() {
       setTxResult({ success: false, message: error.message || 'Transaction failed' });
     } finally {
       setIsSubmitting(false);
+      setPassword('');
       setPendingAction(null);
     }
   };
@@ -365,7 +328,7 @@ export default function PoolsPage() {
   if (!mounted) return null;
 
   return (
-    <div className="min-h-dvh bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground">
       <Header />
       
       <main className="max-w-4xl mx-auto px-4 py-6">
@@ -395,12 +358,6 @@ export default function PoolsPage() {
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </Button>
-            <Link href="/pools/create">
-              <Button className="bg-primary text-primary-foreground hover:bg-primary/90 gap-1">
-                <Plus className="w-4 h-4" />
-                Create Pool
-              </Button>
-            </Link>
             <WalletSelectorDropdown />
           </div>
         </div>
@@ -462,8 +419,9 @@ export default function PoolsPage() {
               </div>
 
               {loading ? (
-                <div className="p-4">
-                  <PoolListSkeleton count={3} />
+                <div className="p-8 text-center">
+                  <Loader2 className="w-8 h-8 mx-auto animate-spin text-primary" />
+                  <p className="mt-2 text-muted-foreground">Loading LP shares from wallet...</p>
                 </div>
               ) : poolShares.length === 0 ? (
                 <div className="p-8 text-center">
@@ -484,16 +442,12 @@ export default function PoolsPage() {
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
                           <div className="flex -space-x-2">
-                            <TokenIcon 
-                              code={pool.assetA?.code || '??'} 
-                              issuer={pool.assetA?.issuer}
-                              className="w-8 h-8"
-                            />
-                            <TokenIcon 
-                              code={pool.assetB?.code || '??'} 
-                              issuer={pool.assetB?.issuer}
-                              className="w-8 h-8"
-                            />
+                            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold border-2 border-background">
+                              {pool.assetA?.code?.slice(0, 2) || '??'}
+                            </div>
+                            <div className="w-8 h-8 rounded-full bg-cyan-500/20 flex items-center justify-center text-xs font-bold border-2 border-background">
+                              {pool.assetB?.code?.slice(0, 2) || '??'}
+                            </div>
                           </div>
                           <div>
                             <p className="font-semibold">
@@ -768,7 +722,45 @@ export default function PoolsPage() {
         </div>
       )}
 
-
+      {/* Password Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-sidebar border border-border rounded-lg max-w-sm w-full p-6">
+            <h3 className="text-lg font-bold mb-4">Enter Password</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Enter your wallet password to sign this transaction.
+            </p>
+            <Input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && executeTransaction()}
+              className="mb-4"
+            />
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                className="flex-1"
+                onClick={() => {
+                  setShowPasswordModal(false);
+                  setPassword('');
+                  setPendingAction(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button 
+                className="flex-1"
+                onClick={executeTransaction}
+                disabled={!password}
+              >
+                Confirm
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

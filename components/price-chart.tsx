@@ -26,30 +26,14 @@ interface PriceChartProps {
 }
 
 // Utility function to format large numbers
-const formatNumber = (num: number | string): string => {
-  let numValue: number;
-  
-  if (typeof num === 'string') {
-    numValue = parseFloat(num);
-  } else {
-    numValue = num;
+const formatNumber = (num: number): string => {
+  if (num >= 1_000_000) {
+    return (num / 1_000_000).toFixed(1) + 'M';
   }
-  
-  // Handle invalid, special, or extremely large numbers
-  if (!isFinite(numValue) || numValue < 0 || numValue > 1e15) {
-    return '0';
+  if (num >= 1_000) {
+    return (num / 1_000).toFixed(1) + 'K';
   }
-  
-  if (numValue >= 1_000_000_000) {
-    return (numValue / 1_000_000_000).toFixed(1) + 'B';
-  }
-  if (numValue >= 1_000_000) {
-    return (numValue / 1_000_000).toFixed(1) + 'M';
-  }
-  if (numValue >= 1_000) {
-    return (numValue / 1_000).toFixed(1) + 'K';
-  }
-  return Math.round(numValue).toString();
+  return Math.round(num).toString();
 };
 
 export function PriceChart({ 
@@ -97,12 +81,8 @@ export function PriceChart({
   const chartMax = maxPrice + padding;
   const chartRange = chartMax - chartMin;
 
-  // Calculate moving averages - always calculate for accurate rendering
-  const calculateMA = (period: number): (number | null)[] => {
-    if (prices.length < period) {
-      return prices.map(() => null);
-    }
-    
+  // Calculate moving averages
+  const calculateMA = (period: number) => {
     const ma: (number | null)[] = [];
     for (let i = 0; i < prices.length; i++) {
       if (i < period - 1) {
@@ -115,13 +95,8 @@ export function PriceChart({
     return ma;
   };
 
-  // Always calculate, but only use when needed
-  const ma20Full = calculateMA(Math.min(20, Math.max(2, prices.length)));
-  const ma50Full = calculateMA(Math.min(50, Math.max(2, prices.length)));
-  
-  // Filter based on toggle state
-  const ma20 = showMA20 ? ma20Full : [];
-  const ma50 = showMA50 ? ma50Full : [];
+  const ma20 = showMA20 ? calculateMA(Math.min(20, prices.length)) : [];
+  const ma50 = showMA50 ? calculateMA(Math.min(50, prices.length)) : [];
 
   // Calculate Bollinger Bands
   const calculateBB = () => {
@@ -180,31 +155,27 @@ export function PriceChart({
     return { x, candleWidth, y_high, y_low, y_open, y_close, isUp };
   });
 
-  // MA20 path - generate only non-null values
-  const generateMAPath = (maValues: (number | null)[]): string => {
-    const points: { x: number; y: number }[] = [];
-    
-    maValues.forEach((val, i) => {
-      if (val !== null && val !== undefined) {
-        const x = (i / Math.max(1, data.length - 1)) * 100;
-        const y = ((chartMax - val) / chartRange) * height;
-        // Only add valid points
-        if (isFinite(x) && isFinite(y)) {
-          points.push({ x, y });
-        }
-      }
-    });
-    
-    if (points.length < 2) return '';
-    
-    // Generate SVG path from points
-    return points
-      .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
-      .join(' ');
-  };
+  // MA20 path
+  const ma20Path = ma20
+    .map((val, i) => {
+      if (val === null) return '';
+      const x = (i / (data.length - 1)) * 100;
+      const y = ((chartMax - val) / chartRange) * height;
+      return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+    })
+    .filter(p => p)
+    .join(' ');
 
-  const ma20Path = showMA20 ? generateMAPath(ma20Full) : '';
-  const ma50Path = showMA50 ? generateMAPath(ma50Full) : '';
+  // MA50 path
+  const ma50Path = ma50
+    .map((val, i) => {
+      if (val === null) return '';
+      const x = (i / (data.length - 1)) * 100;
+      const y = ((chartMax - val) / chartRange) * height;
+      return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+    })
+    .filter(p => p)
+    .join(' ');
 
   // Bollinger Bands paths
   const bbUpperPath = bollinger
@@ -384,13 +355,13 @@ export function PriceChart({
           )}
 
           {/* MA20 line with enhanced visibility */}
-          {showMA20 && ma20Path && ma20Path.length > 0 && (
+          {showMA20 && ma20Path && (
             <>
               <path
                 d={ma20Path}
                 fill="none"
                 stroke="#f59e0b"
-                strokeWidth="0.8"
+                strokeWidth="0.6"
                 vectorEffect="non-scaling-stroke"
                 opacity="1"
               />
@@ -398,21 +369,21 @@ export function PriceChart({
                 d={ma20Path}
                 fill="none"
                 stroke="#f59e0b"
-                strokeWidth="0.3"
+                strokeWidth="0.2"
                 vectorEffect="non-scaling-stroke"
-                opacity="0.4"
+                opacity="0.3"
               />
             </>
           )}
 
           {/* MA50 line with enhanced visibility */}
-          {showMA50 && ma50Path && ma50Path.length > 0 && (
+          {showMA50 && ma50Path && (
             <>
               <path
                 d={ma50Path}
                 fill="none"
                 stroke="#8b5cf6"
-                strokeWidth="0.8"
+                strokeWidth="0.6"
                 vectorEffect="non-scaling-stroke"
                 opacity="1"
               />
@@ -420,9 +391,9 @@ export function PriceChart({
                 d={ma50Path}
                 fill="none"
                 stroke="#8b5cf6"
-                strokeWidth="0.3"
+                strokeWidth="0.2"
                 vectorEffect="non-scaling-stroke"
-                opacity="0.4"
+                opacity="0.3"
               />
             </>
           )}

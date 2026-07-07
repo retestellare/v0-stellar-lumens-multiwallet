@@ -143,43 +143,6 @@ export const getAccountBalances = async (publicKey: string) => {
   }
 };
 
-// Batched balance fetching for multiple wallets with rate limiting protection
-export const getMultipleWalletBalances = async (
-  publicKeys: string[],
-  batchSize: number = 5,
-  delayMs: number = 150
-): Promise<Record<string, { balances: any[]; error?: string }>> => {
-  const results: Record<string, { balances: any[]; error?: string }> = {};
-  
-  // Process wallets in batches
-  for (let i = 0; i < publicKeys.length; i += batchSize) {
-    const batch = publicKeys.slice(i, i + batchSize);
-    
-    // Fetch balances for this batch in parallel
-    const batchPromises = batch.map(async (publicKey) => {
-      try {
-        const balances = await getAccountBalances(publicKey);
-        results[publicKey] = { balances };
-      } catch (error) {
-        results[publicKey] = { 
-          balances: [], 
-          error: error instanceof Error ? error.message : 'Failed to fetch balances'
-        };
-      }
-    });
-    
-    // Wait for all promises in batch to complete
-    await Promise.all(batchPromises);
-    
-    // Add delay between batches (except after the last batch)
-    if (i + batchSize < publicKeys.length) {
-      await new Promise(resolve => setTimeout(resolve, delayMs));
-    }
-  }
-  
-  return results;
-};
-
 // Fetch account balances, deduplicated (excludes LP shares)
 export const getAccountBalancesClean = async (publicKey: string) => {
   try {
@@ -753,7 +716,6 @@ export const withdrawFromLiquidityPool = async (
   }
 };
 
-
 /**
  * Parse wallet balances to separate regular assets from pool shares
  * This prevents balance multiplication bugs
@@ -820,7 +782,7 @@ export const addTrustline = async (
     // Create asset
     const asset = new Asset(assetCode, assetIssuer);
     
-    // Build changeTrust transaction with unlimited limit
+    // Build changeTrust transaction
     const transaction = new TransactionBuilder(account, {
       fee: BASE_FEE,
       networkPassphrase: NETWORK_PASSPHRASE,
@@ -828,7 +790,6 @@ export const addTrustline = async (
       .addOperation(
         Operation.changeTrust({
           asset: asset,
-          limit: '922337203685.4775807', // Maximum XDR int64 to allow unlimited receives
         })
       )
       .setTimeout(180)
@@ -837,10 +798,6 @@ export const addTrustline = async (
     transaction.sign(keypair);
     
     const result = await server.submitTransaction(transaction);
-    
-    // Wait a moment for ledger to process
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
     return { success: true, hash: result.hash };
   } catch (error: any) {
     let errorMessage = error.message || 'Failed to add trustline';
@@ -861,310 +818,15 @@ export const getAccountTrades = async (
   limit: number = 50
 ): Promise<any[]> => {
   try {
-    const url = `${HORIZON_URL}/accounts/${publicKey}/trades?order=desc&limit=${limit}`;
+    const url = `${HORIZON_URL}/accounts/${publicKey}/trades?limit=${limit}&order=desc`;
     const response = await fetch(url);
+    
     if (!response.ok) return [];
+    
     const data = await response.json();
     return data._embedded?.records || [];
   } catch {
     return [];
-  }
-};
-
-/**
- * Find the best swap path using Stellar's strictSendPaths API with fallback to strictReceivePaths
- * Uses proper Stellar SDK Asset objects and implements robust path finding
- * @param sourceCode - Code of asset being sent
- * @param sourceIssuer - Issuer of asset being sent (undefined for XLM)
- * @param destCode - Code of asset being received
- * @param destIssuer - Issuer of asset being received (undefined for XLM)
- * @param sendAmount - Amount of source asset to send (string)
- * @returns Best path with destination amount and route, or null if no paths found
- */
-export const findBestSwapPath = async (
-  sourceCode: string,
-  sourceIssuer: string | undefined,
-  destCode: string,
-  destIssuer: string | undefined,
-  sendAmount: string
-): Promise<{
-  path: Array<{ code: string; issuer?: string }>;
-  destinationAmount: string;
-  priceImpact: number;
-} | null> => {
-  try {
-    const server = new Server(HORIZON_URL);
-
-    // Create proper SDK Asset instances for source
-    const sourceAsset = sourceCode === 'XLM' 
-      ? Asset.native() 
-      : new Asset(sourceCode, sourceIssuer!);
-
-    // Create proper SDK Asset instances for destination
-    const destAsset = destCode === 'XLM' 
-      ? Asset.native() 
-      : new Asset(destCode, destIssuer!);
-
-    console.log('[v0] Path Finding - Source Asset:', {
-      code: sourceAsset.code,
-      issuer: sourceAsset.issuer,
-      isNative: sourceAsset.isNative(),
-      serialized: JSON.stringify(sourceAsset),
-    });
-
-    console.log('[v0] Path Finding - Destination Asset:', {
-      code: destAsset.code,
-      issuer: destAsset.issuer,
-      isNative: destAsset.isNative(),
-      serialized: JSON.stringify(destAsset),
-    });
-
-    // Destination assets MUST be passed as an array
-    const destinationAssets = [destAsset];
-
-    console.log('[v0] Calling server.strictSendPaths():', {
-      sourceAsset: sourceAsset.code + (sourceAsset.issuer ? `:${sourceAsset.issuer}` : ''),
-      destinationAssets: destinationAssets.map(a => a.code + (a.issuer ? `:${a.issuer}` : '')),
-      sendAmount: sendAmount,
-    });
-
-    // Query using strictSendPaths: we specify the source amount, Horizon finds the destination amount
-    let pathsResponse = await server.strictSendPaths(sourceAsset, sendAmount, destinationAssets).call();
-    let paths = pathsResponse.records || [];
-
-    console.log('[v0] strictSendPaths returned', paths.length, 'path(s)');
-
-    // Fallback: if strictSendPaths returns no paths, try strictReceivePaths
-    if (paths.length === 0) {
-      console.warn('[v0] strictSendPaths returned no results. Trying strictReceivePaths fallback...');
-      
-      // For strict receive, we need to estimate a destination amount
-      // Use the send amount as a starting point (1:1 ratio assumption)
-      const estimatedDestAmount = sendAmount;
-
-      console.log('[v0] Calling server.strictReceivePaths() with estimated destination:', estimatedDestAmount);
-
-      try {
-        pathsResponse = await server.strictReceivePaths(destinationAssets, estimatedDestAmount, [sourceAsset]).call();
-        paths = pathsResponse.records || [];
-        console.log('[v0] strictReceivePaths returned', paths.length, 'path(s)');
-      } catch (receivePathError) {
-        console.error('[v0] strictReceivePaths also failed:', receivePathError);
-      }
-    }
-
-    // If still no paths found, log debugging info and return null
-    if (paths.length === 0) {
-      console.error('[v0] No swap paths found from either strictSendPaths or strictReceivePaths');
-      console.error('[v0] Debugging Swap Assets:', 
-        'Source:', JSON.stringify(sourceAsset), 
-        'Destination:', JSON.stringify(destAsset)
-      );
-      return null;
-    }
-
-    // Get the best path (first one is optimal according to Stellar)
-    const bestPath = paths[0];
-
-    console.log('[v0] Best path selected:', {
-      destination_amount: bestPath.destination_amount,
-      path_length: bestPath.path?.length || 0,
-      full_path: bestPath.path,
-    });
-
-    // Extract path sequence from Horizon response
-    // Each item in the path is an intermediate asset needed for the swap
-    const pathSequence: Array<{ code: string; issuer?: string }> = [];
-    
-    if (bestPath.path && Array.isArray(bestPath.path)) {
-      for (const pathAsset of bestPath.path) {
-        // Handle native XLM in path
-        if (pathAsset.asset_type === 'native') {
-          pathSequence.push({
-            code: 'XLM',
-            issuer: undefined,
-          });
-          console.log('[v0] Path hop: XLM (native)');
-        } else {
-          // Handle credit assets in path
-          const assetCode = pathAsset.asset_code || 'UNKNOWN';
-          const assetIssuer = pathAsset.asset_issuer;
-          pathSequence.push({
-            code: assetCode,
-            issuer: assetIssuer,
-          });
-          console.log('[v0] Path hop:', assetCode, 'issuer:', assetIssuer);
-        }
-      }
-    }
-
-    // Calculate price impact
-    const actualRate = parseFloat(bestPath.destination_amount) / parseFloat(sendAmount);
-    const directRate = 1; // Theoretical 1:1 rate for impact calculation
-    const priceImpact = Math.abs(((actualRate - directRate) / directRate) * 100);
-
-    console.log('[v0] Best swap path found:', {
-      sourceToken: sourceCode + (sourceIssuer ? `:${sourceIssuer}` : ''),
-      destToken: destCode + (destIssuer ? `:${destIssuer}` : ''),
-      sendAmount: sendAmount,
-      destination_amount: bestPath.destination_amount,
-      exchange_rate: actualRate.toFixed(7),
-      price_impact: priceImpact.toFixed(2) + '%',
-      intermediate_hops: pathSequence.length,
-      path: pathSequence,
-    });
-
-    return {
-      path: pathSequence,
-      destinationAmount: bestPath.destination_amount,
-      priceImpact: parseFloat(priceImpact.toFixed(2)),
-    };
-  } catch (error: any) {
-    console.error('[v0] Error finding swap path:', {
-      message: error.message,
-      response: error.response?.data,
-      status: error.response?.status,
-    });
-    return null;
-  }
-};
-
-/**
- * Execute a swap using PathPaymentStrictSend on Mainnet
- * Implements robust swap with proper Asset creation, path validation, and slippage handling
- * @param secretKey - Secret key of sending account
- * @param sendCode - Code of asset being sent
- * @param sendIssuer - Issuer of asset being sent (undefined for XLM)
- * @param sendMax - Maximum amount to send (string with 7 decimals)
- * @param destCode - Code of asset being received
- * @param destIssuer - Issuer of asset being received (undefined for XLM)
- * @param destAmount - Expected destination amount (string with 7 decimals)
- * @param path - Array of intermediate assets from path finding
- * @param slippageTolerance - Acceptable slippage percentage (default 1%)
- */
-export const executeSwap = async (
-  secretKey: string,
-  sendCode: string,
-  sendIssuer: string | undefined,
-  sendMax: string,
-  destCode: string,
-  destIssuer: string | undefined,
-  destAmount: string,
-  path: Array<{ code: string; issuer?: string }>,
-  slippageTolerance: number = 1
-): Promise<{ success: boolean; hash?: string; error?: string }> => {
-  try {
-    // Ensure all amounts are formatted with exactly 7 decimal places (Stellar requirement)
-    const formattedSendMax = parseFloat(sendMax).toFixed(7);
-    const formattedDestAmount = parseFloat(destAmount).toFixed(7);
-
-    console.log('[v0] Starting swap execution with:', {
-      sendCode,
-      sendIssuer,
-      sendMax: formattedSendMax,
-      destCode,
-      destIssuer,
-      destAmount: formattedDestAmount,
-      slippageTolerance,
-      pathLength: path.length,
-    });
-
-    // Horizon.Server is the correct class in @stellar/stellar-sdk v11+
-    const server = new Horizon.Server(HORIZON_URL);
-    const keypair = Keypair.fromSecret(secretKey);
-    const sourcePublicKey = keypair.publicKey();
-
-    // Load account sequence number from Horizon
-    const account = await server.loadAccount(sourcePublicKey);
-
-    // Build Asset objects — Asset.native() for XLM, new Asset(code, issuer) for others
-    const sendAsset = sendCode === 'XLM' ? Asset.native() : new Asset(sendCode, sendIssuer!);
-    const destAsset = destCode === 'XLM' ? Asset.native() : new Asset(destCode, destIssuer!);
-
-    // Map intermediate path hops to Asset objects
-    const pathAssets: Asset[] = path.map(p =>
-      p.code === 'XLM' ? Asset.native() : new Asset(p.code, p.issuer!)
-    );
-
-    // destAmount coming in is already the slippage-protected minimum (calculateLobstrSlippageAmount)
-    // We just reformat to be safe
-    const destMin = formattedDestAmount;
-
-    console.log('[v0] Building pathPaymentStrictSend:', {
-      sendAsset: sendAsset.code,
-      sendAmount: formattedSendMax,
-      destAsset: destAsset.code,
-      destMin,
-      pathHops: pathAssets.map(a => a.code),
-    });
-
-    // pathPaymentStrictSend fields:
-    //   sendAsset, sendAmount (exact amount sent), destination,
-    //   destAsset, destMin (minimum acceptable receive), path
-    const transaction = new TransactionBuilder(account, {
-      fee: BASE_FEE,
-      networkPassphrase: NETWORK_PASSPHRASE,
-    })
-      .addOperation(
-        Operation.pathPaymentStrictSend({
-          sendAsset,
-          sendAmount: formattedSendMax,   // exact amount we send
-          destination: sourcePublicKey,
-          destAsset,
-          destMin,                         // minimum acceptable (slippage floor)
-          path: pathAssets,
-        })
-      )
-      .setTimeout(180)
-      .build();
-
-    console.log('[v0] Transaction built. Operations:', transaction.operations.length);
-
-    // Sign transaction
-    transaction.sign(keypair);
-    console.log('[v0] Transaction signed');
-
-    // Submit to Mainnet via Horizon
-    console.log('[v0] Submitting transaction to Mainnet...');
-    const result = await server.submitTransaction(transaction);
-    
-    console.log('[v0] Swap successful!', {
-      hash: result.hash,
-      ledger: result.ledger,
-      result_code: result.result_code,
-    });
-    
-    return { success: true, hash: result.hash };
-  } catch (error: any) {
-    // Enhanced error logging for Stellar operations
-    console.error('[v0] Swap execution error:', error.message);
-    
-    // Log Stellar-specific error codes if available
-    if (error.response?.data?.extras?.result_codes) {
-      const codes = error.response.data.extras.result_codes;
-      console.error('[v0] Stellar result codes:', {
-        transaction: codes.transaction,
-        operations: codes.operations,
-        fullResponse: error.response.data,
-      });
-    }
-    
-    // Log network errors
-    if (error.response?.status) {
-      console.error('[v0] HTTP error:', {
-        status: error.response.status,
-        statusText: error.response.statusText,
-      });
-    }
-
-    let errorMessage = error.message || 'Swap failed';
-    if (error.response?.data?.extras?.result_codes) {
-      const codes = error.response.data.extras.result_codes;
-      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
-    }
-    
-    console.error('[v0] Final error message:', errorMessage);
-    return { success: false, error: errorMessage };
   }
 };
 
@@ -1220,83 +882,6 @@ export const getAccountOffers = async (
     return data._embedded?.records || [];
   } catch {
     return [];
-  }
-};
-
-/**
- * Calculate available balance for an asset, accounting for:
- * - Tokens committed in open selling offers
- * - Minimum network reserve for XLM (2 + subentry_count) * 0.5
- * 
- * Returns: Total Balance - Committed in Orders - Network Reserve (XLM only)
- */
-export const calculateAvailableBalance = async (
-  publicKey: string,
-  assetCode: string,
-  assetIssuer: string
-): Promise<string> => {
-  try {
-    // Fetch account details and offers in parallel
-    const [account, offers] = await Promise.all([
-      (async () => {
-        const server = new Horizon.Server(HORIZON_URL);
-        return server.loadAccount(publicKey);
-      })(),
-      getAccountOffers(publicKey),
-    ]);
-
-    // Get total balance for this asset
-    const balanceData = account.balances.find((b: any) => {
-      if (assetCode === 'XLM' || assetCode === 'native') {
-        return b.asset_type === 'native';
-      }
-      return b.asset_code === assetCode && b.asset_issuer === assetIssuer;
-    });
-
-    const totalBalance = balanceData ? parseFloat(balanceData.balance) : 0;
-
-    // Calculate tokens committed in selling offers for this asset
-    let committedBalance = 0;
-    for (const offer of offers) {
-      const selling = offer.selling;
-      let isSellingThisAsset = false;
-
-      if (assetCode === 'XLM' || assetCode === 'native') {
-        isSellingThisAsset = selling.asset_type === 'native';
-      } else {
-        isSellingThisAsset =
-          selling.asset_code === assetCode && selling.asset_issuer === assetIssuer;
-      }
-
-      if (isSellingThisAsset) {
-        committedBalance += parseFloat(offer.amount);
-      }
-    }
-
-    // Calculate network reserve (XLM only)
-    let networkReserve = 0;
-    if (assetCode === 'XLM' || assetCode === 'native') {
-      // Minimum reserve = (2 + subentry_count) * 0.5 XLM
-      const subentryCount = account.subentry_count || 0;
-      networkReserve = (2 + subentryCount) * 0.5;
-    }
-
-    // Available Balance = Total - Committed - Reserve
-    const availableBalance = Math.max(0, totalBalance - committedBalance - networkReserve);
-
-    console.log('[v0] Available balance calc:', {
-      asset: `${assetCode}${assetIssuer ? `_${assetIssuer}` : ''}`,
-      totalBalance,
-      committedBalance,
-      networkReserve,
-      availableBalance,
-    });
-
-    return availableBalance.toString();
-  } catch (error) {
-    console.error('[v0] Error calculating available balance:', error);
-    // Return 0 if there's an error
-    return '0';
   }
 };
 
@@ -1700,10 +1285,213 @@ export const clearHomeDomain = async (
   }
 };
 
-/**
- * Create and sign a USDC payment transaction locally
- * This function builds a payment transaction and signs it with the provided secret key
- */
+export const findStrictSendPaths = async (
+  sourceAssetCode: string,
+  sourceAssetIssuer: string | undefined,
+  destAssetCode: string,
+  destAssetIssuer: string | undefined,
+  sendAmount: string
+): Promise<any[]> => {
+  try {
+    const destAsset = destAssetCode === 'XLM' || destAssetCode === 'native'
+      ? 'native'
+      : `${destAssetCode}:${destAssetIssuer}`;
+
+    const url = `${HORIZON_URL}/paths/strict-send?source_asset_type=${
+      sourceAssetCode === 'XLM' ? 'native' : getAssetType(sourceAssetCode)
+    }${sourceAssetCode !== 'XLM' ? `&source_asset_code=${sourceAssetCode}&source_asset_issuer=${sourceAssetIssuer}` : ''}&destination_assets=${destAsset}&source_amount=${sendAmount}`;
+
+    const response = await fetch(url);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data._embedded?.records || [];
+  } catch {
+    return [];
+  }
+};
+
+export const pathPaymentStrictSend = async (
+  secretKey: string,
+  sendAssetCode: string,
+  sendAssetIssuer: string | undefined,
+  sendAmount: string,
+  destAssetCode: string,
+  destAssetIssuer: string | undefined,
+  destMin: string,
+  path: Array<{ code: string; issuer?: string }>,
+  destPublicKey?: string
+): Promise<{ success: boolean; hash?: string; destAmount?: string; feeCharged?: string; error?: string }> => {
+  try {
+    const server = new Horizon.Server(HORIZON_URL);
+    const keypair = Keypair.fromSecret(secretKey);
+    const sourcePublicKey = keypair.publicKey();
+    const destination = destPublicKey || sourcePublicKey;
+
+    const account = await server.loadAccount(sourcePublicKey);
+
+    const sendAmountStr = Number(sendAmount).toFixed(7);
+    const destMinStr = Number(destMin).toFixed(7);
+
+    const sendAsset = sendAssetCode === 'XLM' || sendAssetCode === 'native'
+      ? Asset.native()
+      : new Asset(sendAssetCode, sendAssetIssuer!);
+
+    const destAsset = destAssetCode === 'XLM' || destAssetCode === 'native'
+      ? Asset.native()
+      : new Asset(destAssetCode, destAssetIssuer!);
+
+    const pathAssets = path.map(p =>
+      p.code === 'XLM' || p.code === 'native'
+        ? Asset.native()
+        : new Asset(p.code, p.issuer!)
+    );
+
+    let dynamicFee = BASE_FEE;
+    try {
+      const feeStats = await server.feeStats();
+      const suggested = feeStats.fee_charged?.p70 || feeStats.last_ledger_base_fee;
+      if (suggested && Number(suggested) > Number(BASE_FEE)) {
+        dynamicFee = String(suggested);
+      }
+    } catch {
+      // keep BASE_FEE
+    }
+
+    const transaction = new TransactionBuilder(account, {
+      fee: dynamicFee,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.pathPaymentStrictSend({
+          sendAsset,
+          sendAmount: sendAmountStr,
+          destination,
+          destAsset,
+          destMin: destMinStr,
+          path: pathAssets,
+        })
+      )
+      .setTimeout(180)
+      .build();
+
+    transaction.sign(keypair);
+    const result = await server.submitTransaction(transaction);
+    return { success: true, hash: result.hash, feeCharged: dynamicFee };
+  } catch (error: any) {
+    let errorMessage = error.message || 'Path payment failed';
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      const opCode = codes.operations?.[0];
+      if (opCode === 'op_under_dest_min') {
+        errorMessage = 'Arbitrage cancelled: profit below minimum threshold (anti-loss protection triggered)';
+      } else if (opCode === 'op_too_few_offers') {
+        errorMessage = 'No viable path found for this arbitrage';
+      } else if (opCode === 'op_cross_self') {
+        errorMessage = 'Cannot cross your own offers';
+      } else if (opCode === 'op_over_source_max') {
+        errorMessage = 'Insufficient balance for this operation';
+      } else {
+        errorMessage = opCode || codes.transaction || errorMessage;
+      }
+    }
+    return { success: false, error: errorMessage };
+  }
+};
+
+export const getOrderbookPrice = async (
+  baseCode: string,
+  baseIssuer: string | undefined,
+  counterCode: string,
+  counterIssuer: string | undefined
+): Promise<{ bestBid: number; bestAsk: number } | null> => {
+  try {
+    let url = `${HORIZON_URL}/order_book?`;
+
+    if (baseCode === 'XLM' || baseCode === 'native') {
+      url += 'selling_asset_type=native';
+    } else {
+      url += `selling_asset_type=${getAssetType(baseCode)}&selling_asset_code=${baseCode}&selling_asset_issuer=${baseIssuer}`;
+    }
+
+    url += '&';
+
+    if (counterCode === 'XLM' || counterCode === 'native') {
+      url += 'buying_asset_type=native';
+    } else {
+      url += `buying_asset_type=${getAssetType(counterCode)}&buying_asset_code=${counterCode}&buying_asset_issuer=${counterIssuer}`;
+    }
+
+    url += '&limit=1';
+
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const data = await response.json();
+
+    const bestBid = data.bids?.[0]?.price ? parseFloat(data.bids[0].price) : 0;
+    const bestAsk = data.asks?.[0]?.price ? parseFloat(data.asks[0].price) : 0;
+
+    return { bestBid, bestAsk };
+  } catch {
+    return null;
+  }
+};
+
+export const executeSwap = async (
+  secretKey: string,
+  sendCode: string,
+  sendIssuer: string | undefined,
+  sendMax: string,
+  destCode: string,
+  destIssuer: string | undefined,
+  destAmount: string,
+  path: Array<{ code: string; issuer?: string }>,
+  slippageTolerance: number = 1
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    const formattedSendMax = parseFloat(sendMax).toFixed(7);
+    const formattedDestAmount = parseFloat(destAmount).toFixed(7);
+
+    const server = new Horizon.Server(HORIZON_URL);
+    const keypair = Keypair.fromSecret(secretKey);
+    const sourcePublicKey = keypair.publicKey();
+    const account = await server.loadAccount(sourcePublicKey);
+
+    const sendAsset = sendCode === 'XLM' ? Asset.native() : new Asset(sendCode, sendIssuer!);
+    const destAsset = destCode === 'XLM' ? Asset.native() : new Asset(destCode, destIssuer!);
+    const pathAssets: Asset[] = path.map(p =>
+      p.code === 'XLM' ? Asset.native() : new Asset(p.code, p.issuer!)
+    );
+
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.pathPaymentStrictSend({
+          sendAsset,
+          sendAmount: formattedSendMax,
+          destination: sourcePublicKey,
+          destAsset,
+          destMin: formattedDestAmount,
+          path: pathAssets,
+        })
+      )
+      .setTimeout(180)
+      .build();
+
+    transaction.sign(keypair);
+    const result = await server.submitTransaction(transaction);
+    return { success: true, hash: result.hash };
+  } catch (error: any) {
+    let errorMessage = error.message || 'Swap failed';
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+    return { success: false, error: errorMessage };
+  }
+};
+
 export const createAndSignUSDCTransaction = async (
   sourceSecret: string,
   destinationPublicKey: string,
@@ -1712,40 +1500,19 @@ export const createAndSignUSDCTransaction = async (
 ): Promise<{ success: boolean; signedXdr?: string; hash?: string; error?: string }> => {
   try {
     const server = new Horizon.Server(HORIZON_URL);
-    
-    // Validate amount format - must be string with exactly 7 decimal places
-    const amountRegex = /^\d+(\.\d{1,7})?$/;
-    if (!amountRegex.test(amount)) {
-      throw new Error(`Invalid amount format: ${amount}. Must be a valid decimal with up to 7 decimal places.`);
-    }
-    
-    // Ensure amount has proper decimal places for Stellar
     const formattedAmount = parseFloat(amount).toFixed(7);
-    console.log('[v0] Amount validation: input="${amount}" → formatted="${formattedAmount}"');
-    
-    // Create keypair from secret
     const sourceKeypair = Keypair.fromSecret(sourceSecret);
     const sourcePublicKey = sourceKeypair.publicKey();
-    
-    console.log('[v0] Creating USDC transaction:', {
-      from: sourcePublicKey.substring(0, 8) + '...',
-      to: destinationPublicKey.substring(0, 8) + '...',
-      amount: formattedAmount,
-    });
-    
-    // Fetch account to get current sequence number
     const accountResponse = await server.loadAccount(sourcePublicKey);
-    
-    // USDC issuer on Stellar (Centre's official USDC)
+
     const usdcAsset = new Asset(
       'USDC',
       'GA5ZSEJYB37JRC5AVCIA5MOP4IHTOJHW7PSMUEHC7TQWZ6GZJKMJDNJ'
     );
-    
-    // Create transaction with memo
+
     const transaction = new TransactionBuilder(accountResponse, {
       fee: BASE_FEE,
-      networkPassphrase: Networks.PUBLIC_NETWORK,
+      networkPassphrase: NETWORK_PASSPHRASE,
     })
       .addOperation(
         Operation.payment({
@@ -1757,36 +1524,17 @@ export const createAndSignUSDCTransaction = async (
       .addMemo(Memo.text(memoText))
       .setTimeout(180)
       .build();
-    
-    // Sign the transaction with the source keypair
-    console.log('[v0] Signing transaction with wallet:', sourcePublicKey.substring(0, 8) + '...');
+
     transaction.sign(sourceKeypair);
-    
-    // Get the signed XDR
     const signedXdr = transaction.toEnvelope().toXdr('base64');
-    
-    console.log('[v0] Transaction signed successfully');
-    console.log('[v0] Signed XDR length:', signedXdr.length);
-    
-    // Submit the transaction to Stellar network
     const result = await server.submitTransaction(transaction);
-    
-    console.log('[v0] Transaction submitted successfully:', result.hash);
-    
-    return {
-      success: true,
-      signedXdr,
-      hash: result.hash,
-    };
+    return { success: true, signedXdr, hash: result.hash };
   } catch (error: any) {
     let errorMessage = error.message || 'Failed to create and sign USDC transaction';
-    
     if (error.response?.data?.extras?.result_codes) {
       const codes = error.response.data.extras.result_codes;
       errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
     }
-    
-    console.error('[v0] Error creating/signing transaction:', errorMessage);
     return { success: false, error: errorMessage };
   }
 };
