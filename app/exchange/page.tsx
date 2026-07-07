@@ -4,7 +4,7 @@ import React from 'react';
 import { Header } from '@/components/header';
 import { useWallet } from '@/lib/wallet-context';
 import { Button } from '@/components/ui/button';
-import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations, getAccountTrades, getXLMUSDStats, hasTrustline, addTrustline, calculateAvailableBalance } from '@/lib/stellar-utils';
+import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, decryptSecret, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations, getAccountTrades, getXLMUSDStats, hasTrustline, addTrustline } from '@/lib/stellar-utils';
 import { TradingPairHeader } from '@/components/trading-pair-header';
 import { OrderBook } from '@/components/order-book';
 import { TradeHistory } from '@/components/trade-history';
@@ -13,11 +13,10 @@ import { FilledOrders } from '@/components/filled-orders';
 import { PriceChart } from '@/components/price-chart';
 import { TokenSelectorModal } from '@/components/token-selector-modal';
 import { CompactOrderForm } from '@/components/compact-order-form';
-import { OrderBookSkeleton, ChartSkeleton } from '@/components/skeleton-loaders';
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { ArrowLeft, TrendingUp, ArrowRightLeft, X, Loader2, AlertCircle, History, ClipboardList, CheckCircle2, BarChart3 } from 'lucide-react';
+import { ArrowLeft, TrendingUp, ArrowRightLeft, X, Loader2, Wallet } from 'lucide-react';
 import { WalletSelectorDropdown } from '@/components/wallet-selector-dropdown';
+import { Input } from '@/components/ui/input';
 import Link from 'next/link';
 
 interface OrderBookData {
@@ -25,11 +24,11 @@ interface OrderBookData {
   asks: Array<{ price: string; amount: string }>;
 }
 
-type TabType = 'history' | 'my-orders' | 'charts' | 'filled';
+type TabType = 'history' | 'my-orders' | 'charts';
 type TokenModalType = 'selling' | 'buying' | null;
 
 export default function ExchangePage() {
-  const { wallets, activeWalletId, updateBalances, globalDecryptedSecret } = useWallet();
+  const { wallets, activeWalletId, updateBalances } = useWallet();
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('history');
   
@@ -55,8 +54,11 @@ export default function ExchangePage() {
   // Transaction state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [txResult, setTxResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<{ type: 'buy' | 'sell'; price: string; amount: string } | null>(null);
-  const [pendingCancelOrderId, setPendingCancelOrderId] = useState<string | null>(null);
+  const [password, setPassword] = useState('');
+  const [isPasswordUnlocked, setIsPasswordUnlocked] = useState(false); // Track if password entered this session
+  const [decryptedSecret, setDecryptedSecret] = useState<string | null>(null); // Store decrypted secret
   
   // Token metadata (domain, image, name)
   const [sellingMeta, setSellingMeta] = useState<{ domain?: string; image?: string; name?: string }>({});
@@ -82,42 +84,6 @@ export default function ExchangePage() {
     open24h: string;
     close24h: string;
   } | null>(null);
-
-  // Available balances (accounting for committed orders and network reserve)
-  const [availableSellingBalance, setAvailableSellingBalance] = useState('0');
-  const [availableBuyingBalance, setAvailableBuyingBalance] = useState('0');
-  const [balancesLoading, setBalancesLoading] = useState(false);
-
-  // Trustline retry state
-  const [pendingTrustlineAsset, setPendingTrustlineAsset] = useState<{ code: string; issuer: string } | null>(null);
-  const [showTrustlineAlert, setShowTrustlineAlert] = useState(false);
-
-  const router = useRouter();
-
-  // Handle hash-based navigation for quick-access links from sidebar
-  useEffect(() => {
-    const handleHashChange = () => {
-      if (typeof window !== 'undefined') {
-        const hash = window.location.hash.slice(1); // Remove the #
-        if (hash === 'history') setActiveTab('history');
-        else if (hash === 'orders') setActiveTab('my-orders');
-        else if (hash === 'filled') setActiveTab('filled');
-        else if (hash === 'charts') setActiveTab('charts');
-      }
-    };
-
-    // Handle initial hash on mount/ready
-    // Use a small delay to ensure the router is ready and hash is set
-    const timer = setTimeout(handleHashChange, 100);
-
-    // Listen for hash changes when clicking menu links
-    window.addEventListener('hashchange', handleHashChange);
-    
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener('hashchange', handleHashChange);
-    };
-  }, [router]);
 
   useEffect(() => {
     setMounted(true);
@@ -154,16 +120,22 @@ export default function ExchangePage() {
     }
   }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
 
-  // Refresh balances when wallet changes
+  // Reset password state when wallet changes (use ref to track previous wallet)
   const prevWalletIdRef = React.useRef(activeWalletId);
   useEffect(() => {
     if (prevWalletIdRef.current !== activeWalletId && activeWalletId && mounted) {
+      // Clear password-related state when wallet changes
+      setIsPasswordUnlocked(false);
+      setDecryptedSecret(null);
+      setPassword('');
       setPendingOrder(null);
       setTxResult(null);
+      
+      // Refresh balances for the new wallet
       updateBalances(activeWalletId);
     }
     prevWalletIdRef.current = activeWalletId;
-  }, [activeWalletId, mounted]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeWalletId, mounted, updateBalances]);
 
   // Fetch order book
   useEffect(() => {
@@ -442,34 +414,6 @@ export default function ExchangePage() {
     }
   }, [mounted]);
 
-  // Fetch available balances (accounting for committed orders and network reserve)
-  useEffect(() => {
-    // Don't fetch if not mounted - will be called again when mounted becomes true
-    if (!mounted || !activeWalletId) return;
-    
-    const wallet = wallets.find(w => w.id === activeWalletId);
-    if (!wallet) return;
-
-    const fetchAvailableBalances = async () => {
-      setBalancesLoading(true);
-      try {
-        const [sellingAvail, buyingAvail] = await Promise.all([
-          calculateAvailableBalance(wallet.publicKey, sellingAsset, sellingIssuer),
-          calculateAvailableBalance(wallet.publicKey, buyingAsset, buyingIssuer),
-        ]);
-        
-        setAvailableSellingBalance(sellingAvail);
-        setAvailableBuyingBalance(buyingAvail);
-      } catch (error) {
-        console.error('[v0] Error fetching available balances:', error);
-      } finally {
-        setBalancesLoading(false);
-      }
-    };
-
-    fetchAvailableBalances();
-  }, [activeWalletId, wallets, sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
-
   if (!mounted) return null;
 
   const activeWallet = wallets.find(w => w.id === activeWalletId);
@@ -528,11 +472,13 @@ export default function ExchangePage() {
       setTxResult({ success: false, message: 'Please enter valid price and amount' });
       return;
     }
-    if (!globalDecryptedSecret) {
-      setTxResult({ success: false, message: 'Wallet is locked. Please restart the app to unlock.' });
-      return;
+    setPendingOrder({ type: 'buy', price, amount });
+    // If already unlocked, submit directly; otherwise show password modal
+    if (isPasswordUnlocked && decryptedSecret) {
+      submitOrder({ type: 'buy', price, amount }, decryptedSecret);
+    } else {
+      setShowPasswordModal(true);
     }
-    submitOrder({ type: 'buy', price, amount }, globalDecryptedSecret);
   };
 
   const handleSellClick = (price: string, amount: string) => {
@@ -540,11 +486,13 @@ export default function ExchangePage() {
       setTxResult({ success: false, message: 'Please enter valid price and amount' });
       return;
     }
-    if (!globalDecryptedSecret) {
-      setTxResult({ success: false, message: 'Wallet is locked. Please restart the app to unlock.' });
-      return;
+    setPendingOrder({ type: 'sell', price, amount });
+    // If already unlocked, submit directly; otherwise show password modal
+    if (isPasswordUnlocked && decryptedSecret) {
+      submitOrder({ type: 'sell', price, amount }, decryptedSecret);
+    } else {
+      setShowPasswordModal(true);
     }
-    submitOrder({ type: 'sell', price, amount }, globalDecryptedSecret);
   };
   
   const submitOrder = async (order: { type: 'buy' | 'sell'; price: string; amount: string }, secret: string) => {
@@ -562,11 +510,11 @@ export default function ExchangePage() {
         
         if (!hasTrust) {
           // Auto-add trustline
-          setTxResult({ success: false, message: `Creating trustline for ${assetToCheck.code}...` });
+          setTxResult({ success: false, message: `Adding trustline for ${assetToCheck.code}...` });
           const trustResult = await addTrustline(secret, assetToCheck.code, assetToCheck.issuer);
           
           if (!trustResult.success) {
-            setTxResult({ success: false, message: `Failed to create trustline: ${trustResult.error}` });
+            setTxResult({ success: false, message: `Failed to add trustline: ${trustResult.error}` });
             setIsSubmitting(false);
             return;
           }
@@ -576,9 +524,9 @@ export default function ExchangePage() {
             await updateBalances(activeWalletId);
           }
           
-          setTxResult({ success: true, message: `Trustline created for ${assetToCheck.code}. Submitting order...` });
-          // Small delay to let the UI update and ensure balances are refreshed
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          setTxResult({ success: true, message: `Trustline added for ${assetToCheck.code}. Submitting order...` });
+          // Small delay to let the UI update
+          await new Promise(resolve => setTimeout(resolve, 500));
         }
       }
       
@@ -614,35 +562,14 @@ export default function ExchangePage() {
           setSellPrice('');
           setSellAmount('');
         }
-        
         const data = await getOrderBook(sellingAsset, sellingIssuer, buyingAsset, buyingIssuer);
         setOrderBook(data);
-        // Refresh balances and available balances after order
-        if (activeWalletId && activeWallet) {
+        // Refresh balances after order
+        if (activeWalletId) {
           await updateBalances(activeWalletId);
-          // Recalculate available balances after order submission
-          const [sellingAvail, buyingAvail] = await Promise.all([
-            calculateAvailableBalance(activeWallet.publicKey, sellingAsset, sellingIssuer),
-            calculateAvailableBalance(activeWallet.publicKey, buyingAsset, buyingIssuer),
-          ]);
-          setAvailableSellingBalance(sellingAvail);
-          setAvailableBuyingBalance(buyingAvail);
         }
       } else {
-        // Handle op_buy_no_trust error - trustline may have failed or been needed but not created
-        if (result.error && (result.error.includes('op_buy_no_trust') || result.error.includes('no_trust'))) {
-          // Keep pendingOrder alive so handleCreateTrustlineAndRetry can reuse it
-          setPendingTrustlineAsset({ code: buyingAsset, issuer: buyingIssuer });
-          setShowTrustlineAlert(true);
-          setTxResult({ 
-            success: false, 
-            message: `Trustline for ${buyingAsset} needs to be created.` 
-          });
-          setIsSubmitting(false);
-          return; // skip the finally clearance below
-        } else {
-          setTxResult({ success: false, message: result.error || 'Failed to submit order' });
-        }
+        setTxResult({ success: false, message: result.error || 'Order failed' });
       }
     } catch (error: any) {
       setTxResult({ success: false, message: error.message || 'Failed to submit order' });
@@ -652,69 +579,40 @@ export default function ExchangePage() {
     }
   };
   
-  const handleCreateTrustlineAndRetry = async () => {
-    if (!globalDecryptedSecret || !pendingTrustlineAsset || !pendingOrder) {
-      setTxResult({ success: false, message: 'Missing required information to create trustline.' });
-      return;
-    }
-
+  const handleConfirmOrder = async () => {
+    if (!pendingOrder || !activeWallet || !password) return;
+    
+    setShowPasswordModal(false);
+    
     try {
-      setIsSubmitting(true);
-      setShowTrustlineAlert(false);
-
-      // Create the trustline
-      const trustResult = await addTrustline(
-        globalDecryptedSecret,
-        pendingTrustlineAsset.code,
-        pendingTrustlineAsset.issuer
-      );
-
-      if (!trustResult.success) {
-        setTxResult({ success: false, message: `Failed to create trustline: ${trustResult.error}` });
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Refresh balances after adding trustline
-      if (activeWalletId) {
-        await updateBalances(activeWalletId);
-      }
-
-      // Small delay to let the blockchain confirm
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      setTxResult({ success: true, message: `Trustline created for ${pendingTrustlineAsset.code}. Retrying order...` });
-
-      // Retry the order submission
-      await new Promise(resolve => setTimeout(resolve, 500));
-      await submitOrder(pendingOrder, globalDecryptedSecret);
-
-      setPendingTrustlineAsset(null);
+      // Decrypt and store the secret key for this session
+      const secret = decryptSecret(activeWallet.encryptedSecret, password);
+      setDecryptedSecret(secret);
+      setIsPasswordUnlocked(true);
+      setPassword(''); // Clear password from state
+      
+      // Submit the order
+      await submitOrder(pendingOrder, secret);
     } catch (error: any) {
-      setTxResult({ success: false, message: error.message || 'Failed to create trustline' });
-    } finally {
-      setIsSubmitting(false);
+      setTxResult({ success: false, message: 'Invalid password' });
+      setPassword('');
+      setPendingOrder(null);
     }
   };
 
-  const handleCancelOrder = (id: string) => {
-    if (!globalDecryptedSecret) {
-      setTxResult({ success: false, message: 'Wallet is locked. Please restart the app to unlock.' });
+  const handleCancelOrder = async (id: string) => {
+    if (!decryptedSecret) {
+      setTxResult({ success: false, message: 'Please unlock wallet with password first' });
       return;
     }
     
-    // If already unlocked, proceed directly to cancel
-    proceedWithCancelOrder(id);
-  };
-
-  const proceedWithCancelOrder = async (id: string) => {
     const order = myOrders.find(o => o.id === id);
-    if (!order || !globalDecryptedSecret) return;
+    if (!order) return;
     
     setIsSubmitting(true);
     try {
       const result = await cancelOffer(
-        globalDecryptedSecret,
+        decryptedSecret,
         id,
         order.sellingCode,
         order.sellingIssuer,
@@ -725,15 +623,6 @@ export default function ExchangePage() {
       if (result.success) {
         setMyOrders(myOrders.filter(o => o.id !== id));
         setTxResult({ success: true, message: 'Order cancelled successfully' });
-        // Refresh available balances after cancellation
-        if (activeWalletId && activeWallet) {
-          const [sellingAvail, buyingAvail] = await Promise.all([
-            calculateAvailableBalance(activeWallet.publicKey, sellingAsset, sellingIssuer),
-            calculateAvailableBalance(activeWallet.publicKey, buyingAsset, buyingIssuer),
-          ]);
-          setAvailableSellingBalance(sellingAvail);
-          setAvailableBuyingBalance(buyingAvail);
-        }
       } else {
         setTxResult({ success: false, message: result.error || 'Failed to cancel order' });
       }
@@ -744,69 +633,42 @@ export default function ExchangePage() {
     }
   };
 
-  // Smart number formatter to remove excessive decimals
-  const formatNumber = (num: string | number): string => {
-    const n = typeof num === 'string' ? parseFloat(num) : num;
-    if (!n || n === 0) return '0';
-    
-    // For very small numbers (< 0.01), use up to 7 decimals
-    if (n < 0.01) {
-      return n.toFixed(7).replace(/\.?0+$/, '');
-    }
-    
-    // For standard numbers, use up to 6 decimals
-    return n.toFixed(6).replace(/\.?0+$/, '');
-  };
-
   // Clicking a BID order = someone wants to BUY, so you can SELL to them
   const handleSelectBidOrder = (price: string, amount: string) => {
-    const formattedPrice = formatNumber(price);
-    const formattedAmount = formatNumber(amount);
-    setSellPrice(formattedPrice);
-    setSellAmount(formattedAmount);
-    // Also populate BUY side with the same price for comparison
-    setBuyPrice(formattedPrice);
+    setSellPrice(price);
+    setSellAmount(amount);
   };
 
   // Clicking an ASK order = someone wants to SELL, so you can BUY from them
   const handleSelectAskOrder = (price: string, amount: string) => {
-    const formattedPrice = formatNumber(price);
-    const formattedAmount = formatNumber(amount);
-    setBuyPrice(formattedPrice);
-    setBuyAmount(formattedAmount);
-    // Also populate SELL side with the same price for comparison
-    setSellPrice(formattedPrice);
+    setBuyPrice(price);
+    setBuyAmount(amount);
   };
 
   const tabs = [
-    { id: 'history', label: 'History', Icon: History },
-    { id: 'my-orders', label: 'My Orders', Icon: ClipboardList },
-    { id: 'filled', label: 'Filled', Icon: CheckCircle2 },
-    { id: 'charts', label: 'Charts', Icon: BarChart3 },
+    { id: 'history', label: 'History', icon: '📊' },
+    { id: 'my-orders', label: 'My Orders', icon: '📋' },
+    { id: 'filled', label: 'Filled', icon: '✅' },
+    { id: 'charts', label: 'Charts', icon: '📈' },
   ] as const;
 
   return (
-    <main className="h-[100dvh] w-full overflow-hidden overscroll-x-none bg-[#060814] select-none flex flex-col">
-      <div className="sticky top-0 z-50 shrink-0">
-        <Header />
-      </div>
-      <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
-          <div className="sticky top-0 z-40 mb-5 flex items-center justify-between rounded-xl border border-zinc-800/60 bg-[#060814]/95 px-3 py-2 backdrop-blur-md">
-            <Link href="/" className="flex items-center gap-2 text-zinc-400 hover:text-zinc-100 transition-all duration-200 ease-in-out active:scale-[0.98]">
-              <ArrowLeft className="h-4 w-4 shrink-0" />
-              Back to Dashboard
-            </Link>
-            <div className="shrink-0">
-              <WalletSelectorDropdown />
-            </div>
-          </div>
+    <main className="min-h-screen bg-background">
+      <Header />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="flex items-center justify-between mb-8">
+          <Link href="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="w-4 h-4" />
+            Back to Dashboard
+          </Link>
+          <WalletSelectorDropdown />
+        </div>
 
-          <div className="space-y-4 pb-6">
+        <div className="space-y-6">
           {/* Header */}
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-3">
-              <TrendingUp className="w-8 h-8 text-primary shrink-0" />
+              <TrendingUp className="w-8 h-8 text-primary" />
               <div>
                 <h1 className="text-3xl sm:text-4xl font-bold text-foreground">Stellar DEX</h1>
                 <p className="text-muted-foreground text-sm">Trade on the Stellar Decentralized Exchange</p>
@@ -826,13 +688,13 @@ export default function ExchangePage() {
 
           {/* Token Pair Selector - Integrated Oval Design */}
           <div className="flex flex-col items-center gap-4">
-            <div className="rounded-[2rem] border border-zinc-800/60 bg-zinc-900/20 px-8 py-6 sm:px-12 sm:py-8 flex items-center justify-center gap-4 sm:gap-8 backdrop-blur-md">
+            <div className="glow-border rounded-full px-8 py-6 sm:px-12 sm:py-8 flex items-center justify-center gap-4 sm:gap-8 border-2">
               {/* Selling Token */}
               <button
                 onClick={() => setTokenModal('selling')}
-                className="flex flex-col items-center gap-2 transition-all duration-200 ease-in-out hover:opacity-90 active:scale-[0.98]"
+                className="flex flex-col items-center gap-2 hover:opacity-80 transition-opacity"
               >
-                <div className="w-12 h-12 sm:w-16 sm:h-16 shrink-0 rounded-full bg-gradient-to-br from-primary/40 to-primary/20 flex items-center justify-center border border-primary/50 hover:border-primary/80 transition-colors overflow-hidden">
+                <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-primary/40 to-primary/20 flex items-center justify-center border border-primary/50 hover:border-primary/80 transition-colors overflow-hidden">
                   {sellingMeta.image ? (
                     <img src={sellingMeta.image} alt={sellingAsset} className="w-full h-full object-cover" onError={(e) => e.currentTarget.style.display = 'none'} />
                   ) : (
@@ -848,17 +710,17 @@ export default function ExchangePage() {
               {/* Swap Button */}
               <button
                 onClick={handleSwapPair}
-                className="p-2 sm:p-3 rounded-full border border-primary/40 hover:border-primary/60 hover:bg-primary/20 transition-all duration-200 ease-in-out active:scale-[0.98]"
+                className="p-2 sm:p-3 rounded-full border border-primary/40 hover:border-primary/60 hover:bg-primary/20 transition-all"
               >
-                <ArrowRightLeft className="w-5 h-5 sm:w-6 sm:h-6 text-primary shrink-0" />
+                <ArrowRightLeft className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
               </button>
 
               {/* Buying Token */}
               <button
                 onClick={() => setTokenModal('buying')}
-                className="flex flex-col items-center gap-2 transition-all duration-200 ease-in-out hover:opacity-90 active:scale-[0.98]"
+                className="flex flex-col items-center gap-2 hover:opacity-80 transition-opacity"
               >
-                <div className="w-12 h-12 sm:w-16 sm:h-16 shrink-0 rounded-full bg-gradient-to-br from-accent/40 to-accent/20 flex items-center justify-center border border-accent/50 hover:border-accent/80 transition-colors overflow-hidden">
+                <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-accent/40 to-accent/20 flex items-center justify-center border border-accent/50 hover:border-accent/80 transition-colors overflow-hidden">
                   {buyingMeta.image ? (
                     <img src={buyingMeta.image} alt={buyingAsset} className="w-full h-full object-cover" onError={(e) => e.currentTarget.style.display = 'none'} />
                   ) : (
@@ -873,9 +735,9 @@ export default function ExchangePage() {
             </div>
 
             {/* Spread Display - Below Selector */}
-            <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/20 p-3 sm:p-4 text-center backdrop-blur-md">
-              <p className="text-xs text-zinc-400 mb-1">Spread</p>
-              <p className="text-lg sm:text-xl font-bold text-primary font-mono tabular-nums">{spread.toFixed(3)}%</p>
+            <div className="glow-border p-3 sm:p-4 rounded-lg text-center">
+              <p className="text-xs text-muted-foreground mb-1">Spread</p>
+              <p className="text-lg sm:text-xl font-bold text-primary">{spread.toFixed(3)}%</p>
             </div>
           </div>
 
@@ -883,8 +745,8 @@ export default function ExchangePage() {
           <CompactOrderForm
             sellingAsset={sellingAsset}
             buyingAsset={buyingAsset}
-            sellingBalance={availableSellingBalance}
-            buyingBalance={availableBuyingBalance}
+            sellingBalance={sellingBalance}
+            buyingBalance={buyingBalance}
             bestBid={bestBid ?? undefined}
             bestAsk={bestAsk ?? undefined}
             buyPrice={buyPrice}
@@ -900,7 +762,7 @@ export default function ExchangePage() {
           />
 
           {/* Main Content Grid */}
-          <div className="grid lg:grid-cols-3 gap-4">
+          <div className="grid lg:grid-cols-3 gap-6">
             {/* Left: Order Book */}
             <div className="lg:col-span-2">
               <OrderBook
@@ -918,95 +780,85 @@ export default function ExchangePage() {
             </div>
 
             {/* Right: Quick Stats */}
-            <div className="space-y-3">
-              <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/20 p-4 text-center backdrop-blur-md">
-                <p className="text-xs text-zinc-400 mb-2">Best Bid</p>
-                <p className="text-2xl font-bold text-primary font-mono tabular-nums">
+            <div className="space-y-4">
+              <div className="glow-border p-4 rounded-lg text-center">
+                <p className="text-xs text-muted-foreground mb-2">Best Bid</p>
+                <p className="text-2xl font-bold text-primary">
                   {bestBid ? parseFloat(bestBid).toFixed(6) : 'N/A'}
                 </p>
               </div>
-              <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/20 p-4 text-center backdrop-blur-md">
-                <p className="text-xs text-zinc-400 mb-2">Best Ask</p>
-                <p className="text-2xl font-bold text-destructive font-mono tabular-nums">
+              <div className="glow-border p-4 rounded-lg text-center">
+                <p className="text-xs text-muted-foreground mb-2">Best Ask</p>
+                <p className="text-2xl font-bold text-destructive">
                   {bestAsk ? parseFloat(bestAsk).toFixed(6) : 'N/A'}
                 </p>
               </div>
-              <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/20 p-4 text-center backdrop-blur-md">
-                <p className="text-xs text-zinc-400 mb-2">Total Orders</p>
-                <p className="text-2xl font-bold text-foreground font-mono tabular-nums">
+              <div className="glow-border p-4 rounded-lg text-center">
+                <p className="text-xs text-muted-foreground mb-2">Total Orders</p>
+                <p className="text-2xl font-bold text-foreground">
                   {orderBook.bids.length + orderBook.asks.length}
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Tabs Navigation */}
-          <div className="flex flex-wrap gap-2 border-b border-zinc-800/80 pb-4">
-            {tabs.map((tab) => (
+          {/* Tabs Navigation - History, My Orders, Charts only */}
+          <div className="flex flex-wrap gap-2 border-b border-border pb-4">
+            {tabs.filter(t => t.id !== 'form').map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-4 py-2 font-medium transition-all duration-200 ease-in-out active:scale-[0.98] rounded-t-lg ${
+                className={`px-4 py-2 font-medium transition-colors rounded-t-lg ${
                   activeTab === tab.id
                     ? 'text-primary border-b-2 border-primary bg-primary/10'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-zinc-800/40'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                <tab.Icon className="w-3.5 h-3.5 shrink-0" />
-                {tab.label}
+                {tab.icon} {tab.label}
               </button>
             ))}
           </div>
 
-          {/* Tab Content — only the active tab is rendered */}
-          <div className="mt-2 min-h-96">
+          {/* Tab Content */}
+          <div className="min-h-96">
             {activeTab === 'history' && (
-              tradesLoading
-                ? <OrderBookSkeleton />
-                : <TradeHistory
-                    trades={trades}
-                    loading={tradesLoading}
-                    buyingAsset={buyingAsset}
-                    sellingAsset={sellingAsset}
-                  />
+              <TradeHistory
+                trades={trades}
+                loading={tradesLoading}
+                buyingAsset={buyingAsset}
+                sellingAsset={sellingAsset}
+              />
             )}
 
             {activeTab === 'my-orders' && (
-              ordersLoading
-                ? <OrderBookSkeleton />
-                : <MyOrders
-                    orders={myOrders}
-                    loading={ordersLoading}
-                    onCancelOrder={handleCancelOrder}
-                    buyingAsset={buyingAsset}
-                    sellingAsset={sellingAsset}
-                  />
+              <MyOrders
+                orders={myOrders}
+                loading={ordersLoading}
+                onCancelOrder={handleCancelOrder}
+                buyingAsset={buyingAsset}
+                sellingAsset={sellingAsset}
+              />
             )}
 
             {activeTab === 'filled' && (
-              filledLoading
-                ? <OrderBookSkeleton />
-                : <FilledOrders
-                    orders={filledOrders}
-                    loading={filledLoading}
-                  />
+              <FilledOrders
+                orders={filledOrders}
+                loading={filledLoading}
+              />
             )}
 
             {activeTab === 'charts' && (
-              chartLoading
-                ? <ChartSkeleton />
-                : <PriceChart
-                    data={chartData}
-                    loading={chartLoading}
-                    sellingAsset={sellingAsset}
-                    buyingAsset={buyingAsset}
-                    timeRange={chartTimeRange}
-                    onTimeRangeChange={setChartTimeRange}
-                  />
+              <PriceChart
+                data={chartData}
+                loading={chartLoading}
+                sellingAsset={sellingAsset}
+                buyingAsset={buyingAsset}
+                timeRange={chartTimeRange}
+                onTimeRangeChange={setChartTimeRange}
+              />
             )}
           </div>
         </div>
-      </div>
       </div>
 
       {/* Token Selector Modals */}
@@ -1025,51 +877,58 @@ export default function ExchangePage() {
         type="buying"
       />
       
-
-      
-      {/* Trustline Alert Modal */}
-      {showTrustlineAlert && pendingTrustlineAsset && (
-        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
-          <div className="bg-card rounded-2xl border border-border/70 p-6 max-w-sm space-y-4">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="w-6 h-6 text-warning flex-shrink-0 mt-0.5" />
-              <div>
-                <h3 className="font-semibold text-foreground mb-1">Create Trustline</h3>
-                <p className="text-sm text-muted-foreground">
-                  A trustline must be created for <span className="font-mono font-semibold text-foreground">{pendingTrustlineAsset.code}</span> before you can receive it.
-                </p>
-              </div>
+      {/* Password Confirmation Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-card border border-primary/20 rounded-lg w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-foreground">Confirm Order</h3>
+              <button onClick={() => { setShowPasswordModal(false); setPendingOrder(null); setPassword(''); }}>
+                <X className="w-5 h-5 text-muted-foreground hover:text-foreground" />
+              </button>
             </div>
+            
+            <div className="space-y-2 text-sm">
+              <p className="text-muted-foreground">
+                {pendingOrder?.type === 'buy' ? 'BUY' : 'SELL'} {pendingOrder?.amount} {sellingAsset}
+              </p>
+              <p className="text-muted-foreground">
+                at {pendingOrder?.price} {buyingAsset} per {sellingAsset}
+              </p>
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-sm text-muted-foreground">Enter wallet password</label>
+              <Input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="bg-input border-border"
+                autoFocus
+              />
+            </div>
+            
             <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowTrustlineAlert(false);
-                  setPendingTrustlineAsset(null);
-                  setPendingOrder(null);
-                }}
-                className="flex-1 px-4 py-2 rounded-lg border border-border/60 text-muted-foreground hover:text-foreground transition-colors"
+              <Button
+                variant="outline"
+                onClick={() => { setShowPasswordModal(false); setPendingOrder(null); setPassword(''); }}
+                className="flex-1"
               >
                 Cancel
-              </button>
-              <button
-                onClick={handleCreateTrustlineAndRetry}
-                disabled={isSubmitting}
-                className="flex-1 px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+              </Button>
+              <Button
+                onClick={handleConfirmOrder}
+                disabled={!password || isSubmitting}
+                className={`flex-1 ${pendingOrder?.type === 'buy' ? 'bg-primary' : 'bg-destructive'}`}
               >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  'Create Trustline & Retry'
-                )}
-              </button>
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm'}
+              </Button>
             </div>
           </div>
         </div>
       )}
-
+      
       {/* Transaction Result Toast */}
       {txResult && (
         <div className={`fixed bottom-4 right-4 z-50 p-4 rounded-lg border ${
@@ -1098,4 +957,5 @@ export default function ExchangePage() {
     </main>
   );
 }
+
 
