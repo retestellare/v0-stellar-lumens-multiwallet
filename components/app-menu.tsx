@@ -24,7 +24,67 @@ interface AppMenuProps {
   onOpenSettings: () => void;
 }
 
-export function AppMenu({ isOpen, onClose, onOpenSettings }: AppMenuProps) {
+// Static arrays defined outside the component to prevent recreation on every render
+const menuItems: { icon: LucideIcon; label: string; href: string }[] = [
+  { icon: Home, label: 'Home', href: '/' },
+  { icon: Search, label: 'Search Tokens', href: '/token-search' },
+  { icon: ShoppingBag, label: 'Real-World Spending', href: '/spending' },
+  { icon: ArrowRightLeft, label: 'Swap', href: '/swap' },
+  { icon: ArrowRightLeft, label: 'Exchange', href: '/exchange' },
+  { icon: Droplets, label: 'Pools', href: '/pools' },
+  { icon: TrendingUp, label: 'Portfolio', href: '/portfolio' },
+  { icon: History, label: 'History', href: '/history' },
+  { icon: Bot, label: 'Trading Bot', href: '/bot' },
+  { icon: Wallet, label: 'Wallets', href: '/wallets' },
+];
+
+const exchangeSubsections: { icon: LucideIcon; label: string; href: string }[] = [
+  { icon: History, label: 'Exchange History', href: '/exchange#history' },
+  { icon: Settings, label: 'My Orders', href: '/exchange#orders' },
+  { icon: ChevronRight, label: 'Filled Trades', href: '/exchange#filled' },
+  { icon: TrendingUp, label: 'Charts', href: '/exchange#charts' },
+];
+
+// NavMenuItem extracted as a memoized component to prevent unnecessary icon re-renders
+const NavMenuItem = memo(function NavMenuItem({
+  item,
+  isActive,
+  isExchangeActive,
+  onClose,
+}: {
+  item: { icon: LucideIcon; label: string; href: string };
+  isActive: boolean;
+  isExchangeActive: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <div>
+      <Link
+        href={item.href}
+        onClick={onClose}
+        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ease-in-out mb-1 group ${
+          isActive
+            ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30 shadow-md shadow-amber-500/10'
+            : 'text-slate-400 hover:text-slate-100 hover:bg-white/5 border border-transparent hover:border-white/8'
+        }`}
+      >
+        <item.icon
+          className={`w-4 h-4 flex-shrink-0 transition-colors duration-200 ease-in-out ${
+            isActive ? 'text-amber-400' : 'group-hover:text-amber-400/70'
+          }`}
+        />
+        <span className="tracking-tight">{item.label}</span>
+        {isActive && (
+          <span className="ml-auto w-2 h-2 rounded-full bg-amber-400 shadow-md shadow-amber-400/60" />
+        )}
+      </Link>
+
+
+    </div>
+  );
+});
+
+export const AppMenu = memo(function AppMenu({ isOpen, onClose, onOpenSettings }: AppMenuProps) {
   const pathname = usePathname();
   const { activeWallet, wallets, setActiveWallet, removeWallet } = useWallet();
 
