@@ -48,12 +48,7 @@ const menuItems: { icon: LucideIcon; label: string; href: string }[] = [
 // Hidden menu items that should not be displayed
 const hiddenMenuItems = ['Arbitrage'];
 
-const exchangeSubsections: { icon: LucideIcon; label: string; href: string }[] = [
-  { icon: History, label: 'Exchange History', href: '/exchange#history' },
-  { icon: Settings, label: 'My Orders', href: '/exchange#orders' },
-  { icon: ChevronRight, label: 'Filled Trades', href: '/exchange#filled' },
-  { icon: TrendingUp, label: 'Charts', href: '/exchange#charts' },
-];
+
 
 // NavMenuItem extracted as a memoized component to prevent unnecessary icon re-renders
 const NavMenuItem = memo(function NavMenuItem({
@@ -87,22 +82,7 @@ const NavMenuItem = memo(function NavMenuItem({
         )}
       </Link>
 
-      {/* Exchange subsection quick links */}
-      {isExchangeActive && (
-        <div className="ml-6 mt-2 mb-2 space-y-1 opacity-90">
-          {exchangeSubsections.map((sub) => (
-            <Link
-              key={sub.href}
-              href={sub.href}
-              onClick={onClose}
-              className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-500 hover:text-amber-400 transition-all duration-200 ease-in-out hover:bg-amber-500/8 group/sub"
-            >
-              <sub.icon className="w-3.5 h-3.5 flex-shrink-0 opacity-50 group-hover/sub:opacity-100 transition-opacity duration-200 ease-in-out" />
-              <span className="tracking-tight">{sub.label}</span>
-            </Link>
-          ))}
-        </div>
-      )}
+
     </div>
   );
 });
