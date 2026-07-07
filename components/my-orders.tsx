@@ -77,30 +77,36 @@ export function MyOrders({ orders, loading, onCancelOrder }: MyOrdersProps) {
           <p className="text-sm mt-1">Place a buy or sell order to get started</p>
         </div>
       ) : (
-        <div className="space-y-2 p-3 sm:p-4 max-h-[650px] overflow-y-auto">
+        <div className="divide-y divide-border/30 max-h-[500px] overflow-y-auto">
           {orders.map((order: ActiveOrder, idx: number) => {
             const isBuy = order.type === 'buy';
             const price = parseFloat(order.price);
             const amount = parseFloat(order.amount);
             const isReversed = reversedOrderIds.has(order.id);
             
+            // Calculate what you give and what you receive
+            // For a SELL: you give sellingCode, you receive buyingCode
+            // For a BUY: you give buyingCode (pay), you receive sellingCode
+            // Stellar offers: amount is always in selling asset, price is buying/selling ratio
             const youGiveAmount = amount;
             const youGiveAsset = order.sellingCode;
             const youReceiveAmount = amount * price;
             const youReceiveAsset = order.buyingCode;
             
+            // Trading pair display
             let tradingPair = `${order.sellingCode} / ${order.buyingCode}`;
             let displayPrice = price;
-            let priceText = `Price per ${order.sellingCode}`;
+            let priceText = `Price per ${order.sellingCode}: `;
             let displayYouGiveAmount = youGiveAmount;
             let displayYouGiveAsset = youGiveAsset;
             let displayYouReceiveAmount = youReceiveAmount;
             let displayYouReceiveAsset = youReceiveAsset;
             
+            // Apply reversed view if toggled
             if (isReversed && displayPrice > 0) {
               tradingPair = `${order.buyingCode} / ${order.sellingCode}`;
               displayPrice = 1 / price;
-              priceText = `Price per ${order.buyingCode}`;
+              priceText = `Price per ${order.buyingCode}: `;
               displayYouGiveAmount = youReceiveAmount;
               displayYouGiveAsset = youReceiveAsset;
               displayYouReceiveAmount = youGiveAmount;
@@ -113,109 +119,96 @@ export function MyOrders({ orders, loading, onCancelOrder }: MyOrdersProps) {
             return (
               <div
                 key={idx}
-                className="rounded-lg border border-border/50 bg-gradient-to-br from-background to-muted/20 overflow-hidden hover:border-border/80 hover:shadow-lg transition-all duration-200 group"
+                className={`p-4 sm:p-5 ${
+                  isBuy ? 'border-l-4 border-l-primary' : 'border-l-4 border-l-destructive'
+                } hover:bg-muted/30 transition-colors`}
               >
-                {/* Top Accent Bar */}
-                <div className={`h-1 ${isBuy ? 'bg-primary' : 'bg-destructive'}`} />
+                {/* Trading Pair Header */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded ${
+                      isBuy ? 'bg-primary/20 text-primary' : 'bg-destructive/20 text-destructive'
+                    }`}>
+                      {isBuy ? 'BUY' : 'SELL'}
+                    </span>
+                    <span className="text-base sm:text-lg font-bold text-foreground">{tradingPair}</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onCancelOrder(order.id)}
+                    className="text-destructive hover:bg-destructive/10 h-8 w-8 p-0 rounded-lg"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
                 
-                <div className="p-4 space-y-3">
-                  {/* Header: Badge + Trading Pair + Cancel Button */}
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs font-bold px-2.5 py-1 rounded-md ${
-                        isBuy 
-                          ? 'bg-primary/15 text-primary border border-primary/30' 
-                          : 'bg-destructive/15 text-destructive border border-destructive/30'
-                      }`}>
-                        {isBuy ? 'BUY' : 'SELL'}
+                {/* Issuer Info */}
+                <p className="text-xs text-muted-foreground mb-4">
+                  {truncateIssuer(order.sellingIssuer) || 'native'} / {truncateIssuer(order.buyingIssuer) || 'native'}
+                </p>
+                
+                {/* Price Per Unit */}
+                <div className="mb-4 text-sm flex items-center justify-between gap-2">
+                  <div>
+                    <span className="text-muted-foreground">{priceText}</span>
+                    <span className="font-mono font-semibold text-foreground">{displayPrice.toFixed(7)} {isReversed ? order.sellingCode : order.buyingCode}</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => toggleReversed(order.id)}
+                    className="h-6 w-6 p-0 rounded-full hover:bg-primary/20 text-primary flex-shrink-0"
+                    title="Reverse view"
+                  >
+                    <RotateCw className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+                
+                {/* Amount Flow - What you give/receive */}
+                <div className="flex items-center justify-between gap-4 mb-4">
+                  {/* You Give (Selling) */}
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 text-destructive">
+                      <ArrowUpRight className="w-4 h-4" />
+                      <span className="text-xl sm:text-2xl font-bold font-mono">
+                        -{displayYouGiveAmount.toFixed(4)}
                       </span>
-                      <span className="text-base font-bold text-foreground group-hover:text-primary transition-colors">{tradingPair}</span>
-                      <p className="text-xs text-muted-foreground">
-                        {truncateIssuer(order.sellingIssuer) || 'native'} / {truncateIssuer(order.buyingIssuer) || 'native'}
-                      </p>
+                      <span className="text-sm font-medium">{displayYouGiveAsset}</span>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onCancelOrder(order.id)}
-                      className="text-destructive hover:bg-destructive/10 h-8 w-8 p-0 rounded-lg transition-colors flex-shrink-0"
-                      title="Cancel order"
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
+                    <p className="text-xs text-muted-foreground mt-1 ml-6">You sell</p>
                   </div>
                   
-                  {/* Price Section with Reverse Button */}
-                  <div className="flex items-center justify-between gap-3 p-2.5 rounded-md bg-background/50 border border-border/30">
-                    <div className="flex-1">
-                      <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">Exchange Rate</p>
-                      <p className="text-sm font-mono font-semibold text-foreground mt-0.5">
-                        {displayPrice.toFixed(7)}
-                      </p>
-                      <p className="text-xs text-muted-foreground/70 mt-1">
-                        {isReversed ? order.sellingCode : order.buyingCode} per {isReversed ? order.buyingCode : order.sellingCode}
-                      </p>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => toggleReversed(order.id)}
-                      className="h-8 w-8 p-0 rounded-full hover:bg-primary/20 text-primary hover:text-primary flex-shrink-0 transition-colors"
-                      title="Reverse pair view"
-                    >
-                      <RotateCw className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  
-                  {/* Amount Flow Section */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                    {/* You Give (Selling) */}
-                    <div className="flex items-start gap-2.5 p-2.5 rounded-md bg-destructive/5 border border-destructive/20">
-                      <div className="flex-shrink-0 w-7 h-7 rounded-full bg-destructive/15 flex items-center justify-center mt-0.5">
-                        <ArrowDownRight className="w-3.5 h-3.5 text-destructive" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">You Sell</p>
-                        <p className="text-sm font-bold font-mono text-destructive mt-0.5 truncate">
-                          -{displayYouGiveAmount.toFixed(4)}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">{displayYouGiveAsset}</p>
-                      </div>
-                    </div>
-                    
-                    {/* You Receive (Buying) */}
-                    <div className="flex items-start gap-2.5 p-2.5 rounded-md bg-green-500/5 border border-green-500/20">
-                      <div className="flex-shrink-0 w-7 h-7 rounded-full bg-green-500/15 flex items-center justify-center mt-0.5">
-                        <ArrowUpRight className="w-3.5 h-3.5 text-green-500" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">You Receive</p>
-                        <p className="text-sm font-bold font-mono text-green-500 mt-0.5 truncate">
-                          +{displayYouReceiveAmount.toFixed(4)}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">{displayYouReceiveAsset}</p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Progress Section */}
-                  <div className="pt-2 space-y-2 border-t border-border/30">
-                    <div className="flex items-center justify-between text-xs sm:text-sm">
-                      <span className="text-muted-foreground font-medium">
-                        Remaining: <span className="font-mono text-foreground">{remaining.toFixed(4)}</span> {order.sellingCode}
+                  {/* You Receive (Buying) */}
+                  <div className="flex-1 text-right">
+                    <div className="flex items-center justify-end gap-2 text-green-500">
+                      <ArrowDownRight className="w-4 h-4" />
+                      <span className="text-xl sm:text-2xl font-bold font-mono">
+                        +{displayYouReceiveAmount.toFixed(4)}
                       </span>
-                      <span className={`font-bold ${progress > 0 ? isBuy ? 'text-primary' : 'text-destructive' : 'text-muted-foreground'}`}>
-                        {progress.toFixed(1)}% filled
-                      </span>
+                      <span className="text-sm font-medium">{displayYouReceiveAsset}</span>
                     </div>
-                    <div className="w-full h-2 bg-muted/50 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full transition-all duration-300 ${
-                          isBuy ? 'bg-gradient-to-r from-primary to-primary/70' : 'bg-gradient-to-r from-destructive to-destructive/70'
-                        }`}
-                        style={{ width: `${progress}%` }}
-                      />
-                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 mr-6">You receive</p>
+                  </div>
+                </div>
+                
+                {/* Progress Section */}
+                <div className="pt-3 border-t border-border/30 space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      Remaining: <span className="font-mono font-medium text-foreground">{(isReversed ? displayYouReceiveAmount : remaining).toFixed(4)}</span> {isReversed ? displayYouReceiveAsset : order.sellingCode}
+                    </span>
+                    <span className={`font-bold ${progress > 0 ? 'text-green-500' : 'text-muted-foreground'}`}>
+                      {progress.toFixed(0)}% filled
+                    </span>
+                  </div>
+                  <div className="w-full h-1.5 bg-muted/50 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-300 ${
+                        isBuy ? 'bg-primary' : 'bg-destructive'
+                      }`}
+                      style={{ width: `${progress}%` }}
+                    />
                   </div>
                 </div>
               </div>
