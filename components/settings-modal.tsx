@@ -17,21 +17,18 @@ import {
   Loader2,
   Globe,
   AlertCircle,
-  Lock,
 } from 'lucide-react';
 import { useWallet } from '@/lib/wallet-context';
 import { decryptSecret, getAccountHomeDomain, setHomeDomain, clearHomeDomain } from '@/lib/stellar-utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onOpenBulkWallet?: () => void;
 }
 
-export function SettingsModal({ isOpen, onClose, onOpenBulkWallet = () => {} }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const { activeWallet, wallets, removeWallet, updateWalletDetails } = useWallet();
   const [activeSection, setActiveSection] = useState<'main' | 'wallet' | 'security'>('main');
   const [editingName, setEditingName] = useState(false);
@@ -148,9 +145,7 @@ export function SettingsModal({ isOpen, onClose, onOpenBulkWallet = () => {} }: 
           <div className="flex items-center gap-2">
             {activeSection !== 'main' && (
               <button
-                onClick={() => {
-                  setActiveSection('main');
-                }}
+                onClick={() => setActiveSection('main')}
                 className="p-1 rounded hover:bg-background/50"
               >
                 <ChevronRight className="w-5 h-5 rotate-180 text-muted-foreground" />
@@ -201,25 +196,6 @@ export function SettingsModal({ isOpen, onClose, onOpenBulkWallet = () => {} }: 
                 </div>
                 <ChevronRight className="w-5 h-5 text-muted-foreground" />
               </button>
-
-              {onOpenBulkWallet && (
-                <button
-                  onClick={() => {
-                    onOpenBulkWallet();
-                    onClose();
-                  }}
-                  className="w-full flex items-center justify-between p-4 rounded-xl bg-background/30 hover:bg-background/50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <Wallet className="w-5 h-5 text-primary" />
-                    <div className="text-left">
-                      <p className="font-medium text-foreground">Bulk Import/Export</p>
-                      <p className="text-xs text-muted-foreground">Import or export multiple wallets</p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                </button>
-              )}
 
               <div className="pt-4 border-t border-border mt-4">
                 <p className="text-xs text-muted-foreground mb-2">App Info</p>
@@ -306,7 +282,6 @@ export function SettingsModal({ isOpen, onClose, onOpenBulkWallet = () => {} }: 
                       onChange={(e) => setDomainPassword(e.target.value)}
                       placeholder="Enter wallet password to sign"
                       className="w-full"
-                      autoComplete="current-password"
                     />
                     {domainError && (
                       <div className="flex items-center gap-2 text-red-500 text-xs">
@@ -417,8 +392,6 @@ export function SettingsModal({ isOpen, onClose, onOpenBulkWallet = () => {} }: 
               </div>
             </div>
           )}
-
-
         </div>
       </div>
     </>
