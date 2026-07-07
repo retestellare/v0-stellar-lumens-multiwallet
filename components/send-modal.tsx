@@ -96,27 +96,7 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
     return recipients.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
   };
 
-  const getAvailableBalance = () => {
-    if (!selectedAsset) return 0;
-    const balance = parseFloat(selectedAsset.balance) || 0;
-    
-    // For XLM, account for Stellar reserve requirements
-    // Minimum reserve = (2 + subentry_count) * 0.5 XLM
-    // We estimate based on typical usage: base 2 XLM + 0.5 per trustline
-    // Conservative estimate: assume 5-10 trustlines, so ~4.5 XLM minimum reserve
-    if (selectedAsset.code === 'XLM') {
-      const estimatedReserve = 4.5; // Conservative estimate for typical account
-      return Math.max(0, balance - estimatedReserve);
-    }
-    
-    // For non-XLM assets, full balance is available for sending
-    return balance;
-  };
-
   const validateRecipients = () => {
-    if (!selectedAsset) {
-      return 'Asset not selected';
-    }
     for (const r of recipients) {
       if (!r.address || r.address.length !== 56 || !r.address.startsWith('G')) {
         return 'Invalid recipient address';
@@ -126,9 +106,8 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
       }
     }
     const total = getTotalAmount();
-    const available = getAvailableBalance();
-    if (total > available) {
-      return `Insufficient available balance (${available.toFixed(7)} available)`;
+    if (total > parseFloat(selectedAsset.balance)) {
+      return 'Insufficient balance';
     }
     return null;
   };
@@ -227,16 +206,13 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
                   onClick={() => setShowAssetPicker(!showAssetPicker)}
                   className="w-full flex items-center justify-between p-3 bg-background/50 border border-border rounded-lg hover:border-primary/50 transition-colors"
                 >
-                  <span className="font-medium">{selectedAsset?.code || 'Asset'}</span>
-                  <div className="flex flex-col items-end gap-1">
+                  <span className="font-medium">{selectedAsset.code}</span>
+                  <div className="flex items-center gap-2">
                     <span className="text-sm text-muted-foreground">
-                      Available: {selectedAsset ? getAvailableBalance().toFixed(7).replace(/\.?0+$/, '') : '0'}
+                      Balance: {parseFloat(selectedAsset.balance).toFixed(7).replace(/\.?0+$/, '')}
                     </span>
-                    <span className="text-xs text-muted-foreground/60">
-                      (Total: {selectedAsset ? parseFloat(selectedAsset.balance).toFixed(7).replace(/\.?0+$/, '') : '0'})
-                    </span>
+                    <ChevronDown className="w-4 h-4" />
                   </div>
-                  <ChevronDown className="w-4 h-4 ml-2" />
                 </button>
                 
                 {showAssetPicker && activeWallet?.balances && (
@@ -316,8 +292,8 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          const availablePerRecipient = getAvailableBalance() / recipients.length;
-                          updateRecipient(recipient.id, 'amount', availablePerRecipient.toFixed(7));
+                          const maxPerRecipient = parseFloat(selectedAsset.balance) / recipients.length;
+                          updateRecipient(recipient.id, 'amount', maxPerRecipient.toFixed(7));
                         }}
                         className="px-3"
                       >

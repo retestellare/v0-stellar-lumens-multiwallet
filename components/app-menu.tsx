@@ -59,12 +59,10 @@ const exchangeSubsections: { icon: LucideIcon; label: string; href: string }[] =
 const NavMenuItem = memo(function NavMenuItem({
   item,
   isActive,
-  isExchangeActive,
   onClose,
 }: {
   item: { icon: LucideIcon; label: string; href: string };
   isActive: boolean;
-  isExchangeActive: boolean;
   onClose: () => void;
 }) {
   return (
@@ -200,13 +198,11 @@ export const AppMenu = memo(function AppMenu({ isOpen, onClose, onOpenSettings }
           <p className="text-xs font-bold text-slate-600 uppercase tracking-widest px-3 mb-3">Navigation</p>
           {menuItems.filter(item => !hiddenMenuItems.includes(item.label)).map((item) => {
             const isActive = pathname === item.href;
-            const isExchangeActive = item.label === 'Exchange' && pathname === '/exchange';
             return (
               <NavMenuItem
                 key={item.href}
                 item={item}
                 isActive={isActive}
-                isExchangeActive={isExchangeActive}
                 onClose={onClose}
               />
             );
