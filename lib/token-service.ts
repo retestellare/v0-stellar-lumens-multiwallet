@@ -355,15 +355,6 @@ export const getTokenPicks = (): TokenMetadata[] => [
     verified: true,
     source: 'stellar-expert',
   },
-  {
-    code: 'Forge',
-    issuer: 'BJSJKFN7LNNHPLVKRWJ6H4S2VQQ3WHIV',
-    name: 'Forge Token',
-    domain: 'stellarforge.cloud',
-    image: 'https://stellarforge.cloud/logo.png',
-    verified: true,
-    source: 'stellar-expert',
-  },
 ];
 
 /**

@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Input } from '@/components/ui/input';
 import { Search, X, Star, Loader2 } from 'lucide-react';
 import { TokenMetadata } from '@/types/token';
-import { getTokenPicks, searchTokens } from '@/lib/token-service';
+import { getTokenPicks } from '@/lib/token-service';
 import { getIssuerTokenIcon } from '@/lib/stellar-utils';
 import {
   getFavoriteTokens,
@@ -168,6 +168,105 @@ interface TokenSelectorModalProps {
   type: 'selling' | 'buying';
 }
 
+// Search tokens directly from Horizon API
+async function searchHorizonTokens(query: string): Promise<Token[]> {
+  try {
+    // Check if query looks like an issuer address (starts with G and is 56 chars)
+    const isIssuerSearch = query.startsWith('G') && query.length >= 10;
+    // Check if query looks like a domain (contains a dot)
+    const isDomainSearch = query.includes('.') && !query.startsWith('G');
+    
+    let url: string;
+    let tokens: Token[] = [];
+    
+    if (isIssuerSearch) {
+      // Search by issuer
+      url = `${HORIZON_URL}/assets?asset_issuer=${encodeURIComponent(query)}&limit=20`;
+      const response = await fetch(url);
+      if (!response.ok) return [];
+      const data = await response.json();
+      const records = data._embedded?.records || [];
+      tokens = records.map((r: any) => ({
+        code: r.asset_code,
+        issuer: r.asset_issuer,
+        name: r.asset_code,
+        verified: r.accounts?.authorized > 100,
+        source: 'search' as const,
+      }));
+    } else if (isDomainSearch) {
+      // Search by domain - fetch stellar.toml and extract currencies
+      const domain = query.toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
+      try {
+        const tomlUrl = `https://${domain}/.well-known/stellar.toml`;
+        const tomlResponse = await fetch(tomlUrl, { signal: AbortSignal.timeout(5000) });
+        if (tomlResponse.ok) {
+          const tomlText = await tomlResponse.text();
+          
+          // Parse [[CURRENCIES]] blocks
+          const currencyBlocks = tomlText.split(/\[\[CURRENCIES\]\]/i).slice(1);
+          
+          for (const block of currencyBlocks) {
+            const codeMatch = block.match(/code\s*=\s*"([^"]+)"/i);
+            const issuerMatch = block.match(/issuer\s*=\s*"([^"]+)"/i);
+            const nameMatch = block.match(/name\s*=\s*"([^"]+)"/i);
+            const imageMatch = block.match(/image\s*=\s*"([^"]+)"/i);
+            
+            if (codeMatch && issuerMatch) {
+              tokens.push({
+                code: codeMatch[1],
+                issuer: issuerMatch[1],
+                name: nameMatch?.[1] || codeMatch[1],
+                image: imageMatch?.[1],
+                domain: domain,
+                verified: true,
+                source: 'search' as const,
+              });
+            }
+          }
+        }
+      } catch {
+        // Domain search failed, fall back to code search
+      }
+      
+      // If domain search found nothing, also try code search
+      if (tokens.length === 0) {
+        url = `${HORIZON_URL}/assets?asset_code=${encodeURIComponent(query.toUpperCase())}&limit=20`;
+        const response = await fetch(url);
+        if (response.ok) {
+          const data = await response.json();
+          const records = data._embedded?.records || [];
+          tokens = records.map((r: any) => ({
+            code: r.asset_code,
+            issuer: r.asset_issuer,
+            name: r.asset_code,
+            verified: r.accounts?.authorized > 100,
+            source: 'search' as const,
+          }));
+        }
+      }
+    } else {
+      // Search by code
+      url = `${HORIZON_URL}/assets?asset_code=${encodeURIComponent(query.toUpperCase())}&limit=20`;
+      const response = await fetch(url);
+      if (!response.ok) return [];
+      const data = await response.json();
+      const records = data._embedded?.records || [];
+      tokens = records.map((r: any) => ({
+        code: r.asset_code,
+        issuer: r.asset_issuer,
+        name: r.asset_code,
+        verified: r.accounts?.authorized > 100,
+        source: 'search' as const,
+      }));
+    }
+
+    return tokens;
+  } catch (error) {
+    console.error('[v0] Horizon search error:', error);
+    return [];
+  }
+}
+
 export function TokenSelectorModal({
   isOpen,
   onClose,
@@ -175,23 +274,13 @@ export function TokenSelectorModal({
   walletBalances,
   type,
 }: TokenSelectorModalProps) {
-  const [activeTab, setActiveTab] = useState<'wallet' | 'picks' | 'favorites'>('wallet');
+  const [activeTab, setActiveTab] = useState<'wallet' | 'picks' | 'favorites'>('picks');
   const [searchQuery, setSearchQuery] = useState('');
   const [displayTokens, setDisplayTokens] = useState<Token[]>([]);
+  const [loading, setLoading] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [searchResults, setSearchResults] = useState<Token[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-
-  // Create a set of wallet asset keys for quick lookup
-  const walletAssetKeys = useMemo(() => {
-    const keys = new Set<string>();
-    walletBalances.forEach((b) => {
-      if (b.asset_type === 'liquidity_pool_shares') return;
-      const code = b.asset_code || 'XLM';
-      const issuer = b.asset_issuer || '';
-      keys.add(`${code}_${issuer}`);
-    });
-    return keys;
-  }, [walletBalances]);
 
   // Memoize wallet tokens with enriched metadata and deduplication
   const walletTokens = useMemo(() => {
@@ -224,21 +313,19 @@ export function TokenSelectorModal({
     return Array.from(tokenMap.values());
   }, [walletBalances]);
 
-  // Get curated picks - FILTERED to only show tokens in wallet
+  // Get curated picks with more tokens
   const tokenPicks = useMemo(() => {
     const picks = getTokenPicks();
-    return picks
-      .filter((t) => walletAssetKeys.has(`${t.code}_${t.issuer || ''}`))
-      .map((t) => ({
-        code: t.code,
-        issuer: t.issuer,
-        name: t.name,
-        domain: t.domain,
-        image: t.image,
-        verified: t.verified,
-        source: 'picks' as const,
-      }));
-  }, [walletAssetKeys]);
+    return picks.map((t) => ({
+      code: t.code,
+      issuer: t.issuer,
+      name: t.name,
+      domain: t.domain,
+      image: t.image,
+      verified: t.verified,
+      source: 'picks' as const,
+    }));
+  }, []);
 
   // Update favorites when modal opens
   useEffect(() => {
@@ -247,72 +334,55 @@ export function TokenSelectorModal({
       const favSet = new Set(favs.map((t) => `${t.code}_${t.issuer}`));
       setFavorites(favSet);
       setSearchQuery('');
+      setSearchResults([]);
     }
   }, [isOpen]);
 
-  // Handle search - search full Stellar network, not just wallet
+  // Handle search with debounce
   useEffect(() => {
-    if (searchQuery.length >= 2) {
-      setIsSearching(true);
-      let cancelled = false;
-      
-      searchTokens(searchQuery)
-        .then((results) => {
-          if (!cancelled) {
-            // Enrich results with metadata and mark source
-            const enrichedResults = results.map((token) => ({
-              code: token.code,
-              issuer: token.issuer,
-              name: token.name,
-              domain: token.domain,
-              image: token.image,
-              verified: token.verified,
-              source: 'search' as const,
-            }));
-            setDisplayTokens(enrichedResults);
-            setIsSearching(false);
-          }
-        })
-        .catch((err) => {
-          console.error('[v0] Token search error:', err);
-          if (!cancelled) {
-            setDisplayTokens([]);
-            setIsSearching(false);
-          }
-        });
-      
-      return () => { cancelled = true; };
-    } else {
+    if (!searchQuery || searchQuery.length < 2) {
+      setSearchResults([]);
       setIsSearching(false);
+      return;
     }
+
+    setIsSearching(true);
+    const timer = setTimeout(async () => {
+      const results = await searchHorizonTokens(searchQuery);
+      setSearchResults(results);
+      setIsSearching(false);
+    }, 500);
+
+    return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Update display tokens based on tab (always filtered to wallet assets)
+  // Update display tokens based on tab and search
   useEffect(() => {
-    // If searching, skip - handled by search effect
-    if (searchQuery.length >= 2) return;
+    // If searching, show search results
+    if (searchQuery.length >= 2) {
+      setDisplayTokens(searchResults);
+      return;
+    }
 
+    // Otherwise show tab content
     if (activeTab === 'wallet') {
       setDisplayTokens(walletTokens);
     } else if (activeTab === 'picks') {
-      // Show only picks that are in wallet
       setDisplayTokens(tokenPicks);
     } else if (activeTab === 'favorites') {
-      // Show only favorites that are in wallet
       const favs = getFavoriteTokens();
-      const filteredFavs = favs
-        .filter((t) => walletAssetKeys.has(`${t.code}_${t.issuer || ''}`))
-        .map((t) => ({
+      setDisplayTokens(
+        favs.map((t) => ({
           code: t.code,
           issuer: t.issuer,
           name: t.name,
           image: t.image,
           verified: t.verified,
           source: 'favorites' as const,
-        }));
-      setDisplayTokens(filteredFavs);
+        }))
+      );
     }
-  }, [activeTab, searchQuery, walletTokens, tokenPicks, walletAssetKeys]);
+  }, [activeTab, searchQuery, searchResults, walletTokens, tokenPicks]);
 
   const handleTokenSelect = (token: Token) => {
     onSelect(token);
@@ -370,7 +440,7 @@ export function TokenSelectorModal({
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Search by token name, domain, or issuer..."
+              placeholder="Search by token code, issuer address, or domain"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="bg-input border-border text-foreground pl-10 pr-10"
@@ -379,6 +449,11 @@ export function TokenSelectorModal({
               <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary animate-spin" />
             )}
           </div>
+          {searchQuery.length >= 2 && (
+            <p className="text-xs text-muted-foreground mt-2">
+              Searching Stellar network for &quot;{searchQuery}&quot;...
+            </p>
+          )}
         </div>
 
         {/* Tabs - only show when not searching */}
@@ -409,18 +484,18 @@ export function TokenSelectorModal({
           {isSearching ? (
             <div className="flex flex-col items-center justify-center h-48 gap-3">
               <Loader2 className="w-8 h-8 text-primary animate-spin" />
-              <p className="text-muted-foreground">Searching all Stellar tokens...</p>
+              <p className="text-muted-foreground">Searching Stellar network...</p>
             </div>
           ) : displayTokens.length === 0 ? (
             <div className="flex items-center justify-center h-48">
               <p className="text-muted-foreground text-center">
                 {showingSearch
-                  ? 'No tokens found. Try searching by token name, domain, or issuer address.'
+                  ? 'No tokens found. Try a different code or issuer.'
                   : activeTab === 'favorites'
-                  ? 'No favorites in your wallet. Star tokens to add them here.'
-                  : activeTab === 'picks'
-                  ? 'None of our recommended tokens are in your wallet yet.'
-                  : 'No assets in your wallet. Fund your account first.'}
+                  ? 'No favorites yet. Star tokens to add them here.'
+                  : activeTab === 'wallet'
+                  ? 'No assets in your wallet.'
+                  : 'No tokens available.'}
               </p>
             </div>
           ) : (

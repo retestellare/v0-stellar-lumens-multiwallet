@@ -22,7 +22,7 @@ export default function ReceivePage() {
 
   if (!activeWallet) {
     return (
-      <main className="min-h-dvh bg-background">
+      <main className="min-h-screen bg-background">
         <Header />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <p className="text-muted-foreground">No active wallet selected</p>
@@ -38,7 +38,7 @@ export default function ReceivePage() {
   };
 
   return (
-    <main className="min-h-dvh bg-background">
+    <main className="min-h-screen bg-background">
       <Header />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Link href="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-8 transition-colors">
