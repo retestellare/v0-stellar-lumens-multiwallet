@@ -45,6 +45,9 @@ const menuItems: { icon: LucideIcon; label: string; href: string }[] = [
   { icon: Wallet, label: 'Wallets', href: '/wallets' },
 ];
 
+// Hidden menu items that should not be displayed
+const hiddenMenuItems = ['Arbitrage'];
+
 const exchangeSubsections: { icon: LucideIcon; label: string; href: string }[] = [
   { icon: History, label: 'Exchange History', href: '/exchange#history' },
   { icon: Settings, label: 'My Orders', href: '/exchange#orders' },
@@ -195,7 +198,7 @@ export const AppMenu = memo(function AppMenu({ isOpen, onClose, onOpenSettings }
         {/* Navigation Items */}
         <div className="flex-1 overflow-y-auto py-4 px-2">
           <p className="text-xs font-bold text-slate-600 uppercase tracking-widest px-3 mb-3">Navigation</p>
-          {menuItems.map((item) => {
+          {menuItems.filter(item => !hiddenMenuItems.includes(item.label)).map((item) => {
             const isActive = pathname === item.href;
             const isExchangeActive = item.label === 'Exchange' && pathname === '/exchange';
             return (
