@@ -39,30 +39,20 @@ const menuItems: { icon: LucideIcon; label: string; href: string }[] = [
   { icon: ArrowRightLeft, label: 'Swap', href: '/swap' },
   { icon: ArrowRightLeft, label: 'Exchange', href: '/exchange' },
   { icon: Droplets, label: 'Pools', href: '/pools' },
-  { icon: Zap, label: 'Arbitrage', href: '/arbitrage' },
   { icon: TrendingUp, label: 'Portfolio', href: '/portfolio' },
   { icon: History, label: 'History', href: '/history' },
   { icon: Bot, label: 'Trading Bot', href: '/bot' },
   { icon: Wallet, label: 'Wallets', href: '/wallets' },
 ];
 
-const exchangeSubsections: { icon: LucideIcon; label: string; href: string }[] = [
-  { icon: History, label: 'Exchange History', href: '/exchange#history' },
-  { icon: Settings, label: 'My Orders', href: '/exchange#orders' },
-  { icon: ChevronRight, label: 'Filled Trades', href: '/exchange#filled' },
-  { icon: TrendingUp, label: 'Charts', href: '/exchange#charts' },
-];
-
 // NavMenuItem extracted as a memoized component to prevent unnecessary icon re-renders
 const NavMenuItem = memo(function NavMenuItem({
   item,
   isActive,
-  isExchangeActive,
   onClose,
 }: {
   item: { icon: LucideIcon; label: string; href: string };
   isActive: boolean;
-  isExchangeActive: boolean;
   onClose: () => void;
 }) {
   return (
@@ -86,8 +76,6 @@ const NavMenuItem = memo(function NavMenuItem({
           <span className="ml-auto w-2 h-2 rounded-full bg-amber-400 shadow-md shadow-amber-400/60" />
         )}
       </Link>
-
-
     </div>
   );
 });
@@ -183,13 +171,11 @@ export const AppMenu = memo(function AppMenu({ isOpen, onClose, onOpenSettings }
           <p className="text-xs font-bold text-slate-600 uppercase tracking-widest px-3 mb-3">Navigation</p>
           {menuItems.map((item) => {
             const isActive = pathname === item.href;
-            const isExchangeActive = item.label === 'Exchange' && pathname === '/exchange';
             return (
               <NavMenuItem
                 key={item.href}
                 item={item}
                 isActive={isActive}
-                isExchangeActive={isExchangeActive}
                 onClose={onClose}
               />
             );
