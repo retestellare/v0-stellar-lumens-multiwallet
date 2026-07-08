@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { fetchTokenMetadataFromToml, getIssuerTokenIcon } from '@/lib/stellar-utils';
-import { formatChange, type TokenPrice } from '@/lib/price-service';
+import { fetchTokenPrice, formatPrice, formatChange } from '@/lib/price-service';
 import { getTokenPicks } from '@/lib/token-service';
 import { formatBalanceCompact, balanceToUsd } from '@/lib/math';
+import { InlineLoader } from '@/components/skeleton-loaders';
 
 // Known tokens cache for instant metadata lookup
 const KNOWN_TOKEN_METADATA: Record<string, { name: string; domain: string; image: string }> = {
@@ -40,11 +41,10 @@ interface AssetItemProps {
   code: string;
   issuer: string;
   balance: string;
-  priceData?: TokenPrice | null;
   onClick?: () => void;
 }
 
-export function AssetItem({ code, issuer, balance, priceData, onClick }: AssetItemProps) {
+export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
   // Derive the stable cache key for this specific token
   const tokenKey = `${code}_${issuer || ''}`;
 
@@ -54,6 +54,9 @@ export function AssetItem({ code, issuer, balance, priceData, onClick }: AssetIt
   const [image, setImage] = useState<string | null>(cachedMeta?.image || null);
   const [domain, setDomain] = useState<string | null>(cachedMeta?.domain || null);
   const [imageError, setImageError] = useState(false);
+  const [price, setPrice] = useState<number | null>(null);
+  const [priceChange, setPriceChange] = useState<number | null>(null);
+  const [priceLoading, setPriceLoading] = useState(false);
 
   // Mount animation: start invisible and slide in
   const [visible, setVisible] = useState(false);
@@ -70,9 +73,11 @@ export function AssetItem({ code, issuer, balance, priceData, onClick }: AssetIt
     setImage(meta?.image || null);
     setDomain(meta?.domain || null);
     setImageError(false);
+    setPrice(null);
+    setPriceChange(null);
   }, [tokenKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch image and domain for tokens not in the synchronous cache
+  // Fetch image, domain, and price for tokens not in the synchronous cache
   useEffect(() => {
     let cancelled = false;
 
@@ -95,16 +100,25 @@ export function AssetItem({ code, issuer, balance, priceData, onClick }: AssetIt
         }
       }
 
+      // Fetch price data from CoinGecko
+      setPriceLoading(true);
+      const priceData = await fetchTokenPrice(code);
+      if (!cancelled && priceData) {
+        setPrice(priceData.usd);
+        setPriceChange(priceData.usd_24h_change);
+      }
+      if (!cancelled) setPriceLoading(false);
     };
 
     fetchMeta();
 
     return () => { cancelled = true; };
   }, [tokenKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Use BigNumber for precise balance formatting
   const displayBalance = formatBalanceCompact(balance);
-  const hasLivePrice = typeof priceData?.usd === 'number';
-  const usdValue = hasLivePrice ? balanceToUsd(balance, priceData.usd) : null;
-  const priceChange = priceData?.usd_24h_change ?? 0;
+  // Show USD value when price is available
+  const usdValue = price !== null ? balanceToUsd(balance, price) : null;
 
   return (
     <button
@@ -141,21 +155,23 @@ export function AssetItem({ code, issuer, balance, priceData, onClick }: AssetIt
           {displayBalance}
         </p>
         <div className="flex items-center justify-end gap-1.5 mt-0.5">
-          {hasLivePrice && usdValue ? (
+          {priceLoading && <InlineLoader />}
+          {!priceLoading && usdValue && (
             <>
               <p className="text-xs text-muted-foreground">{usdValue}</p>
-              <p className={`text-xs font-semibold tabular-nums ${
-                priceChange > 0
-                  ? 'text-emerald-500'
-                  : priceChange < 0
-                    ? 'text-red-500'
-                    : 'text-muted-foreground'
-              }`}>
-                {formatChange(priceChange).text}
-              </p>
+              {priceChange !== null && (
+                <p className={`text-xs font-semibold tabular-nums ${
+                  priceChange >= 0
+                    ? 'text-emerald-500'
+                    : 'text-red-500'
+                }`}>
+                  {formatChange(priceChange).text}
+                </p>
+              )}
             </>
-          ) : (
-            <p className="text-xs text-muted-foreground">$0.00 (0.00%)</p>
+          )}
+          {!priceLoading && !usdValue && (
+            <p className="text-xs text-muted-foreground">{code}</p>
           )}
         </div>
       </div>
