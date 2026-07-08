@@ -29,16 +29,16 @@ export function Header({ onOpenBulkWallet }: HeaderProps) {
 
   return (
     <>
-      <header className="sticky top-0 z-40 border-b border-border/50 bg-background/95 backdrop-blur-2xl backdrop-saturate-200 shadow-[0_1px_0_0_rgba(28,45,80,0.6)]">
+      <header className="sticky top-0 z-50 border-b border-border/50 bg-background/95 backdrop-blur-2xl backdrop-saturate-200 shadow-[0_1px_0_0_rgba(28,45,80,0.6)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Mobile Layout */}
           <div className="md:hidden grid grid-cols-3 items-center h-14 gap-2">
             {/* Left: Logo */}
             <button
               onClick={() => setMenuOpen(true)}
-              className="flex items-center gap-2 group transition-all"
+              className="flex items-center gap-2 group transition-all duration-200 ease-in-out active:scale-[0.98]"
             >
-              <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-primary shadow-lg shadow-primary/30 ring-1 ring-primary/40 flex-shrink-0">
+              <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-primary shadow-lg shadow-primary/30 ring-1 ring-primary/40 shrink-0">
                 <Zap className="w-4 h-4 text-primary-foreground" strokeWidth={2.5} />
               </div>
               <span className="font-bold text-sm text-foreground group-hover:text-primary transition-colors truncate tracking-tight">Stellar</span>
@@ -54,7 +54,7 @@ export function Header({ onOpenBulkWallet }: HeaderProps) {
               <NotificationBadge />
               <button
                 onClick={() => setMenuOpen(true)}
-                className="p-2 rounded-lg hover:bg-muted transition-colors"
+                className="p-2 rounded-lg hover:bg-muted transition-all duration-200 ease-in-out active:scale-[0.98]"
                 aria-label="Open menu"
               >
                 <Menu className="w-5 h-5 text-muted-foreground" />
@@ -84,7 +84,7 @@ export function Header({ onOpenBulkWallet }: HeaderProps) {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`relative px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                  className={`relative px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ease-in-out active:scale-[0.98] ${
                     pathname === link.href
                       ? 'text-primary-foreground bg-primary shadow-sm shadow-primary/20'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
@@ -109,7 +109,7 @@ export function Header({ onOpenBulkWallet }: HeaderProps) {
 
               <button
                 onClick={() => setMenuOpen(true)}
-                className="p-2 rounded-lg hover:bg-muted transition-colors"
+                className="p-2 rounded-lg hover:bg-muted transition-all duration-200 ease-in-out active:scale-[0.98]"
                 aria-label="Open menu"
               >
                 <Menu className="w-5 h-5 text-muted-foreground" />
