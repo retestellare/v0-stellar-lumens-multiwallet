@@ -70,6 +70,7 @@ export default function DashboardPage() {
   const [isSendOpen, setIsSendOpen] = useState(false);
   const [isReceiveOpen, setIsReceiveOpen] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<{ code: string; issuer?: string; balance: string; domain?: string; image?: string; name?: string } | null>(null);
+  const [assetToSend, setAssetToSend] = useState<{ code: string; issuer?: string; balance: string } | null>(null);
   const [mounted, setMounted] = useState(false);
   const [copiedPublicKey, setCopiedPublicKey] = useState(false);
 
@@ -107,6 +108,7 @@ export default function DashboardPage() {
 
   const handleCloseSend = useCallback(() => {
     setIsSendOpen(false);
+    setAssetToSend(null);
   }, []);
 
   const handleSelectAsset = useCallback((asset: { code: string; issuer?: string; balance: string }) => {
@@ -118,9 +120,16 @@ export default function DashboardPage() {
   }, []);
 
   const handleAssetSend = useCallback(() => {
+    if (selectedAsset) {
+      setAssetToSend({
+        code: selectedAsset.code,
+        issuer: selectedAsset.issuer,
+        balance: selectedAsset.balance
+      });
+    }
     setSelectedAsset(null);
     setIsSendOpen(true);
-  }, []);
+  }, [selectedAsset]);
 
   const handleAssetReceive = useCallback(() => {
     setSelectedAsset(null);
@@ -289,7 +298,7 @@ export default function DashboardPage() {
 
       <CreateWalletModal isOpen={isModalOpen} onClose={handleCloseModal} />
       <BulkWalletModal isOpen={isBulkModalOpen} onClose={handleCloseBulkModal} />
-      <SendModal isOpen={isSendOpen} onClose={handleCloseSend} />
+      <SendModal isOpen={isSendOpen} onClose={handleCloseSend} preSelectedAsset={assetToSend || undefined} />
       <ReceiveModal isOpen={isReceiveOpen} onClose={handleCloseReceive} />
       <AssetDetailModal
         isOpen={!!selectedAsset}

@@ -17,9 +17,10 @@ interface Recipient {
 interface SendModalProps {
   isOpen: boolean;
   onClose: () => void;
+  preSelectedAsset?: { code: string; issuer?: string; balance: string };
 }
 
-export function SendModal({ isOpen, onClose }: SendModalProps) {
+export function SendModal({ isOpen, onClose, preSelectedAsset }: SendModalProps) {
   const { activeWallet, globalDecryptedSecret } = useWallet();
   const [recipients, setRecipients] = useState<Recipient[]>([
     { id: '1', address: '', amount: '', memo: '' }
@@ -32,19 +33,29 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
   // Set default asset only once when modal opens with no selection
   useEffect(() => {
     if (isOpen && !selectedAsset && activeWallet?.balances?.length) {
-      const xlm = activeWallet.balances.find((b: any) => !b.asset_code || b.asset_code === 'XLM');
-      if (xlm) {
-        setSelectedAsset({ code: 'XLM', issuer: '', balance: xlm.balance });
-      } else {
-        const first = activeWallet.balances[0];
+      // If a pre-selected asset was passed in, use it
+      if (preSelectedAsset) {
         setSelectedAsset({ 
-          code: first.asset_code || 'XLM', 
-          issuer: first.asset_issuer || '', 
-          balance: first.balance 
+          code: preSelectedAsset.code, 
+          issuer: preSelectedAsset.issuer || '', 
+          balance: preSelectedAsset.balance 
         });
+      } else {
+        // Otherwise default to XLM
+        const xlm = activeWallet.balances.find((b: any) => !b.asset_code || b.asset_code === 'XLM');
+        if (xlm) {
+          setSelectedAsset({ code: 'XLM', issuer: '', balance: xlm.balance });
+        } else {
+          const first = activeWallet.balances[0];
+          setSelectedAsset({ 
+            code: first.asset_code || 'XLM', 
+            issuer: first.asset_issuer || '', 
+            balance: first.balance 
+          });
+        }
       }
     }
-  }, [isOpen, activeWallet, selectedAsset]);
+  }, [isOpen, activeWallet, selectedAsset, preSelectedAsset]);
 
   // Update balance when wallet balances refresh
   useEffect(() => {
