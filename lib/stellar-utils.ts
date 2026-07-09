@@ -1195,6 +1195,18 @@ export const executeSwap = async (
     // Load account sequence number from Horizon
     const account = await server.loadAccount(sourcePublicKey);
 
+    // Load LIVE network fees based on current congestion
+    let dynamicFee = BASE_FEE;
+    try {
+      const feeStats = await server.feeStats();
+      const suggested = feeStats.fee_charged?.p70 || feeStats.last_ledger_base_fee;
+      if (suggested && Number(suggested) > Number(BASE_FEE)) {
+        dynamicFee = String(suggested);
+      }
+    } catch (feeError) {
+      console.warn('[v0] Failed to load fee stats, using BASE_FEE:', feeError);
+    }
+
     // Build Asset objects — Asset.native() for XLM, new Asset(code, issuer) for others
     const sendAsset = sendCode === 'XLM' ? Asset.native() : new Asset(sendCode, sendIssuer!);
     const destAsset = destCode === 'XLM' ? Asset.native() : new Asset(destCode, destIssuer!);
@@ -1214,13 +1226,14 @@ export const executeSwap = async (
       destAsset: destAsset.code,
       destMin,
       pathHops: pathAssets.map(a => a.code),
+      dynamicFee,
     });
 
     // pathPaymentStrictSend fields:
     //   sendAsset, sendAmount (exact amount sent), destination,
     //   destAsset, destMin (minimum acceptable receive), path
     const transaction = new TransactionBuilder(account, {
-      fee: BASE_FEE,
+      fee: dynamicFee,
       networkPassphrase: NETWORK_PASSPHRASE,
     })
       .addOperation(
@@ -1278,10 +1291,26 @@ export const executeSwap = async (
     let errorMessage = error.message || 'Swap failed';
     if (error.response?.data?.extras?.result_codes) {
       const codes = error.response.data.extras.result_codes;
-      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+      const opCode = codes.operations?.[0] || codes.transaction;
+      
+      // Translate common Stellar swap errors
+      if (opCode === 'op_under_dest_min') {
+        errorMessage = 'Swap cancelled: You would receive less than the slippage minimum. Try increasing slippage tolerance.';
+      } else if (opCode === 'op_too_few_offers') {
+        errorMessage = 'No liquidity available on this trading pair. Try a different pair or smaller amount.';
+      } else if (opCode === 'op_cross_self') {
+        errorMessage = 'Cannot cross your own offers.';
+      } else if (opCode === 'op_over_source_max') {
+        errorMessage = 'Insufficient balance for this swap (including network fee).';
+      } else if (opCode === 'op_no_source') {
+        errorMessage = 'Source account not found.';
+      } else if (opCode === 'op_no_destination') {
+        errorMessage = 'Destination account not found.';
+      } else {
+        errorMessage = opCode || errorMessage;
+      }
     }
-    
-    console.error('[v0] Final error message:', errorMessage);
+
     return { success: false, error: errorMessage };
   }
 };
