@@ -1840,14 +1840,26 @@ export const submitPayment = async (
     // Load source account
     const account = await server.loadAccount(sourcePublicKey);
     
+    // Load LIVE network fees based on current congestion
+    let dynamicFee = BASE_FEE;
+    try {
+      const feeStats = await server.feeStats();
+      const suggested = feeStats.fee_charged?.p70 || feeStats.last_ledger_base_fee;
+      if (suggested && Number(suggested) > Number(BASE_FEE)) {
+        dynamicFee = String(suggested);
+      }
+    } catch {
+      // If feeStats fails, keep BASE_FEE as fallback
+    }
+    
     // Create asset
     const asset = assetCode === 'XLM' || !assetIssuer 
       ? Asset.native() 
       : new Asset(assetCode, assetIssuer);
     
-    // Build transaction
+    // Build transaction with live fees
     let txBuilder = new TransactionBuilder(account, {
-      fee: BASE_FEE,
+      fee: dynamicFee,
       networkPassphrase: NETWORK_PASSPHRASE,
     })
       .addOperation(
@@ -1873,6 +1885,14 @@ export const submitPayment = async (
     if (error.response?.data?.extras?.result_codes) {
       const codes = error.response.data.extras.result_codes;
       errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+    // Provide more detailed error for common Stellar issues
+    if (errorMessage.includes('PAYMENT_UNDERFUNDED')) {
+      errorMessage = 'Insufficient balance for payment (including network fee)';
+    } else if (errorMessage.includes('PAYMENT_NO_TRUST')) {
+      errorMessage = 'Recipient does not have a trustline for this asset';
+    } else if (errorMessage.includes('PAYMENT_NO_ISSUER')) {
+      errorMessage = 'Asset issuer not found';
     }
     return { success: false, error: errorMessage };
   }

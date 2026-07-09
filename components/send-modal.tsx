@@ -134,7 +134,10 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
   };
 
   const handleSend = async () => {
-    if (!activeWallet) return;
+    if (!activeWallet) {
+      setResult({ success: false, message: 'No active wallet selected' });
+      return;
+    }
 
     const validationError = validateRecipients();
     if (validationError) {
@@ -155,37 +158,68 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
       
       // Send to each recipient
       const results: string[] = [];
-      for (const recipient of recipients) {
-        const res = await submitPayment(
-          secret,
-          recipient.address,
-          selectedAsset.code,
-          selectedAsset.issuer,
-          recipient.amount,
-          recipient.memo
-        );
+      let successCount = 0;
+      let failureMessage = '';
+      
+      for (let i = 0; i < recipients.length; i++) {
+        const recipient = recipients[i];
         
-        if (!res.success) {
-          throw new Error(res.error || 'Payment failed');
+        try {
+          const res = await submitPayment(
+            secret,
+            recipient.address,
+            selectedAsset.code,
+            selectedAsset.issuer,
+            recipient.amount,
+            recipient.memo
+          );
+          
+          if (res.success) {
+            results.push(res.hash || 'success');
+            successCount++;
+          } else {
+            failureMessage = res.error || 'Payment failed';
+            // Continue to next recipient instead of throwing
+            console.error(`[v0] Payment ${i + 1} failed: ${failureMessage}`);
+          }
+        } catch (recipientError: any) {
+          failureMessage = recipientError.message || 'Payment failed';
+          console.error(`[v0] Payment ${i + 1} error: ${failureMessage}`);
         }
-        results.push(res.hash || 'success');
       }
 
-      setResult({ 
-        success: true, 
-        message: recipients.length > 1 
-          ? `Successfully sent to ${recipients.length} recipients!` 
-          : 'Payment sent successfully!',
-        hash: results[0]
-      });
-      
-      // Reset form after success
-      setTimeout(() => {
-        setRecipients([{ id: '1', address: '', amount: '', memo: '' }]);
-        onClose();
-      }, 2000);
+      if (successCount === 0) {
+        setResult({ success: false, message: failureMessage || 'All payments failed' });
+        return;
+      }
+
+      if (successCount < recipients.length) {
+        setResult({ 
+          success: false, 
+          message: `${successCount}/${recipients.length} payments sent. Last error: ${failureMessage}`,
+          hash: results[0]
+        });
+      } else {
+        setResult({ 
+          success: true, 
+          message: recipients.length > 1 
+            ? `Successfully sent to ${recipients.length} recipients!` 
+            : 'Payment sent successfully!',
+          hash: results[0]
+        });
+        
+        // Reset form after success
+        setTimeout(() => {
+          if (onClose) {
+            setRecipients([{ id: '1', address: '', amount: '', memo: '' }]);
+            setResult(null);
+            onClose();
+          }
+        }, 2000);
+      }
       
     } catch (error: any) {
+      console.error('[v0] Send handler error:', error);
       setResult({ success: false, message: error.message || 'Failed to send payment' });
     } finally {
       setIsSubmitting(false);
@@ -193,13 +227,31 @@ export function SendModal({ isOpen, onClose }: SendModalProps) {
   };
 
   const handleClose = () => {
-    setRecipients([{ id: '1', address: '', amount: '', memo: '' }]);
-    setResult(null);
-    setSelectedAsset(null);
-    onClose();
+    try {
+      setRecipients([{ id: '1', address: '', amount: '', memo: '' }]);
+      setResult(null);
+      setSelectedAsset(null);
+      setShowAssetPicker(false);
+      setIsSubmitting(false);
+      if (onClose) {
+        onClose();
+      }
+    } catch (error) {
+      console.error('[v0] Error closing send modal:', error);
+      // Force close even if error occurs
+      if (onClose) {
+        onClose();
+      }
+    }
   };
 
-  if (!isOpen || !selectedAsset) return null;
+  if (!isOpen) return null;
+  
+  // Safeguard: if asset becomes null during render, close modal
+  if (!selectedAsset && isOpen) {
+    handleClose();
+    return null;
+  }
 
   return (
     <>
