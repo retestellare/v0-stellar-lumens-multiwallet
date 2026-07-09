@@ -252,7 +252,15 @@ export function AssetDetailModal({ isOpen, onClose, asset, onSend, onReceive, on
           {activeTab === 'send' && (
             <div className="py-8 text-center">
               <p className="text-muted-foreground mb-4">Send {asset.code} to another wallet</p>
-              <Button onClick={onSend} className="bg-primary text-primary-foreground">
+              <Button 
+                onClick={() => {
+                  if (onSend) {
+                    onSend();
+                  }
+                }}
+                className="bg-primary text-primary-foreground"
+                disabled={!onSend}
+              >
                 <Send className="w-4 h-4 mr-2" />
                 Send {asset.code}
               </Button>
