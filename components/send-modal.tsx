@@ -32,14 +32,7 @@ export function SendModal({ isOpen, onClose, preSelectedAsset }: SendModalProps)
 
   // Set default asset only once when modal opens with no selection
   useEffect(() => {
-    if (!isOpen) {
-      setSelectedAsset(null);
-      setRecipients([{ id: '1', address: '', amount: '', memo: '' }]);
-      setResult(null);
-      return;
-    }
-
-    if (!selectedAsset && activeWallet?.balances?.length) {
+    if (isOpen && !selectedAsset && activeWallet?.balances?.length) {
       // If a pre-selected asset was passed in, use it
       if (preSelectedAsset) {
         setSelectedAsset({ 
@@ -62,7 +55,7 @@ export function SendModal({ isOpen, onClose, preSelectedAsset }: SendModalProps)
         }
       }
     }
-  }, [isOpen, preSelectedAsset]);
+  }, [isOpen, activeWallet, selectedAsset, preSelectedAsset]);
 
   // Update balance when wallet balances refresh
   useEffect(() => {
@@ -263,7 +256,13 @@ export function SendModal({ isOpen, onClose, preSelectedAsset }: SendModalProps)
     }
   };
 
-  if (!isOpen || !selectedAsset) return null;
+  if (!isOpen) return null;
+  
+  // Safeguard: if asset becomes null during render, close modal
+  if (!selectedAsset && isOpen) {
+    handleClose();
+    return null;
+  }
 
   return (
     <>
