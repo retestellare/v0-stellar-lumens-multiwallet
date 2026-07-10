@@ -311,7 +311,7 @@ export const getOrderBook = async (
   sellingAssetIssuer: string,
   buyingAssetCode: string,
   buyingAssetIssuer: string
-) => {
+): Promise<{ bids: Array<{ price: string; amount: string }>; asks: Array<{ price: string; amount: string }> }> => {
   try {
     const params = new URLSearchParams();
     
@@ -342,19 +342,27 @@ export const getOrderBook = async (
     const url = `${HORIZON_URL}/order_book?${params}`;
     console.log('[v0] Fetching order book from:', url);
     
-    const response = await fetchWithTimeout(url);
+    // Use timeout to prevent hanging requests
+    const response = await fetchWithTimeout(url, 8000);
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('[v0] Order book API error:', response.status, errorData);
+      console.warn('[v0] Order book API error:', response.status, errorData);
+      // Return empty order book instead of blocking
       return { bids: [], asks: [] };
     }
     
     const data = await response.json();
-    console.log('[v0] Order book fetched:', { bids: data.bids?.length || 0, asks: data.asks?.length || 0 });
-    return data;
+    
+    // Validate data structure
+    const bids = Array.isArray(data.bids) ? data.bids : [];
+    const asks = Array.isArray(data.asks) ? data.asks : [];
+    
+    console.log('[v0] Order book fetched:', { bids: bids.length, asks: asks.length });
+    return { bids, asks };
   } catch (error) {
     console.error('[v0] Error fetching order book:', error);
+    // Always return valid empty structure
     return { bids: [], asks: [] };
   }
 };
@@ -1354,17 +1362,25 @@ export const calculateAvailableBalance = async (
   assetIssuer: string
 ): Promise<string> => {
   try {
-    // Fetch account details and offers in parallel
-    const [account, offers] = await Promise.all([
-      (async () => {
-        const server = new Horizon.Server(HORIZON_URL);
-        return server.loadAccount(publicKey);
-      })(),
-      getAccountOffers(publicKey),
-    ]);
+    const server = new Horizon.Server(HORIZON_URL);
+    
+    // Fetch account details with timeout and error handling
+    let account;
+    try {
+      account = await fetchWithTimeout(`${HORIZON_URL}/accounts/${encodeURIComponent(publicKey)}`)
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        });
+    } catch (accountError) {
+      console.warn('[v0] Failed to load account for available balance:', accountError);
+      // Return 0 and continue - don't block rendering
+      return '0';
+    }
 
     // Get total balance for this asset
-    const balanceData = account.balances.find((b: any) => {
+    const balances = account.balances || [];
+    const balanceData = balances.find((b: any) => {
       if (assetCode === 'XLM' || assetCode === 'native') {
         return b.asset_type === 'native';
       }
@@ -1373,21 +1389,35 @@ export const calculateAvailableBalance = async (
 
     const totalBalance = balanceData ? parseFloat(balanceData.balance) : 0;
 
+    // Fetch offers with error handling - use Promise.allSettled to prevent one failure from blocking
+    let offers: any[] = [];
+    try {
+      offers = await getAccountOffers(publicKey);
+    } catch (offersError) {
+      console.warn('[v0] Failed to load account offers:', offersError);
+      // Continue with empty offers array - partial data is better than blocking
+    }
+
     // Calculate tokens committed in selling offers for this asset
     let committedBalance = 0;
     for (const offer of offers) {
-      const selling = offer.selling;
-      let isSellingThisAsset = false;
+      try {
+        const selling = offer.selling;
+        let isSellingThisAsset = false;
 
-      if (assetCode === 'XLM' || assetCode === 'native') {
-        isSellingThisAsset = selling.asset_type === 'native';
-      } else {
-        isSellingThisAsset =
-          selling.asset_code === assetCode && selling.asset_issuer === assetIssuer;
-      }
+        if (assetCode === 'XLM' || assetCode === 'native') {
+          isSellingThisAsset = selling.asset_type === 'native';
+        } else {
+          isSellingThisAsset =
+            selling.asset_code === assetCode && selling.asset_issuer === assetIssuer;
+        }
 
-      if (isSellingThisAsset) {
-        committedBalance += parseFloat(offer.amount);
+        if (isSellingThisAsset) {
+          committedBalance += parseFloat(offer.amount || 0);
+        }
+      } catch (offerError) {
+        console.warn('[v0] Error processing offer:', offerError);
+        // Continue processing other offers
       }
     }
 
@@ -1413,7 +1443,7 @@ export const calculateAvailableBalance = async (
     return availableBalance.toString();
   } catch (error) {
     console.error('[v0] Error calculating available balance:', error);
-    // Return 0 if there's an error
+    // Return 0 if there's an error - don't let this block page rendering
     return '0';
   }
 };

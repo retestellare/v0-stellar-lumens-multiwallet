@@ -171,8 +171,9 @@ export default function ExchangePage() {
       setLoading(true);
       try {
         const data = await getOrderBook(sellingAsset, sellingIssuer, buyingAsset, buyingIssuer);
-        setOrderBook(data);
+        setOrderBook(data || { bids: [], asks: [] });
       } catch (error) {
+        console.warn('[v0] Order book fetch error, using empty data:', error);
         setOrderBook({ bids: [], asks: [] });
       } finally {
         setLoading(false);
@@ -180,7 +181,9 @@ export default function ExchangePage() {
     };
 
     if (mounted) {
-      fetchOrderBook();
+      // Use a small timeout to allow page to render first
+      const timer = setTimeout(fetchOrderBook, 100);
+      return () => clearTimeout(timer);
     }
   }, [sellingAsset, sellingIssuer, buyingAsset, buyingIssuer, mounted]);
   
@@ -453,15 +456,23 @@ export default function ExchangePage() {
     const fetchAvailableBalances = async () => {
       setBalancesLoading(true);
       try {
-        const [sellingAvail, buyingAvail] = await Promise.all([
+        // Use Promise.allSettled to prevent one failure from blocking both
+        const results = await Promise.allSettled([
           calculateAvailableBalance(wallet.publicKey, sellingAsset, sellingIssuer),
           calculateAvailableBalance(wallet.publicKey, buyingAsset, buyingIssuer),
         ]);
+        
+        // Extract values, defaulting to '0' if promise was rejected
+        const sellingAvail = results[0].status === 'fulfilled' ? results[0].value : '0';
+        const buyingAvail = results[1].status === 'fulfilled' ? results[1].value : '0';
         
         setAvailableSellingBalance(sellingAvail);
         setAvailableBuyingBalance(buyingAvail);
       } catch (error) {
         console.error('[v0] Error fetching available balances:', error);
+        // Set default values on error
+        setAvailableSellingBalance('0');
+        setAvailableBuyingBalance('0');
       } finally {
         setBalancesLoading(false);
       }
