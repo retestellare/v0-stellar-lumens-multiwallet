@@ -55,6 +55,7 @@ export default function ExchangePage() {
   // Transaction state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [txResult, setTxResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [pendingOrder, setPendingOrder] = useState<{ type: 'buy' | 'sell'; price: string; amount: string } | null>(null);
   const [pendingCancelOrderId, setPendingCancelOrderId] = useState<string | null>(null);
   
   // Token metadata (domain, image, name)
@@ -87,7 +88,9 @@ export default function ExchangePage() {
   const [availableBuyingBalance, setAvailableBuyingBalance] = useState('0');
   const [balancesLoading, setBalancesLoading] = useState(false);
 
-
+  // Trustline retry state
+  const [pendingTrustlineAsset, setPendingTrustlineAsset] = useState<{ code: string; issuer: string } | null>(null);
+  const [showTrustlineAlert, setShowTrustlineAlert] = useState(false);
 
   const router = useRouter();
 
@@ -471,31 +474,9 @@ export default function ExchangePage() {
 
   const activeWallet = wallets.find(w => w.id === activeWalletId);
   
-  // Guard against missing wallet
-  if (!activeWallet) {
-    return (
-      <main className="min-h-dvh bg-background">
-        <Header />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="flex items-center justify-between mb-8">
-            <Link href="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
-              <ArrowLeft className="w-4 h-4" />
-              Back to Dashboard
-            </Link>
-            <WalletSelectorDropdown />
-          </div>
-          <div className="text-center py-12">
-            <AlertCircle className="w-8 h-8 mx-auto mb-4 text-muted-foreground" />
-            <p className="text-muted-foreground">Please select a wallet to trade</p>
-          </div>
-        </div>
-      </main>
-    );
-  }
-  
   // Get balance for selling asset - handle XLM (native) separately
   const getAssetBalance = (assetCode: string, assetIssuer: string) => {
-    if (!activeWallet.balances) return '0';
+    if (!activeWallet?.balances) return '0';
     
     if (assetCode === 'XLM' || assetCode === 'native') {
       // Native XLM has asset_type === 'native' and no asset_code
@@ -648,10 +629,69 @@ export default function ExchangePage() {
           setAvailableBuyingBalance(buyingAvail);
         }
       } else {
-        setTxResult({ success: false, message: result.error || 'Failed to submit order' });
+        // Handle op_buy_no_trust error - trustline may have failed or been needed but not created
+        if (result.error && (result.error.includes('op_buy_no_trust') || result.error.includes('no_trust'))) {
+          // Keep pendingOrder alive so handleCreateTrustlineAndRetry can reuse it
+          setPendingTrustlineAsset({ code: buyingAsset, issuer: buyingIssuer });
+          setShowTrustlineAlert(true);
+          setTxResult({ 
+            success: false, 
+            message: `Trustline for ${buyingAsset} needs to be created.` 
+          });
+          setIsSubmitting(false);
+          return; // skip the finally clearance below
+        } else {
+          setTxResult({ success: false, message: result.error || 'Failed to submit order' });
+        }
       }
     } catch (error: any) {
       setTxResult({ success: false, message: error.message || 'Failed to submit order' });
+    } finally {
+      setIsSubmitting(false);
+      setPendingOrder(null);
+    }
+  };
+  
+  const handleCreateTrustlineAndRetry = async () => {
+    if (!globalDecryptedSecret || !pendingTrustlineAsset || !pendingOrder) {
+      setTxResult({ success: false, message: 'Missing required information to create trustline.' });
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      setShowTrustlineAlert(false);
+
+      // Create the trustline
+      const trustResult = await addTrustline(
+        globalDecryptedSecret,
+        pendingTrustlineAsset.code,
+        pendingTrustlineAsset.issuer
+      );
+
+      if (!trustResult.success) {
+        setTxResult({ success: false, message: `Failed to create trustline: ${trustResult.error}` });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Refresh balances after adding trustline
+      if (activeWalletId) {
+        await updateBalances(activeWalletId);
+      }
+
+      // Small delay to let the blockchain confirm
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      setTxResult({ success: true, message: `Trustline created for ${pendingTrustlineAsset.code}. Retrying order...` });
+
+      // Retry the order submission
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await submitOrder(pendingOrder, globalDecryptedSecret);
+
+      setPendingTrustlineAsset(null);
+    } catch (error: any) {
+      setTxResult({ success: false, message: error.message || 'Failed to create trustline' });
     } finally {
       setIsSubmitting(false);
     }
