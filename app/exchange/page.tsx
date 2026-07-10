@@ -55,7 +55,6 @@ export default function ExchangePage() {
   // Transaction state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [txResult, setTxResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [pendingOrder, setPendingOrder] = useState<{ type: 'buy' | 'sell'; price: string; amount: string } | null>(null);
   const [pendingCancelOrderId, setPendingCancelOrderId] = useState<string | null>(null);
   
   // Token metadata (domain, image, name)
@@ -88,9 +87,7 @@ export default function ExchangePage() {
   const [availableBuyingBalance, setAvailableBuyingBalance] = useState('0');
   const [balancesLoading, setBalancesLoading] = useState(false);
 
-  // Trustline retry state
-  const [pendingTrustlineAsset, setPendingTrustlineAsset] = useState<{ code: string; issuer: string } | null>(null);
-  const [showTrustlineAlert, setShowTrustlineAlert] = useState(false);
+
 
   const router = useRouter();
 
@@ -629,69 +626,85 @@ export default function ExchangePage() {
           setAvailableBuyingBalance(buyingAvail);
         }
       } else {
-        // Handle op_buy_no_trust error - trustline may have failed or been needed but not created
+        // Handle op_buy_no_trust error - auto-create trustline and retry
         if (result.error && (result.error.includes('op_buy_no_trust') || result.error.includes('no_trust'))) {
-          // Keep pendingOrder alive so handleCreateTrustlineAndRetry can reuse it
-          setPendingTrustlineAsset({ code: buyingAsset, issuer: buyingIssuer });
-          setShowTrustlineAlert(true);
-          setTxResult({ 
-            success: false, 
-            message: `Trustline for ${buyingAsset} needs to be created.` 
-          });
+          setTxResult({ success: false, message: `Creating trustline for ${buyingAsset}...` });
+          
+          // Auto-create trustline without showing modal
+          const trustResult = await addTrustline(secret, buyingAsset, buyingIssuer);
+          
+          if (!trustResult.success) {
+            setTxResult({ success: false, message: `Failed to create trustline: ${trustResult.error}` });
+            setIsSubmitting(false);
+            return;
+          }
+          
+          // Refresh balances after adding trustline
+          if (activeWalletId) {
+            await updateBalances(activeWalletId);
+          }
+          
+          setTxResult({ success: true, message: `Trustline created for ${buyingAsset}. Retrying order...` });
+          
+          // Wait for blockchain confirmation and retry automatically
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Retry the order submission
+          setIsSubmitting(true);
+          const retryResult = order.type === 'buy'
+            ? await submitManageBuyOffer(
+                secret,
+                buyingAsset,
+                buyingIssuer,
+                sellingAsset,
+                sellingIssuer,
+                order.amount,
+                order.price,
+              )
+            : await submitManageSellOffer(
+                secret,
+                sellingAsset,
+                sellingIssuer,
+                buyingAsset,
+                buyingIssuer,
+                order.amount,
+                order.price,
+              );
+          
+          if (retryResult.success) {
+            setTxResult({ success: true, message: `Order submitted! TX: ${retryResult.hash?.substring(0, 8)}...` });
+            if (order.type === 'buy') {
+              setBuyPrice('');
+              setBuyAmount('');
+            } else {
+              setSellPrice('');
+              setSellAmount('');
+            }
+            
+            const data = await getOrderBook(sellingAsset, sellingIssuer, buyingAsset, buyingIssuer);
+            setOrderBook(data);
+            
+            if (activeWalletId && activeWallet) {
+              await updateBalances(activeWalletId);
+              const [sellingAvail, buyingAvail] = await Promise.all([
+                calculateAvailableBalance(activeWallet.publicKey, sellingAsset, sellingIssuer),
+                calculateAvailableBalance(activeWallet.publicKey, buyingAsset, buyingIssuer),
+              ]);
+              setAvailableSellingBalance(sellingAvail);
+              setAvailableBuyingBalance(buyingAvail);
+            }
+          } else {
+            setTxResult({ success: false, message: retryResult.error || 'Failed to submit order after trustline creation' });
+          }
+          
           setIsSubmitting(false);
-          return; // skip the finally clearance below
+          return;
         } else {
           setTxResult({ success: false, message: result.error || 'Failed to submit order' });
         }
       }
     } catch (error: any) {
       setTxResult({ success: false, message: error.message || 'Failed to submit order' });
-    } finally {
-      setIsSubmitting(false);
-      setPendingOrder(null);
-    }
-  };
-  
-  const handleCreateTrustlineAndRetry = async () => {
-    if (!globalDecryptedSecret || !pendingTrustlineAsset || !pendingOrder) {
-      setTxResult({ success: false, message: 'Missing required information to create trustline.' });
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      setShowTrustlineAlert(false);
-
-      // Create the trustline
-      const trustResult = await addTrustline(
-        globalDecryptedSecret,
-        pendingTrustlineAsset.code,
-        pendingTrustlineAsset.issuer
-      );
-
-      if (!trustResult.success) {
-        setTxResult({ success: false, message: `Failed to create trustline: ${trustResult.error}` });
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Refresh balances after adding trustline
-      if (activeWalletId) {
-        await updateBalances(activeWalletId);
-      }
-
-      // Small delay to let the blockchain confirm
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      setTxResult({ success: true, message: `Trustline created for ${pendingTrustlineAsset.code}. Retrying order...` });
-
-      // Retry the order submission
-      await new Promise(resolve => setTimeout(resolve, 500));
-      await submitOrder(pendingOrder, globalDecryptedSecret);
-
-      setPendingTrustlineAsset(null);
-    } catch (error: any) {
-      setTxResult({ success: false, message: error.message || 'Failed to create trustline' });
     } finally {
       setIsSubmitting(false);
     }
