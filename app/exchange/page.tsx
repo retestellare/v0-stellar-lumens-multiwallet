@@ -471,9 +471,31 @@ export default function ExchangePage() {
 
   const activeWallet = wallets.find(w => w.id === activeWalletId);
   
+  // Guard against missing wallet
+  if (!activeWallet) {
+    return (
+      <main className="min-h-dvh bg-background">
+        <Header />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="flex items-center justify-between mb-8">
+            <Link href="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
+              <ArrowLeft className="w-4 h-4" />
+              Back to Dashboard
+            </Link>
+            <WalletSelectorDropdown />
+          </div>
+          <div className="text-center py-12">
+            <AlertCircle className="w-8 h-8 mx-auto mb-4 text-muted-foreground" />
+            <p className="text-muted-foreground">Please select a wallet to trade</p>
+          </div>
+        </div>
+      </main>
+    );
+  }
+  
   // Get balance for selling asset - handle XLM (native) separately
   const getAssetBalance = (assetCode: string, assetIssuer: string) => {
-    if (!activeWallet?.balances) return '0';
+    if (!activeWallet.balances) return '0';
     
     if (assetCode === 'XLM' || assetCode === 'native') {
       // Native XLM has asset_type === 'native' and no asset_code
