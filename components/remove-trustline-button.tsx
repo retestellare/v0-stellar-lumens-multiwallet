@@ -1,125 +1,138 @@
-"use client";
+'use client';
 
 import React, { useState } from 'react';
-import * as StellarSdk from '@stellar/stellar-sdk';
+import { Trash2, AlertCircle, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { useRemoveTrustline } from '@/hooks/useRemoveTrustline';
 import { useWallet } from '@/lib/wallet-context';
 
 interface RemoveTrustlineButtonProps {
   assetCode: string;
   assetIssuer: string;
   balance: string;
-  onSuccess?: () => void;
+  onSuccess?: (hash: string) => void;
+  className?: string;
 }
 
-export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSuccess }: RemoveTrustlineButtonProps) {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const { activeWallet, globalDecryptedSecret } = useWallet();
+/**
+ * Component for removing a trustline with robust error handling and user confirmation
+ * 
+ * Features:
+ * - Validates balance is zero before allowing removal
+ * - Shows confirmation dialog with important warnings
+ * - Displays toast notifications for success/error states
+ * - Handles errors gracefully with user-friendly messages
+ * - Prevents application crashes with comprehensive try/catch blocks
+ */
+export function RemoveTrustlineButton({
+  assetCode,
+  assetIssuer,
+  balance,
+  onSuccess,
+  className = '',
+}: RemoveTrustlineButtonProps) {
+  const { globalDecryptedSecret } = useWallet();
+  const { execute, isLoading, error } = useRemoveTrustline({
+    onSuccess,
+    showToast: true,
+  });
+  const [showConfirmation, setShowConfirmation] = useState(false);
 
+  // Only show button if balance is zero
   const isBalanceZero = parseFloat(balance) === 0;
   if (!isBalanceZero) return null;
 
   const handleRemove = async () => {
-    if (!activeWallet || !globalDecryptedSecret) {
-      setError("Wallet not unlocked. Please unlock your wallet first.");
+    if (!globalDecryptedSecret) {
+      console.error('[v0] No secret key available for trustline removal');
       return;
     }
 
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      console.log('[v0] Starting trustline removal for', assetCode, 'from', activeWallet.publicKey);
-
-      // 1. Request unsigned transaction XDR from backend
-      const response = await fetch('/api/stellar/remove-trustline', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assetCode, assetIssuer, userPublicKey: activeWallet.publicKey }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to build transaction');
-
-      console.log('[v0] Transaction XDR received');
-
-      // 2. Reconstruct transaction from XDR and sign it client-side
-      // @ts-ignore
-      const NetworksPassphrase = StellarSdk.Networks?.PUBLIC || 'Public Global Stellar Network ; October 2015';
-      
-      // @ts-ignore
-      const tx = StellarSdk.TransactionBuilder.fromXDR(data.xdr, NetworksPassphrase);
-      
-      if (!tx || typeof tx.sign !== 'function') {
-        throw new Error('Failed to reconstruct transaction from XDR');
-      }
-      
-      // @ts-ignore
-      const keypair = StellarSdk.Keypair.fromSecret(globalDecryptedSecret);
-      tx.sign(keypair);
-
-      console.log('[v0] Transaction signed');
-
-      // 3. Submit signed transaction to Horizon
-      // @ts-ignore
-      const server = new StellarSdk.Horizon.Server("https://horizon.stellar.org");
-      
-      console.log('[v0] Submitting signed trustline removal transaction');
-      
-      // @ts-ignore
-      await server.submitTransaction(tx);
-      
-      console.log('[v0] Trustline removal transaction successful');
-      alert(`Trustline for ${assetCode} removed successfully!`);
-      
-      if (onSuccess) onSuccess();
-      
-      // Wait a moment before reloading to ensure transaction is processed
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
-    } catch (err: any) {
-      console.error('[v0] Remove trustline error:', err);
-      
-      // Extract detailed error information from Horizon
-      let errorDetail = 'Unknown error';
-      if (err.response?.data?.extras?.result_codes) {
-        errorDetail = JSON.stringify(err.response.data.extras.result_codes);
-      } else if (err.response?.data?.extras) {
-        errorDetail = JSON.stringify(err.response.data.extras);
-      } else if (err.response?.data?.title) {
-        errorDetail = err.response.data.title;
-      } else if (err.message) {
-        errorDetail = err.message;
-      }
-      
-      const finalError = `Failed to remove trustline: ${errorDetail}`;
-      setError(finalError);
-    } finally {
-      setIsLoading(false);
-    }
+    setShowConfirmation(false);
+    await execute(globalDecryptedSecret, assetCode, assetIssuer);
   };
 
   return (
-    <div className="mt-4 w-full px-4 border-t border-gray-800 pt-4">
-      <button
-        type="button"
-        onClick={handleRemove}
-        disabled={isLoading || !activeWallet || !globalDecryptedSecret}
-        className="w-full bg-red-600 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm"
+    <>
+      <Button
+        onClick={() => setShowConfirmation(true)}
+        disabled={isLoading || !globalDecryptedSecret}
+        variant="destructive"
+        className={className}
+        title={!globalDecryptedSecret ? 'Wallet not connected' : `Remove trustline for ${assetCode}`}
       >
         {isLoading ? (
           <>
-            <span className="animate-spin">⟳</span>
-            Removing Trustline...
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            Removing...
           </>
         ) : (
           <>
-            🗑️ Remove Trustline
+            <Trash2 className="w-4 h-4 mr-2" />
+            Remove Trustline
           </>
         )}
-      </button>
-      {error && <p className="text-red-500 text-xs mt-2 text-center">{error}</p>}
-    </div>
+      </Button>
+
+      {/* Confirmation Dialog */}
+      <AlertDialog open={showConfirmation} onOpenChange={setShowConfirmation}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0" />
+              <AlertDialogTitle>Remove Trustline?</AlertDialogTitle>
+            </div>
+          </AlertDialogHeader>
+          <AlertDialogDescription>
+            <div className="space-y-3">
+              <p>
+                You are about to remove your trustline for <span className="font-semibold">{assetCode}</span>.
+              </p>
+              <div className="bg-yellow-50 border border-yellow-200 rounded p-3 text-sm text-yellow-800 space-y-2">
+                <p className="font-medium">⚠️ Important Warnings:</p>
+                <ul className="list-disc list-inside space-y-1 text-xs">
+                  <li>Your {assetCode} balance must be exactly zero</li>
+                  <li>You will no longer be able to hold this asset</li>
+                  <li>This action is permanent and cannot be undone</li>
+                  <li>Any pending orders for {assetCode} will be cancelled</li>
+                  <li>Network fee required (charged in XLM)</li>
+                </ul>
+              </div>
+            </div>
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isLoading}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleRemove}
+              disabled={isLoading}
+              className="bg-red-600 hover:bg-red-700 disabled:bg-gray-600"
+            >
+              {isLoading ? 'Removing...' : 'Remove Trustline'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Error Banner - Persistent display of last error */}
+      {error && (
+        <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-md">
+          <div className="font-medium flex items-center gap-2 text-red-900 mb-1">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            Error
+          </div>
+          <p className="text-sm text-red-800">{error}</p>
+        </div>
+      )}
+    </>
   );
 }

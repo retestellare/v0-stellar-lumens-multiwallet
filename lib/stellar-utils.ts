@@ -978,6 +978,116 @@ export const addTrustline = async (
   }
 };
 
+/**
+ * Remove a trustline by setting the limit to '0'
+ * This closes the trustline to the specified asset
+ * Only works if the account has zero balance in that asset
+ * 
+ * @param secretKey - Secret key of the account removing the trustline
+ * @param assetCode - Code of the asset (e.g., 'USDC', 'USDT')
+ * @param assetIssuer - Issuer public key of the asset
+ * @returns Result with success status, transaction hash, or error details
+ */
+export const removeTrustline = async (
+  secretKey: string,
+  assetCode: string,
+  assetIssuer: string
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    // Validate inputs
+    if (!secretKey || !assetCode || !assetIssuer) {
+      return {
+        success: false,
+        error: 'Missing required parameters: secretKey, assetCode, or assetIssuer',
+      };
+    }
+
+    const server = new Horizon.Server(HORIZON_URL);
+    const keypair = Keypair.fromSecret(secretKey);
+    const sourcePublicKey = keypair.publicKey();
+
+    console.log('[v0] Removing trustline for:', {
+      asset: assetCode,
+      issuer: assetIssuer.substring(0, 8) + '...',
+    });
+
+    // Load source account
+    const account = await server.loadAccount(sourcePublicKey);
+
+    // Create asset
+    const asset = new Asset(assetCode, assetIssuer);
+
+    // Build changeTrust transaction with limit set to '0' to remove trustline
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.changeTrust({
+          asset: asset,
+          limit: '0', // Setting limit to 0 removes the trustline
+        })
+      )
+      .setTimeout(180)
+      .build();
+
+    // Sign transaction with the account's keypair
+    transaction.sign(keypair);
+
+    // Submit transaction to network
+    const result = await server.submitTransaction(transaction);
+
+    console.log('[v0] Trustline removed successfully:', result.hash);
+
+    // Wait a moment for ledger to process
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    return {
+      success: true,
+      hash: result.hash,
+    };
+  } catch (error: any) {
+    // Comprehensive error handling with user-friendly messages
+    let errorMessage = error.message || 'Failed to remove trustline';
+    const errorCode = error.response?.data?.extras?.result_codes?.operations?.[0];
+
+    // Map Stellar error codes to user-friendly messages
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      const opCode = codes.operations?.[0] || codes.transaction;
+
+      if (opCode === 'op_change_trust_low_reserve') {
+        errorMessage =
+          'Cannot remove trustline: Insufficient XLM for network reserve. Please add more XLM to your account.';
+      } else if (opCode === 'op_change_trust_non_zero_balance') {
+        errorMessage =
+          'Cannot remove trustline: Asset balance must be zero. Sell or transfer all tokens before removing the trustline.';
+      } else if (opCode === 'op_change_trust_malformed') {
+        errorMessage = 'Invalid trustline parameters. Check the asset code and issuer.';
+      } else if (opCode === 'op_change_trust_self_not_allowed') {
+        errorMessage = 'Cannot create trustline for your own issued assets.';
+      } else if (opCode === 'op_change_trust_success') {
+        // This shouldn't happen as it would be caught above, but just in case
+        errorMessage = 'Trustline removed successfully';
+        return { success: true, hash: error.response?.data?.hash };
+      } else {
+        errorMessage = opCode || codes.transaction || errorMessage;
+      }
+    }
+
+    console.error('[v0] Error removing trustline:', {
+      message: errorMessage,
+      asset: assetCode,
+      errorCode,
+      fullError: error.response?.data,
+    });
+
+    return {
+      success: false,
+      error: errorMessage,
+    };
+  }
+};
 
 /**
  * Fetch trade history for a specific account (filled orders)
