@@ -2,13 +2,13 @@
 
 import React, { useState } from 'react';
 import { X, AlertCircle, Loader2 } from 'lucide-react';
-import { useWallet } from '@/lib/wallet-context';
 import { removeTrustline } from '@/lib/stellar-utils';
 
 interface RemoveTrustlineButtonProps {
   assetCode: string;
   assetIssuer: string;
   balance: string;
+  globalDecryptedSecret?: string;
   onSuccess?: () => void;
   onClose?: () => void;
 }
@@ -23,10 +23,10 @@ export function RemoveTrustlineButton({
   assetCode,
   assetIssuer,
   balance,
+  globalDecryptedSecret,
   onSuccess,
   onClose,
 }: RemoveTrustlineButtonProps) {
-  const { globalDecryptedSecret, activeWallet } = useWallet();
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -36,7 +36,7 @@ export function RemoveTrustlineButton({
   if (!isBalanceZero) return null;
 
   const handleRemoveTrustline = async () => {
-    if (!globalDecryptedSecret || !activeWallet) {
+    if (!globalDecryptedSecret) {
       setError('Wallet not connected. Please unlock your wallet first.');
       return;
     }
