@@ -1014,25 +1014,37 @@ export const removeTrustline = async (
     // Load source account
     const account = await server.loadAccount(sourcePublicKey);
 
-    // Create asset
+    // Create asset - must pass both code and issuer for non-native assets
     const asset = new Asset(assetCode, assetIssuer);
 
-    // Build changeTrust transaction with limit set to '0' to remove trustline
+    console.log('[v0] Creating changeTrust operation with:', {
+      assetCode,
+      assetIssuer: assetIssuer.substring(0, 8) + '...',
+    });
+
+    // Build changeTrust transaction to remove trustline
+    // CRITICAL: In Stellar SDK, to remove a trustline, we set limit to undefined/not provided
+    // OR we need to use exactly '0' but it must be a valid numeric string
+    // The operation will remove the trustline only if the balance is exactly 0
+    const operation = Operation.changeTrust({
+      asset: asset,
+      limit: '0', // Setting to '0' removes the trustline (balance must be zero)
+    });
+
     const transaction = new TransactionBuilder(account, {
       fee: BASE_FEE,
       networkPassphrase: NETWORK_PASSPHRASE,
     })
-      .addOperation(
-        Operation.changeTrust({
-          asset: asset,
-          limit: '0', // Setting limit to 0 removes the trustline
-        })
-      )
+      .addOperation(operation)
       .setTimeout(180)
       .build();
 
+    console.log('[v0] Transaction built, signing...');
+
     // Sign transaction with the account's keypair
     transaction.sign(keypair);
+
+    console.log('[v0] Transaction signed, submitting to network...');
 
     // Submit transaction to network
     const result = await server.submitTransaction(transaction);
@@ -1049,12 +1061,20 @@ export const removeTrustline = async (
   } catch (error: any) {
     // Comprehensive error handling with user-friendly messages
     let errorMessage = error.message || 'Failed to remove trustline';
-    const errorCode = error.response?.data?.extras?.result_codes?.operations?.[0];
+
+    // Log full error for debugging
+    console.error('[v0] Full error object:', {
+      message: error.message,
+      response: error.response?.data,
+      extras: error.response?.data?.extras,
+    });
 
     // Map Stellar error codes to user-friendly messages
     if (error.response?.data?.extras?.result_codes) {
       const codes = error.response.data.extras.result_codes;
       const opCode = codes.operations?.[0] || codes.transaction;
+
+      console.log('[v0] Error codes:', codes);
 
       if (opCode === 'op_change_trust_low_reserve') {
         errorMessage =
@@ -1068,19 +1088,20 @@ export const removeTrustline = async (
         errorMessage = 'Cannot create trustline for your own issued assets.';
       } else if (opCode === 'op_has_sub_entries') {
         errorMessage = 'Cannot remove trustline: You have open orders or offers involving this asset. Cancel them first.';
+      } else if (opCode === 'op_invalid_limit') {
+        errorMessage = 'Invalid limit value for trustline removal. The balance must be exactly zero.';
       } else if (opCode === 'op_change_trust_success') {
         // This shouldn't happen as it would be caught above, but just in case
         errorMessage = 'Trustline removed successfully';
         return { success: true, hash: error.response?.data?.hash };
       } else {
-        errorMessage = opCode || codes.transaction || errorMessage;
+        errorMessage = `Stellar error: ${opCode || codes.transaction || errorMessage}`;
       }
     }
 
     console.error('[v0] Error removing trustline:', {
       message: errorMessage,
       asset: assetCode,
-      errorCode,
       fullError: error.response?.data,
     });
 

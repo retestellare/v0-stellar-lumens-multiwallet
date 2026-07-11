@@ -271,7 +271,6 @@ export function AssetDetailModal({ isOpen, onClose, asset, onSend, onReceive, on
                  assetCode={asset.code} 
                  assetIssuer={asset.issuer || ''} 
                  balance={asset.balance || "0"}
-                 globalDecryptedSecret={globalDecryptedSecret}
                  onSuccess={onClose}
                   />
 

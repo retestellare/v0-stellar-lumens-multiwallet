@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
+import * as StellarSdk from '@stellar/stellar-sdk';
 import { X, AlertCircle, Loader2 } from 'lucide-react';
-import { removeTrustline } from '@/lib/stellar-utils';
+import { useWallet } from '@/lib/wallet-context';
 
 interface RemoveTrustlineButtonProps {
   assetCode: string;
   assetIssuer: string;
   balance: string;
-  globalDecryptedSecret?: string;
   onSuccess?: () => void;
   onClose?: () => void;
 }
@@ -17,16 +17,16 @@ interface RemoveTrustlineButtonProps {
  * Remove Trustline Modal Component
  * 
  * Provides a dark-themed modal for removing trustlines from assets
- * with comprehensive error handling and crash prevention
+ * Uses backend API to build transaction, then signs and submits client-side
  */
 export function RemoveTrustlineButton({
   assetCode,
   assetIssuer,
   balance,
-  globalDecryptedSecret,
   onSuccess,
   onClose,
 }: RemoveTrustlineButtonProps) {
+  const { activeWallet, globalDecryptedSecret } = useWallet();
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -36,7 +36,7 @@ export function RemoveTrustlineButton({
   if (!isBalanceZero) return null;
 
   const handleRemoveTrustline = async () => {
-    if (!globalDecryptedSecret) {
+    if (!globalDecryptedSecret || !activeWallet) {
       setError('Wallet not connected. Please unlock your wallet first.');
       return;
     }
@@ -47,38 +47,72 @@ export function RemoveTrustlineButton({
     try {
       console.log('[v0] Starting trustline removal for:', assetCode);
 
-      // Call the robust removeTrustline function
-      const result = await removeTrustline(
-        globalDecryptedSecret,
-        assetCode,
-        assetIssuer
-      );
+      // Step 1: Request unsigned transaction XDR from backend API
+      console.log('[v0] Calling backend API to build trustline removal transaction');
+      const apiResponse = await fetch('/api/stellar/remove-trustline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assetCode,
+          assetIssuer,
+          userPublicKey: activeWallet.publicKey,
+        }),
+      });
 
-      if (result.success) {
-        console.log('[v0] Trustline removed successfully:', result.hash);
-        setShowModal(false);
-        onSuccess?.();
-      } else {
-        // Catch specific Stellar errors and provide user-friendly messages
-        let userMessage = result.error || 'Failed to remove trustline';
-
-        // Map common errors to helpful messages
-        if (userMessage.includes('op_has_sub_entries')) {
-          userMessage = 'Cannot remove trustline. You may have open orders or offers involving this asset. Cancel them first.';
-        } else if (userMessage.includes('non_zero_balance')) {
-          userMessage = 'Your balance must be exactly zero. Sell or transfer all tokens first.';
-        } else if (userMessage.includes('low_reserve')) {
-          userMessage = 'Insufficient XLM for network reserve. Add more XLM to your account.';
-        }
-
-        setError(userMessage);
-        console.error('[v0] Trustline removal failed:', userMessage);
+      const apiData = await apiResponse.json();
+      if (!apiResponse.ok) {
+        throw new Error(apiData.error || 'Failed to build transaction');
       }
+
+      console.log('[v0] Transaction XDR received from backend API');
+
+      // Step 2: Reconstruct transaction from XDR
+      // @ts-ignore
+      const NetworksPassphrase = StellarSdk.Networks?.PUBLIC || 'Public Global Stellar Network ; October 2015';
+      // @ts-ignore
+      const tx = StellarSdk.TransactionBuilder.fromXDR(apiData.xdr, NetworksPassphrase);
+
+      if (!tx || typeof tx.sign !== 'function') {
+        throw new Error('Failed to reconstruct transaction from XDR');
+      }
+
+      console.log('[v0] Transaction reconstructed from XDR, signing with user secret key');
+
+      // Step 3: Sign transaction with user's secret key
+      // @ts-ignore
+      const keypair = StellarSdk.Keypair.fromSecret(globalDecryptedSecret);
+      tx.sign(keypair);
+
+      console.log('[v0] Transaction signed, submitting to Stellar network');
+
+      // Step 4: Submit signed transaction to Stellar network
+      // @ts-ignore
+      const server = new StellarSdk.Horizon.Server('https://horizon.stellar.org');
+      // @ts-ignore
+      const result = await server.submitTransaction(tx);
+
+      console.log('[v0] Trustline removed successfully:', result.hash);
+      setShowModal(false);
+      onSuccess?.();
     } catch (err) {
-      // Catch any unhandled errors to prevent app crash
-      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setError(`Error: ${errorMessage}`);
-      console.error('[v0] Unexpected error during trustline removal:', err);
+      // Catch any errors to prevent app crash
+      let errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+
+      // Map common Stellar/API errors to helpful messages
+      if (errorMessage.includes('op_has_sub_entries')) {
+        errorMessage = 'Cannot remove trustline. You may have open orders or offers involving this asset. Cancel them first.';
+      } else if (errorMessage.includes('non_zero_balance') || errorMessage.includes('op_change_trust_non_zero_balance')) {
+        errorMessage = 'Your balance must be exactly zero. Sell or transfer all tokens first.';
+      } else if (errorMessage.includes('low_reserve') || errorMessage.includes('op_change_trust_low_reserve')) {
+        errorMessage = 'Insufficient XLM for network reserve. Add more XLM to your account.';
+      } else if (errorMessage.includes('op_invalid_limit')) {
+        errorMessage = 'Invalid trustline removal. Ensure your balance is exactly zero.';
+      } else if (errorMessage.includes('Account not found')) {
+        errorMessage = 'Account not found on the network. Please check your wallet.';
+      }
+
+      setError(errorMessage);
+      console.error('[v0] Trustline removal failed:', err);
     } finally {
       setIsPending(false);
     }
