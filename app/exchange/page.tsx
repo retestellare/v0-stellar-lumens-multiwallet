@@ -561,6 +561,7 @@ export default function ExchangePage() {
   const submitOrder = async (order: { type: 'buy' | 'sell'; price: string; amount: string }, secret: string) => {
     setIsSubmitting(true);
     setTxResult(null);
+    setPendingOrder(order); // Store the pending order for potential retry
     
     try {
       // Check trustline for the asset we're buying/receiving
@@ -573,10 +574,15 @@ export default function ExchangePage() {
         
         if (!hasTrust) {
           // Auto-add trustline
+          console.log('[v0] Trustline missing, attempting automatic creation for:', assetToCheck.code);
           setTxResult({ success: false, message: `Creating trustline for ${assetToCheck.code}...` });
           const trustResult = await addTrustline(secret, assetToCheck.code, assetToCheck.issuer);
           
           if (!trustResult.success) {
+            console.log('[v0] Trustline creation failed:', trustResult.error);
+            // Store the asset info and show retry modal
+            setPendingTrustlineAsset({ code: assetToCheck.code, issuer: assetToCheck.issuer });
+            setShowTrustlineAlert(true);
             setTxResult({ success: false, message: `Failed to create trustline: ${trustResult.error}` });
             setIsSubmitting(false);
             return;
@@ -587,6 +593,7 @@ export default function ExchangePage() {
             await updateBalances(activeWalletId);
           }
           
+          console.log('[v0] Trustline created successfully, submitting order...');
           setTxResult({ success: true, message: `Trustline created for ${assetToCheck.code}. Submitting order...` });
           // Small delay to let the UI update and ensure balances are refreshed
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -618,6 +625,7 @@ export default function ExchangePage() {
       
       if (result.success) {
         setTxResult({ success: true, message: `Order submitted! TX: ${result.hash?.substring(0, 8)}...` });
+        setPendingOrder(null); // Clear pending order after successful submission
         if (order.type === 'buy') {
           setBuyPrice('');
           setBuyAmount('');
@@ -653,13 +661,14 @@ export default function ExchangePage() {
           return; // skip the finally clearance below
         } else {
           setTxResult({ success: false, message: result.error || 'Failed to submit order' });
+          setPendingOrder(null); // Clear pending order on error
         }
       }
     } catch (error: any) {
       setTxResult({ success: false, message: error.message || 'Failed to submit order' });
+      setPendingOrder(null); // Clear pending order on error
     } finally {
       setIsSubmitting(false);
-      setPendingOrder(null);
     }
   };
   
