@@ -1066,6 +1066,8 @@ export const removeTrustline = async (
         errorMessage = 'Invalid trustline parameters. Check the asset code and issuer.';
       } else if (opCode === 'op_change_trust_self_not_allowed') {
         errorMessage = 'Cannot create trustline for your own issued assets.';
+      } else if (opCode === 'op_has_sub_entries') {
+        errorMessage = 'Cannot remove trustline: You have open orders or offers involving this asset. Cancel them first.';
       } else if (opCode === 'op_change_trust_success') {
         // This shouldn't happen as it would be caught above, but just in case
         errorMessage = 'Trustline removed successfully';
