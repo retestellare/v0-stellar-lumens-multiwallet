@@ -1805,7 +1805,47 @@ export const submitManageBuyOffer = async (
 };
 
 /**
- * Submit a payment transaction
+ * Check if a recipient account has an active trustline for a specific asset
+ */
+export const recipientHasTrustline = async (
+  recipientAddress: string,
+  assetCode: string,
+  assetIssuer: string
+): Promise<boolean> => {
+  try {
+    // XLM (native) doesn't require a trustline
+    if (assetCode === 'XLM' || assetCode === 'native' || !assetIssuer) {
+      return true;
+    }
+
+    // Fetch recipient account balances
+    const response = await fetch(`${HORIZON_URL}/accounts/${encodeURIComponent(recipientAddress)}`);
+    if (!response.ok) {
+      console.warn(`[v0] Could not fetch recipient account: ${response.status}`);
+      // If we can't verify, we'll let the transaction attempt and catch the error
+      return true;
+    }
+
+    const accountData = await response.json();
+    const balances = accountData.balances || [];
+
+    // Check if recipient has a trustline for this asset
+    const hasTrust = balances.some((b: any) =>
+      b.asset_code === assetCode && b.asset_issuer === assetIssuer
+    );
+
+    return hasTrust;
+  } catch (error) {
+    console.warn('[v0] Error checking recipient trustline:', error);
+    // On error, return true to allow transaction attempt (will fail with clear error)
+    return true;
+  }
+};
+
+/**
+ * Submit a payment operation to the Stellar network with proper validation
+ * Handles both XLM (Asset.native) and custom tokens (Asset)
+ * Checks recipient trustline before attempting payment
  */
 export const submitPayment = async (
   secretKey: string,
@@ -1816,13 +1856,43 @@ export const submitPayment = async (
   memo?: string
 ): Promise<{ success: boolean; hash?: string; error?: string }> => {
   try {
+    // Validate inputs
+    if (!secretKey || !destinationAddress || !assetCode || !amount) {
+      return {
+        success: false,
+        error: 'Missing required parameters for payment submission',
+      };
+    }
+
+    // Ensure amount is a string and validate format
+    const amountString = String(amount).trim();
+    if (!amountString || isNaN(parseFloat(amountString)) || parseFloat(amountString) <= 0) {
+      return {
+        success: false,
+        error: 'Invalid payment amount. Must be a positive number.',
+      };
+    }
+
+    // For non-XLM assets, verify recipient has trustline BEFORE attempting payment
+    if (assetCode !== 'XLM' && assetCode !== 'native' && assetIssuer) {
+      console.log('[v0] Checking recipient trustline for:', { assetCode, assetIssuer });
+      const hasTrust = await recipientHasTrustline(destinationAddress, assetCode, assetIssuer);
+
+      if (!hasTrust) {
+        return {
+          success: false,
+          error: `Recipient does not have a trustline for ${assetCode}. They need to add this asset to their wallet first.`,
+        };
+      }
+    }
+
     const server = new Horizon.Server(HORIZON_URL);
     const keypair = Keypair.fromSecret(secretKey);
     const sourcePublicKey = keypair.publicKey();
-    
+
     // Load source account
     const account = await server.loadAccount(sourcePublicKey);
-    
+
     // Load LIVE network fees based on current congestion
     let dynamicFee = BASE_FEE;
     try {
@@ -1834,13 +1904,20 @@ export const submitPayment = async (
     } catch {
       // If feeStats fails, keep BASE_FEE as fallback
     }
-    
-    // Create asset
-    const asset = assetCode === 'XLM' || !assetIssuer 
-      ? Asset.native() 
+
+    // Create asset object - handle both XLM and custom tokens
+    const asset = assetCode === 'XLM' || assetCode === 'native' || !assetIssuer
+      ? Asset.native()
       : new Asset(assetCode, assetIssuer);
-    
-    // Build transaction with live fees
+
+    console.log('[v0] Submitting payment:', {
+      destination: destinationAddress.substring(0, 8) + '...',
+      asset: asset.code,
+      amount: amountString,
+      fee: dynamicFee,
+    });
+
+    // Build transaction with proper type conversion
     let txBuilder = new TransactionBuilder(account, {
       fee: dynamicFee,
       networkPassphrase: NETWORK_PASSPHRASE,
@@ -1849,34 +1926,47 @@ export const submitPayment = async (
         Operation.payment({
           destination: destinationAddress,
           asset: asset,
-          amount: amount,
+          amount: amountString, // Always ensure this is a string
         })
       );
-    
-    // Add memo if provided
-    if (memo) {
+
+    // Add memo if provided (max 28 characters for text memo)
+    if (memo && memo.trim().length > 0) {
       txBuilder = txBuilder.addMemo(Memo.text(memo.substring(0, 28)));
     }
-    
+
     const transaction = txBuilder.setTimeout(180).build();
     transaction.sign(keypair);
-    
+
     const result = await server.submitTransaction(transaction);
+
+    console.log('[v0] Payment submitted successfully:', result.hash);
     return { success: true, hash: result.hash };
   } catch (error: any) {
+    console.error('[v0] Payment submission error:', error);
+
     let errorMessage = error.message || 'Payment failed';
-    if (error.response?.data?.extras?.result_codes) {
-      const codes = error.response.data.extras.result_codes;
-      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    const resultCodes = error.response?.data?.extras?.result_codes;
+
+    if (resultCodes) {
+      const opCode = resultCodes.operations?.[0] || resultCodes.transaction;
+
+      // Map specific Stellar error codes to user-friendly messages
+      if (opCode === 'op_underfunded' || errorMessage.includes('PAYMENT_UNDERFUNDED')) {
+        errorMessage = 'Insufficient balance to send this payment plus network fee';
+      } else if (opCode === 'op_no_trust' || errorMessage.includes('PAYMENT_NO_TRUST')) {
+        errorMessage = 'Recipient does not have a trustline for this asset';
+      } else if (opCode === 'op_no_issuer' || errorMessage.includes('PAYMENT_NO_ISSUER')) {
+        errorMessage = 'Asset issuer account not found on the network';
+      } else if (opCode === 'tx_bad_seq') {
+        errorMessage = 'Transaction sequence error. Please try again.';
+      } else if (opCode === 'tx_too_late') {
+        errorMessage = 'Transaction expired. Please try again.';
+      } else if (opCode) {
+        errorMessage = opCode;
+      }
     }
-    // Provide more detailed error for common Stellar issues
-    if (errorMessage.includes('PAYMENT_UNDERFUNDED')) {
-      errorMessage = 'Insufficient balance for payment (including network fee)';
-    } else if (errorMessage.includes('PAYMENT_NO_TRUST')) {
-      errorMessage = 'Recipient does not have a trustline for this asset';
-    } else if (errorMessage.includes('PAYMENT_NO_ISSUER')) {
-      errorMessage = 'Asset issuer not found';
-    }
+
     return { success: false, error: errorMessage };
   }
 };
