@@ -55,10 +55,10 @@ export async function POST(request: Request) {
 
     console.log('[v0] Transaction built successfully');
 
-    // Use toEnvelope().toXDR() to get the proper XDR format that can be reconstructed
-    const xdr = transaction.toEnvelope().toXDR('base64');
+    // Return the transaction XDR as a base64 string that can be reconstructed with TransactionBuilder.fromXDR()
+    const xdr = transaction.toXDR();
 
-    console.log('[v0] Transaction XDR created (base64)');
+    console.log('[v0] Transaction XDR created');
 
     return NextResponse.json({ success: true, xdr });
   } catch (error: any) {

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import * as StellarSdk from '@stellar/stellar-sdk';
+import { Keypair, TransactionBuilder, Horizon, Networks } from '@stellar/stellar-sdk';
 import { X, AlertCircle, Loader2 } from 'lucide-react';
 import { useWallet } from '@/lib/wallet-context';
 
@@ -66,43 +66,29 @@ export function RemoveTrustlineButton({
 
       console.log('[v0] Transaction XDR received from backend API (base64)');
 
-      // Step 2: Reconstruct transaction envelope from XDR
-      // @ts-ignore
-      const NetworksPassphrase = StellarSdk.Networks?.PUBLIC || 'Public Global Stellar Network ; October 2015';
+      // Step 2: Reconstruct transaction from XDR using TransactionBuilder
+      const networkPassphrase = Networks.PUBLIC;
       
-      // Reconstruct the TransactionEnvelope from base64 XDR
-      // @ts-ignore
-      const transactionEnvelope = StellarSdk.TransactionEnvelope.fromXDR(apiData.xdr, NetworksPassphrase);
+      // Use TransactionBuilder.fromXDR which handles the reconstruction properly
+      const transaction = TransactionBuilder.fromXDR(apiData.xdr, networkPassphrase);
 
-      if (!transactionEnvelope) {
-        throw new Error('Failed to reconstruct transaction envelope from XDR');
+      if (!transaction) {
+        throw new Error('Failed to reconstruct transaction from XDR');
       }
 
-      console.log('[v0] Transaction envelope reconstructed from XDR');
-
-      // Get the transaction object
-      // @ts-ignore
-      const tx = transactionEnvelope.v1()?.tx();
-      
-      if (!tx || typeof tx.getTransaction !== 'function') {
-        // For v1 envelopes, we need to work with the envelope directly
-        console.log('[v0] Using transaction envelope directly for signing');
-      }
-
-      console.log('[v0] Signing transaction with user secret key');
+      console.log('[v0] Transaction reconstructed from XDR');
 
       // Step 3: Sign transaction with user's secret key
-      // @ts-ignore
-      const keypair = StellarSdk.Keypair.fromSecret(globalDecryptedSecret);
-      transactionEnvelope.sign(keypair);
+      console.log('[v0] Signing transaction with user secret key');
+
+      const keypair = Keypair.fromSecret(globalDecryptedSecret);
+      transaction.sign(keypair);
 
       console.log('[v0] Transaction signed, submitting to Stellar network');
 
       // Step 4: Submit signed transaction to Stellar network
-      // @ts-ignore
-      const server = new StellarSdk.Horizon.Server('https://horizon.stellar.org');
-      // @ts-ignore
-      const result = await server.submitTransaction(transactionEnvelope);
+      const server = new Horizon.Server('https://horizon.stellar.org');
+      const result = await server.submitTransaction(transaction);
 
       console.log('[v0] Trustline removed successfully:', result.hash);
       setShowModal(false);
