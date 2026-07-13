@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Copy, Check, ExternalLink, Trash2, Send, Download, AlertCircle, Loader2, CheckCircle } from 'lucide-react';
+import { X, Copy, Check, ExternalLink, Trash2, Send, Download, AlertCircle, Loader2, CheckCircle, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { fetchTokenMetadataFromToml, submitPayment } from '@/lib/stellar-utils';
@@ -40,19 +40,24 @@ interface TomlData {
   redemptionInstructions?: string;
 }
 
+interface Recipient {
+  id: string;
+  address: string;
+  amount: string;
+  memo: string;
+}
+
 export function AssetDetailModal({ isOpen, onClose, asset, onSend, onReceive, onRemove }: AssetDetailModalProps) {
   const { globalDecryptedSecret, activeWallet } = useWallet();
   const [activeTab, setActiveTab] = useState<'about' | 'receive' | 'send'>('about');
-  const [sendView, setSendView] = useState<'selection' | 'form'>('selection');
   const [tomlData, setTomlData] = useState<TomlData | null>(null);
   const [loading, setLoading] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  // Multi-send state
+  const [recipients, setRecipients] = useState<Recipient[]>([{ id: '1', address: '', amount: '', memo: '' }]);
   const [sendLoading, setSendLoading] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendSuccess, setSendSuccess] = useState<string | null>(null);
-  const [recipientAddress, setRecipientAddress] = useState('');
-  const [sendAmount, setSendAmount] = useState('');
-  const [sendMemo, setSendMemo] = useState('');
 
   useEffect(() => {
     if (isOpen && asset?.issuer) {
@@ -101,79 +106,73 @@ export function AssetDetailModal({ isOpen, onClose, asset, onSend, onReceive, on
     }
   };
 
-  const handleSendClick = () => {
-    try {
-      setSendError(null);
-      setSendSuccess(null);
-      setSendView('form');
-    } catch (error) {
-      console.error('[v0] Error opening send form:', error);
-      setSendError('Failed to open send form. Please try again.');
+  const addRecipient = () => {
+    setRecipients(prev => [...prev, { id: Date.now().toString(), address: '', amount: '', memo: '' }]);
+  };
+
+  const removeRecipient = (id: string) => {
+    if (recipients.length > 1) {
+      setRecipients(prev => prev.filter(r => r.id !== id));
     }
   };
 
+  const updateRecipient = (id: string, field: keyof Recipient, value: string) => {
+    setRecipients(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
+  };
+
+  const getTotalAmount = () =>
+    recipients.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+
   const handleConfirmSend = async () => {
+    setSendError(null);
+    setSendSuccess(null);
+
+    if (!asset) { setSendError('No asset selected'); return; }
+    if (!globalDecryptedSecret) { setSendError('Wallet not unlocked. Please unlock your wallet first.'); return; }
+
+    for (const r of recipients) {
+      if (!r.address || r.address.length !== 56 || !r.address.startsWith('G')) {
+        setSendError(`Invalid address: ${r.address.substring(0, 12) || '(empty)'}`);
+        return;
+      }
+      if (!r.amount || parseFloat(r.amount) <= 0) {
+        setSendError('Each recipient must have a valid amount greater than zero.');
+        return;
+      }
+    }
+
+    const total = getTotalAmount();
+    const available = parseFloat(asset.balance || '0');
+    if (total > available) {
+      setSendError(`Total ${total.toFixed(7)} exceeds available balance ${available.toFixed(7)}`);
+      return;
+    }
+
+    setSendLoading(true);
     try {
-      setSendError(null);
-      setSendSuccess(null);
-
-      if (!asset) {
-        setSendError('No asset selected');
-        return;
+      for (const r of recipients) {
+        const result = await submitPayment(
+          globalDecryptedSecret,
+          r.address,
+          asset.code,
+          asset.issuer || '',
+          r.amount,
+          r.memo || undefined
+        );
+        if (!result.success) {
+          throw new Error(result.error || `Payment to ${r.address.substring(0, 8)}... failed`);
+        }
       }
-
-      if (!globalDecryptedSecret) {
-        setSendError('Wallet not unlocked. Please unlock your wallet first.');
-        return;
-      }
-
-      if (!recipientAddress || recipientAddress.length !== 56 || !recipientAddress.startsWith('G')) {
-        setSendError('Invalid recipient address');
-        return;
-      }
-
-      if (!sendAmount || parseFloat(sendAmount) <= 0) {
-        setSendError('Invalid amount. Must be greater than zero.');
-        return;
-      }
-
-      setSendLoading(true);
-
-      const result = await submitPayment(
-        globalDecryptedSecret,
-        recipientAddress,
-        asset.code,
-        asset.issuer || '',
-        sendAmount.toString(),
-        sendMemo || undefined
-      );
-
-      if (result.success) {
-        setSendSuccess(`Successfully sent ${sendAmount} ${asset.code} to ${recipientAddress.substring(0, 8)}...`);
-        setRecipientAddress('');
-        setSendAmount('');
-        setSendMemo('');
-        setTimeout(() => {
-          setSendView('selection');
-          setSendSuccess(null);
-        }, 2000);
-      } else {
-        setSendError(result.error || 'Failed to send payment');
-      }
+      const msg = recipients.length > 1
+        ? `Successfully sent to ${recipients.length} recipients!`
+        : `Successfully sent ${recipients[0].amount} ${asset.code} to ${recipients[0].address.substring(0, 8)}...`;
+      setSendSuccess(msg);
+      setRecipients([{ id: '1', address: '', amount: '', memo: '' }]);
     } catch (error) {
-      console.error('[v0] Error sending payment:', error);
       setSendError(error instanceof Error ? error.message : 'An unexpected error occurred');
     } finally {
       setSendLoading(false);
     }
-  };
-
-  const handleBackFromForm = () => {
-    setSendView('selection');
-    setSendError(null);
-    setRecipientAddress('');
-    setSendAmount('');
-    setSendMemo('');
   };
 
   if (!isOpen || !asset) return null;
@@ -337,48 +336,55 @@ export function AssetDetailModal({ isOpen, onClose, asset, onSend, onReceive, on
 
           {activeTab === 'send' && (
             <div className="space-y-4">
-              {sendView === 'selection' && (
-                <div className="py-8 text-center space-y-4">
-                  <p className="text-muted-foreground">Send {asset.code} to another wallet</p>
-                  <Button 
-                    onClick={handleSendClick}
-                    className="bg-primary text-primary-foreground w-full"
-                    disabled={sendLoading || !globalDecryptedSecret}
-                  >
-                    <Send className="w-4 h-4 mr-2" />
-                    Send {asset.code}
-                  </Button>
+              {/* Asset + balance header */}
+              <div className="flex items-center justify-between px-1">
+                <span className="text-sm font-medium">Send {asset.code}</span>
+                <span className="text-xs text-muted-foreground">
+                  Available: {parseFloat(asset.balance || '0').toFixed(7).replace(/\.?0+$/, '')} {asset.code}
+                </span>
+              </div>
+
+              {/* Feedback banners */}
+              {sendSuccess && (
+                <div className="p-3 bg-green-900/30 border border-green-700/50 rounded-lg flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
+                  <p className="text-xs text-green-200">{sendSuccess}</p>
+                </div>
+              )}
+              {sendError && (
+                <div className="p-3 bg-red-900/30 border border-red-700/50 rounded-lg flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-200">{sendError}</p>
                 </div>
               )}
 
-              {sendView === 'form' && (
-                <div className="space-y-4">
-                  {sendSuccess && (
-                    <div className="p-3 bg-green-900/30 border border-green-700/50 rounded-lg">
-                      <div className="flex items-start gap-2">
-                        <Check className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
-                        <p className="text-xs text-green-200">{sendSuccess}</p>
-                      </div>
+              {/* Recipient list */}
+              <div className="space-y-4">
+                {recipients.map((r, idx) => (
+                  <div key={r.id} className="p-3 bg-muted/30 border border-border/60 rounded-lg space-y-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-muted-foreground font-medium">
+                        Recipient {recipients.length > 1 ? idx + 1 : ''}
+                      </span>
+                      {recipients.length > 1 && (
+                        <button
+                          onClick={() => removeRecipient(r.id)}
+                          disabled={sendLoading}
+                          className="text-muted-foreground hover:text-red-400 transition-colors"
+                          aria-label="Remove recipient"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
-                  )}
 
-                  {sendError && (
-                    <div className="p-3 bg-red-900/30 border border-red-700/50 rounded-lg">
-                      <div className="flex items-start gap-2">
-                        <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                        <p className="text-xs text-red-200">{sendError}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-3">
                     <div>
-                      <label className="text-xs text-muted-foreground">Recipient Address</label>
+                      <label className="text-xs text-muted-foreground">Address</label>
                       <Input
                         type="text"
                         placeholder="GD4M5RUQ..."
-                        value={recipientAddress}
-                        onChange={(e) => setRecipientAddress(e.target.value)}
+                        value={r.address}
+                        onChange={e => updateRecipient(r.id, 'address', e.target.value)}
                         disabled={sendLoading}
                         className="mt-1 font-mono text-xs"
                       />
@@ -390,10 +396,11 @@ export function AssetDetailModal({ isOpen, onClose, asset, onSend, onReceive, on
                         <Input
                           type="number"
                           placeholder="0.00"
-                          value={sendAmount}
-                          onChange={(e) => setSendAmount(e.target.value)}
+                          value={r.amount}
+                          onChange={e => updateRecipient(r.id, 'amount', e.target.value)}
                           disabled={sendLoading}
                           step="0.0000001"
+                          min="0"
                         />
                         <div className="flex items-center px-3 bg-muted/50 rounded-lg border border-border text-xs text-muted-foreground whitespace-nowrap">
                           {asset.code}
@@ -402,48 +409,63 @@ export function AssetDetailModal({ isOpen, onClose, asset, onSend, onReceive, on
                     </div>
 
                     <div>
-                      <label className="text-xs text-muted-foreground">Memo (Optional)</label>
+                      <label className="text-xs text-muted-foreground">Memo (optional)</label>
                       <Input
                         type="text"
                         placeholder="Add a note..."
-                        value={sendMemo}
-                        onChange={(e) => setSendMemo(e.target.value.substring(0, 28))}
+                        value={r.memo}
+                        onChange={e => updateRecipient(r.id, 'memo', e.target.value.substring(0, 28))}
                         disabled={sendLoading}
                         maxLength={28}
                         className="mt-1 text-xs"
                       />
-                      <p className="text-xs text-muted-foreground mt-1">{sendMemo.length}/28 characters</p>
-                    </div>
-
-                    <div className="flex gap-2 pt-2">
-                      <Button
-                        onClick={handleBackFromForm}
-                        variant="outline"
-                        disabled={sendLoading}
-                        className="flex-1"
-                      >
-                        Back
-                      </Button>
-                      <Button
-                        onClick={handleConfirmSend}
-                        disabled={sendLoading || !recipientAddress || !sendAmount}
-                        className="flex-1 bg-primary text-primary-foreground"
-                      >
-                        {sendLoading ? (
-                          <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Sending...
-                          </>
-                        ) : (
-                          <>
-                            <Send className="w-4 h-4 mr-2" />
-                            Confirm Send
-                          </>
-                        )}
-                      </Button>
                     </div>
                   </div>
+                ))}
+              </div>
+
+              {/* Add recipient */}
+              <button
+                onClick={addRecipient}
+                disabled={sendLoading}
+                className="w-full py-2 border border-dashed border-border/60 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors flex items-center justify-center gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add another recipient
+              </button>
+
+              {/* Total + Send button */}
+              {recipients.length > 1 && (
+                <div className="flex items-center justify-between px-1 text-xs text-muted-foreground">
+                  <span>Total</span>
+                  <span className="font-medium text-foreground">
+                    {getTotalAmount().toFixed(7).replace(/\.?0+$/, '')} {asset.code}
+                  </span>
                 </div>
+              )}
+
+              <Button
+                onClick={handleConfirmSend}
+                disabled={sendLoading || !globalDecryptedSecret || recipients.every(r => !r.address || !r.amount)}
+                className="w-full bg-primary text-primary-foreground"
+              >
+                {sendLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4 mr-2" />
+                    {recipients.length > 1 ? `Send to ${recipients.length} Recipients` : `Send ${asset.code}`}
+                  </>
+                )}
+              </Button>
+
+              {!globalDecryptedSecret && (
+                <p className="text-xs text-muted-foreground text-center">
+                  Unlock your wallet to send
+                </p>
               )}
             </div>
           )}
