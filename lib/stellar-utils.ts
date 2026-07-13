@@ -1006,50 +1006,29 @@ export const removeTrustline = async (
     const keypair = Keypair.fromSecret(secretKey);
     const sourcePublicKey = keypair.publicKey();
 
-    console.log('[v0] Removing trustline for:', {
-      asset: assetCode,
-      issuer: assetIssuer.substring(0, 8) + '...',
-    });
-
     // Load source account
     const account = await server.loadAccount(sourcePublicKey);
 
-    // Create asset - must pass both code and issuer for non-native assets
+    // Create asset
     const asset = new Asset(assetCode, assetIssuer);
 
-    console.log('[v0] Creating changeTrust operation with:', {
-      assetCode,
-      assetIssuer: assetIssuer.substring(0, 8) + '...',
-    });
-
-    // Build changeTrust transaction to remove trustline
-    // CRITICAL: In Stellar SDK, to remove a trustline, we set limit to undefined/not provided
-    // OR we need to use exactly '0' but it must be a valid numeric string
-    // The operation will remove the trustline only if the balance is exactly 0
-    const operation = Operation.changeTrust({
-      asset: asset,
-      limit: '0', // Setting to '0' removes the trustline (balance must be zero)
-    });
-
+    // Build changeTrust transaction with limit '0' to remove the trustline
     const transaction = new TransactionBuilder(account, {
       fee: BASE_FEE,
       networkPassphrase: NETWORK_PASSPHRASE,
     })
-      .addOperation(operation)
+      .addOperation(
+        Operation.changeTrust({
+          asset: asset,
+          limit: '0',
+        })
+      )
       .setTimeout(180)
       .build();
 
-    console.log('[v0] Transaction built, signing...');
-
-    // Sign transaction with the account's keypair
     transaction.sign(keypair);
 
-    console.log('[v0] Transaction signed, submitting to network...');
-
-    // Submit transaction to network
     const result = await server.submitTransaction(transaction);
-
-    console.log('[v0] Trustline removed successfully:', result.hash);
 
     // Wait a moment for ledger to process
     await new Promise(resolve => setTimeout(resolve, 500));
