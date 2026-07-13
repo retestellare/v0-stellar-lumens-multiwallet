@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, CheckCircle } from 'lucide-react';
 import { useWallet } from '@/lib/wallet-context';
 import { removeTrustline } from '@/lib/stellar-utils';
 
@@ -18,8 +18,9 @@ export function RemoveTrustlineButton({
   balance,
   onSuccess,
 }: RemoveTrustlineButtonProps) {
-  const { globalDecryptedSecret } = useWallet();
+  const { globalDecryptedSecret, activeWalletId, updateBalances } = useWallet();
   const [isPending, setIsPending] = useState(false);
+  const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Only show button if balance is zero
@@ -38,7 +39,16 @@ export function RemoveTrustlineButton({
     const result = await removeTrustline(globalDecryptedSecret, assetCode, assetIssuer);
 
     if (result.success) {
-      onSuccess?.();
+      // Refresh balances so the token disappears from the list
+      if (activeWalletId) {
+        await updateBalances(activeWalletId);
+      }
+      setSuccess(true);
+      setIsPending(false);
+      // Give the user a moment to see the success state, then close
+      setTimeout(() => {
+        onSuccess?.();
+      }, 1200);
     } else {
       setError(result.error || 'Failed to remove trustline');
       setIsPending(false);
@@ -49,13 +59,22 @@ export function RemoveTrustlineButton({
     <div className="mt-4 space-y-2">
       <button
         onClick={handleRemoveTrustline}
-        disabled={isPending || !globalDecryptedSecret}
-        className="w-full px-4 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+        disabled={isPending || success || !globalDecryptedSecret}
+        className={`w-full px-4 py-2.5 font-medium rounded-lg transition-colors flex items-center justify-center gap-2 text-white
+          ${success
+            ? 'bg-green-600 cursor-default'
+            : 'bg-red-600 hover:bg-red-700 disabled:bg-gray-700 disabled:cursor-not-allowed'
+          }`}
       >
         {isPending ? (
           <>
             <Loader2 className="w-4 h-4 animate-spin" />
             Removing...
+          </>
+        ) : success ? (
+          <>
+            <CheckCircle className="w-4 h-4" />
+            Trustline Removed
           </>
         ) : (
           'Remove Trustline'
