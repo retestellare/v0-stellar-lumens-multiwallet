@@ -16,7 +16,7 @@ import { CompactOrderForm } from '@/components/compact-order-form';
 import { OrderBookSkeleton, ChartSkeleton } from '@/components/skeleton-loaders';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, TrendingUp, ArrowRightLeft, X, Loader2, AlertCircle, History, ClipboardList, CheckCircle2, BarChart3 } from 'lucide-react';
+import { ArrowLeft, TrendingUp, ArrowRightLeft, X, Loader2, History, ClipboardList, CheckCircle2, BarChart3 } from 'lucide-react';
 import { WalletSelectorDropdown } from '@/components/wallet-selector-dropdown';
 import Link from 'next/link';
 
@@ -89,8 +89,7 @@ export default function ExchangePage() {
   const [balancesLoading, setBalancesLoading] = useState(false);
 
   // Trustline retry state
-  const [pendingTrustlineAsset, setPendingTrustlineAsset] = useState<{ code: string; issuer: string } | null>(null);
-  const [showTrustlineAlert, setShowTrustlineAlert] = useState(false);
+
 
   const router = useRouter();
 
@@ -648,20 +647,23 @@ export default function ExchangePage() {
           setAvailableBuyingBalance(buyingAvail);
         }
       } else {
-        // Handle op_buy_no_trust error - trustline may have failed or been needed but not created
+        // Handle op_buy_no_trust error — silently create trustline and retry once
         if (result.error && (result.error.includes('op_buy_no_trust') || result.error.includes('no_trust'))) {
-          // Keep pendingOrder alive so handleCreateTrustlineAndRetry can reuse it
-          setPendingTrustlineAsset({ code: buyingAsset, issuer: buyingIssuer });
-          setShowTrustlineAlert(true);
-          setTxResult({ 
-            success: false, 
-            message: `Trustline for ${buyingAsset} needs to be created.` 
-          });
-          setIsSubmitting(false);
-          return; // skip the finally clearance below
+          setTxResult({ success: false, message: `Creating trustline for ${buyingAsset}...` });
+          const trustResult = await addTrustline(secret, buyingAsset, buyingIssuer);
+          if (!trustResult.success) {
+            setTxResult({ success: false, message: `Failed to create trustline: ${trustResult.error}` });
+            setPendingOrder(null);
+          } else {
+            if (activeWalletId) await updateBalances(activeWalletId);
+            setTxResult({ success: true, message: `Trustline created for ${buyingAsset}. Retrying order...` });
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            // Retry the order now that the trustline exists
+            await submitOrder(order, secret);
+          }
         } else {
           setTxResult({ success: false, message: result.error || 'Failed to submit order' });
-          setPendingOrder(null); // Clear pending order on error
+          setPendingOrder(null);
         }
       }
     } catch (error: any) {
@@ -672,51 +674,6 @@ export default function ExchangePage() {
     }
   };
   
-  const handleCreateTrustlineAndRetry = async () => {
-    if (!globalDecryptedSecret || !pendingTrustlineAsset || !pendingOrder) {
-      setTxResult({ success: false, message: 'Missing required information to create trustline.' });
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      setShowTrustlineAlert(false);
-
-      // Create the trustline
-      const trustResult = await addTrustline(
-        globalDecryptedSecret,
-        pendingTrustlineAsset.code,
-        pendingTrustlineAsset.issuer
-      );
-
-      if (!trustResult.success) {
-        setTxResult({ success: false, message: `Failed to create trustline: ${trustResult.error}` });
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Refresh balances after adding trustline
-      if (activeWalletId) {
-        await updateBalances(activeWalletId);
-      }
-
-      // Small delay to let the blockchain confirm
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      setTxResult({ success: true, message: `Trustline created for ${pendingTrustlineAsset.code}. Retrying order...` });
-
-      // Retry the order submission
-      await new Promise(resolve => setTimeout(resolve, 500));
-      await submitOrder(pendingOrder, globalDecryptedSecret);
-
-      setPendingTrustlineAsset(null);
-    } catch (error: any) {
-      setTxResult({ success: false, message: error.message || 'Failed to create trustline' });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const handleCancelOrder = (id: string) => {
     if (!globalDecryptedSecret) {
       setTxResult({ success: false, message: 'Wallet is locked. Please restart the app to unlock.' });
@@ -1041,49 +998,6 @@ export default function ExchangePage() {
       
 
       
-      {/* Trustline Alert Modal */}
-      {showTrustlineAlert && pendingTrustlineAsset && (
-        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
-          <div className="bg-card rounded-2xl border border-border/70 p-6 max-w-sm space-y-4">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="w-6 h-6 text-warning flex-shrink-0 mt-0.5" />
-              <div>
-                <h3 className="font-semibold text-foreground mb-1">Create Trustline</h3>
-                <p className="text-sm text-muted-foreground">
-                  A trustline must be created for <span className="font-mono font-semibold text-foreground">{pendingTrustlineAsset.code}</span> before you can receive it.
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowTrustlineAlert(false);
-                  setPendingTrustlineAsset(null);
-                  setPendingOrder(null);
-                }}
-                className="flex-1 px-4 py-2 rounded-lg border border-border/60 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreateTrustlineAndRetry}
-                disabled={isSubmitting}
-                className="flex-1 px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  'Create Trustline & Retry'
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Transaction Result Toast */}
       {txResult && (
         <div className={`fixed bottom-4 right-4 z-50 p-4 rounded-lg border ${
