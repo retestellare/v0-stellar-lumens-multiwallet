@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { X, Copy, Check, ExternalLink, Trash2, Send, Download, AlertCircle, Loader2, CheckCircle, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { fetchTokenMetadataFromToml, submitPayment } from '@/lib/stellar-utils';
+import { fetchTokenMetadataFromToml, submitPayment, calculateAvailableBalance } from '@/lib/stellar-utils';
 import Image from 'next/image';
 import { RemoveTrustlineButton } from "./remove-trustline-button";
 import { useWallet } from '@/lib/wallet-context';
@@ -58,6 +58,9 @@ export function AssetDetailModal({ isOpen, onClose, asset, onSend, onReceive, on
   const [sendLoading, setSendLoading] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendSuccess, setSendSuccess] = useState<string | null>(null);
+  // Spendable balance (accounts for reserves + open orders)
+  const [spendableBalance, setSpendableBalance] = useState<string | null>(null);
+  const [spendableLoading, setSpendableLoading] = useState(false);
 
   useEffect(() => {
     if (isOpen && asset?.issuer) {
@@ -106,6 +109,26 @@ export function AssetDetailModal({ isOpen, onClose, asset, onSend, onReceive, on
     }
   };
 
+  // Fetch the true spendable balance whenever the Send tab is opened
+  useEffect(() => {
+    if (activeTab !== 'send' || !asset || !activeWallet?.publicKey) return;
+    setSpendableBalance(null);
+    setSpendableLoading(true);
+    calculateAvailableBalance(activeWallet.publicKey, asset.code, asset.issuer || '')
+      .then(val => setSpendableBalance(val))
+      .catch(() => setSpendableBalance(asset.balance || '0'))
+      .finally(() => setSpendableLoading(false));
+  }, [activeTab, asset, activeWallet?.publicKey]);
+
+  // Set MAX amount split evenly across all recipients
+  const setMaxForRecipient = (id: string) => {
+    const spendable = parseFloat(spendableBalance || asset?.balance || '0');
+    if (spendable <= 0) return;
+    // Per-recipient share = spendable / total recipients
+    const perRecipient = (spendable / recipients.length).toFixed(7).replace(/\.?0+$/, '');
+    setRecipients(prev => prev.map(r => r.id === id ? { ...r, amount: perRecipient } : r));
+  };
+
   const addRecipient = () => {
     setRecipients(prev => [...prev, { id: Date.now().toString(), address: '', amount: '', memo: '' }]);
   };
@@ -142,9 +165,9 @@ export function AssetDetailModal({ isOpen, onClose, asset, onSend, onReceive, on
     }
 
     const total = getTotalAmount();
-    const available = parseFloat(asset.balance || '0');
+    const available = parseFloat(spendableBalance ?? asset.balance ?? '0');
     if (total > available) {
-      setSendError(`Total ${total.toFixed(7)} exceeds available balance ${available.toFixed(7)}`);
+      setSendError(`Total ${total.toFixed(7)} exceeds spendable balance ${available.toFixed(7)} ${asset.code}`);
       return;
     }
 
@@ -339,9 +362,16 @@ export function AssetDetailModal({ isOpen, onClose, asset, onSend, onReceive, on
               {/* Asset + balance header */}
               <div className="flex items-center justify-between px-1">
                 <span className="text-sm font-medium">Send {asset.code}</span>
-                <span className="text-xs text-muted-foreground">
-                  Available: {parseFloat(asset.balance || '0').toFixed(7).replace(/\.?0+$/, '')} {asset.code}
-                </span>
+                <div className="text-right">
+                  <p className="text-xs text-muted-foreground">Spendable</p>
+                  {spendableLoading ? (
+                    <div className="h-4 w-28 bg-muted/50 animate-pulse rounded mt-0.5" />
+                  ) : (
+                    <p className="text-sm font-semibold text-primary">
+                      {parseFloat(spendableBalance ?? asset.balance ?? '0').toFixed(7).replace(/\.?0+$/, '')} {asset.code}
+                    </p>
+                  )}
+                </div>
               </div>
 
               {/* Feedback banners */}
@@ -391,8 +421,18 @@ export function AssetDetailModal({ isOpen, onClose, asset, onSend, onReceive, on
                     </div>
 
                     <div>
-                      <label className="text-xs text-muted-foreground">Amount</label>
-                      <div className="flex gap-2 mt-1">
+                      <div className="flex items-center justify-between mt-1 mb-1">
+                        <label className="text-xs text-muted-foreground">Amount</label>
+                        <button
+                          type="button"
+                          onClick={() => setMaxForRecipient(r.id)}
+                          disabled={sendLoading || spendableLoading || !spendableBalance}
+                          className="text-xs font-semibold text-primary hover:text-primary/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors px-2 py-0.5 rounded bg-primary/10 hover:bg-primary/20"
+                        >
+                          MAX
+                        </button>
+                      </div>
+                      <div className="flex gap-2">
                         <Input
                           type="number"
                           placeholder="0.00"
