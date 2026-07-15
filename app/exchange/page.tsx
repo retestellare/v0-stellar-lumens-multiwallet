@@ -638,6 +638,40 @@ export default function ExchangePage() {
           setAvailableSellingBalance(sellingAvail);
           setAvailableBuyingBalance(buyingAvail);
         }
+      } else if (result.error && (result.error.includes('op_buy_no_trust') || result.error.includes('no_trust'))) {
+        // Network rejected due to missing trustline — pre-check missed it (stale balances).
+        // Create the trustline now and place the offer a second time, no recursion.
+        setTxResult({ success: false, message: `Creating trustline for ${buyingAsset}... (tx 1/2)` });
+        const trustResult = await addTrustline(secret, buyingAsset, buyingIssuer);
+        if (!trustResult.success) {
+          setTxResult({ success: false, message: `Failed to create trustline: ${trustResult.error}` });
+          setPendingOrder(null);
+        } else {
+          if (activeWalletId) await updateBalances(activeWalletId);
+          setTxResult({ success: true, message: `Trustline created for ${buyingAsset}. Placing order... (tx 2/2)` });
+          await new Promise(resolve => setTimeout(resolve, 800));
+          const retry = await placeOffer(order, secret);
+          if (retry.success) {
+            setTxResult({ success: true, message: `Order placed! TX: ${retry.hash?.substring(0, 8)}...` });
+            setPendingOrder(null);
+            if (order.type === 'buy') { setBuyPrice(''); setBuyAmount(''); }
+            else { setSellPrice(''); setSellAmount(''); }
+            const data = await getOrderBook(sellingAsset, sellingIssuer, buyingAsset, buyingIssuer);
+            setOrderBook(data);
+            if (activeWalletId && activeWallet) {
+              await updateBalances(activeWalletId);
+              const [sa, ba] = await Promise.all([
+                calculateAvailableBalance(activeWallet.publicKey, sellingAsset, sellingIssuer),
+                calculateAvailableBalance(activeWallet.publicKey, buyingAsset, buyingIssuer),
+              ]);
+              setAvailableSellingBalance(sa);
+              setAvailableBuyingBalance(ba);
+            }
+          } else {
+            setTxResult({ success: false, message: retry.error || 'Order failed after trustline creation' });
+            setPendingOrder(null);
+          }
+        }
       } else {
         setTxResult({ success: false, message: result.error || 'Failed to submit order' });
         setPendingOrder(null);
