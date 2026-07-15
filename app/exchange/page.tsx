@@ -556,7 +556,7 @@ export default function ExchangePage() {
     submitOrder({ type: 'sell', price, amount }, globalDecryptedSecret);
   };
   
-  // Inner helper — places the actual offer on-chain. Never touches isSubmitting.
+  // Inner helper — places the actual offer on-chain
   const placeOffer = async (order: { type: 'buy' | 'sell'; price: string; amount: string }, secret: string) => {
     let result;
     if (order.type === 'buy') {
@@ -589,9 +589,13 @@ export default function ExchangePage() {
     setPendingOrder(order);
 
     try {
+      // Show single unified message while processing both steps
+      setTxResult({ success: false, message: 'Processing order...' });
+
       // ── Step 1: ensure trustline exists before placing the offer ──────────
       const assetCode   = buyingAsset;
       const assetIssuer = buyingIssuer;
+      let needsTrustlineCreated = false;
 
       if (assetCode !== 'XLM' && assetIssuer) {
         const hasTrust = activeWallet?.balances
@@ -599,17 +603,18 @@ export default function ExchangePage() {
           : false;
 
         if (!hasTrust) {
-          setTxResult({ success: false, message: `Creating trustline for ${assetCode}... (tx 1/2)` });
           const trustResult = await addTrustline(secret, assetCode, assetIssuer);
           if (!trustResult.success) {
-            setTxResult({ success: false, message: `Failed to create trustline: ${trustResult.error}` });
+            setTxResult({ success: false, message: `Failed: ${trustResult.error}` });
             setPendingOrder(null);
             return;
           }
-          // Refresh balances so the wallet knows about the new trustline
+          // Trustline was successfully created on mainnet
+          needsTrustlineCreated = true;
+          // Refresh balances to reflect the new trustline
           if (activeWalletId) await updateBalances(activeWalletId);
-          setTxResult({ success: true, message: `Trustline created for ${assetCode}. Placing order... (tx 2/2)` });
-          await new Promise(resolve => setTimeout(resolve, 800));
+          // Wait for ledger to fully process the trustline before attempting the offer
+          await new Promise(resolve => setTimeout(resolve, 1200));
         }
       }
 
@@ -617,6 +622,7 @@ export default function ExchangePage() {
       const result = await placeOffer(order, secret);
 
       if (result.success) {
+        // Success! Clear form, refresh data, show final confirmation
         setTxResult({ success: true, message: `Order placed! TX: ${result.hash?.substring(0, 8)}...` });
         setPendingOrder(null);
         if (order.type === 'buy') {
@@ -626,6 +632,7 @@ export default function ExchangePage() {
           setSellPrice('');
           setSellAmount('');
         }
+        // Refresh order book and available balances
         const data = await getOrderBook(sellingAsset, sellingIssuer, buyingAsset, buyingIssuer);
         setOrderBook(data);
         if (activeWalletId && activeWallet) {
@@ -638,17 +645,18 @@ export default function ExchangePage() {
           setAvailableBuyingBalance(buyingAvail);
         }
       } else if (result.error && (result.error.includes('op_buy_no_trust') || result.error.includes('no_trust'))) {
-        // Network rejected due to missing trustline — pre-check missed it (stale balances).
-        // Create the trustline now and place the offer a second time, no recursion.
-        setTxResult({ success: false, message: `Creating trustline for ${buyingAsset}... (tx 1/2)` });
+        // Network rejected due to missing trustline (pre-check missed it due to stale balances).
+        // Create trustline and retry the offer.
         const trustResult = await addTrustline(secret, buyingAsset, buyingIssuer);
         if (!trustResult.success) {
-          setTxResult({ success: false, message: `Failed to create trustline: ${trustResult.error}` });
+          setTxResult({ success: false, message: `Failed: ${trustResult.error}` });
           setPendingOrder(null);
         } else {
+          // Trustline created successfully, now retry the offer
           if (activeWalletId) await updateBalances(activeWalletId);
-          setTxResult({ success: true, message: `Trustline created for ${buyingAsset}. Placing order... (tx 2/2)` });
-          await new Promise(resolve => setTimeout(resolve, 800));
+          // Wait for ledger to fully confirm the trustline
+          await new Promise(resolve => setTimeout(resolve, 1200));
+          
           const retry = await placeOffer(order, secret);
           if (retry.success) {
             setTxResult({ success: true, message: `Order placed! TX: ${retry.hash?.substring(0, 8)}...` });
@@ -667,7 +675,7 @@ export default function ExchangePage() {
               setAvailableBuyingBalance(ba);
             }
           } else {
-            setTxResult({ success: false, message: retry.error || 'Order failed after trustline creation' });
+            setTxResult({ success: false, message: `Failed: ${retry.error || 'Order failed after trustline creation'}` });
             setPendingOrder(null);
           }
         }
