@@ -5,7 +5,6 @@ import { Header } from '@/components/header';
 import { useWallet } from '@/lib/wallet-context';
 import { Button } from '@/components/ui/button';
 import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations, getAccountTrades, getXLMUSDStats, hasTrustline, addTrustline, calculateAvailableBalance } from '@/lib/stellar-utils';
-import { TradingPairHeader } from '@/components/trading-pair-header';
 import { OrderBook } from '@/components/order-book';
 import { TradeHistory } from '@/components/trade-history';
 import { MyOrders } from '@/components/my-orders';
@@ -796,16 +795,6 @@ export default function ExchangePage() {
             </div>
           </div>
 
-          {/* Trading Pair Header */}
-          <TradingPairHeader
-            sellingAsset={sellingAsset}
-            sellingIssuer={sellingIssuer}
-            buyingAsset={buyingAsset}
-            buyingIssuer={buyingIssuer}
-            onSwap={handleSwapPair}
-            stats={xlmUsdStats || undefined}
-          />
-
           {/* Token Pair Selector - Integrated Oval Design */}
           <div className="flex flex-col items-center gap-4">
             <div className="glow-border rounded-full px-8 py-6 sm:px-12 sm:py-8 flex items-center justify-center gap-4 sm:gap-8 border-2">
@@ -901,6 +890,47 @@ export default function ExchangePage() {
 
             {/* Right: Quick Stats */}
             <div className="space-y-4">
+              {/* Market Stats */}
+              {xlmUsdStats && (
+                <div className="glow-border p-4 rounded-lg">
+                  <div className="text-center mb-3 pb-3 border-b border-border/50">
+                    <p className="text-xs text-muted-foreground">XLM / USD Market Stats</p>
+                  </div>
+                  <div className="space-y-2">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">% Change (24h)</p>
+                      <p className={`font-bold text-sm ${xlmUsdStats.priceChange24h >= 0 ? 'text-accent' : 'text-destructive'}`}>
+                        {xlmUsdStats.priceChange24h >= 0 ? '+' : ''}{xlmUsdStats.priceChange24h.toFixed(2)}%
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Volume (24h)</p>
+                      <p className="font-bold text-sm text-foreground">{xlmUsdStats.volume24h}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Low (24h)</p>
+                        <p className="font-bold text-xs text-foreground">{parseFloat(xlmUsdStats.low24h).toFixed(6)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">High (24h)</p>
+                        <p className="font-bold text-xs text-foreground">{parseFloat(xlmUsdStats.high24h).toFixed(6)}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Open (24h)</p>
+                        <p className="font-bold text-xs text-foreground">{parseFloat(xlmUsdStats.open24h).toFixed(6)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Close (24h)</p>
+                        <p className="font-bold text-xs text-foreground">{parseFloat(xlmUsdStats.close24h).toFixed(6)}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="glow-border p-4 rounded-lg text-center">
                 <p className="text-xs text-muted-foreground mb-2">Best Bid</p>
                 <p className="text-2xl font-bold text-primary">
