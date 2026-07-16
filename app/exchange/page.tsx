@@ -738,6 +738,60 @@ export default function ExchangePage() {
     }
   };
 
+  const [cancellingAll, setCancellingAll] = useState(false);
+
+  const handleCancelAllOrders = async () => {
+    if (!globalDecryptedSecret) {
+      setTxResult({ success: false, message: 'Wallet is locked. Please restart the app to unlock.' });
+      return;
+    }
+    const ordersToCancel = myOrders.slice(0, 99);
+    if (ordersToCancel.length === 0) return;
+
+    setCancellingAll(true);
+    setTxResult(null);
+    let cancelled = 0;
+    let failed = 0;
+
+    for (const order of ordersToCancel) {
+      try {
+        const result = await cancelOffer(
+          globalDecryptedSecret,
+          order.id,
+          order.sellingCode,
+          order.sellingIssuer,
+          order.buyingCode,
+          order.buyingIssuer
+        );
+        if (result.success) {
+          cancelled++;
+          setMyOrders(prev => prev.filter(o => o.id !== order.id));
+        } else {
+          failed++;
+        }
+      } catch {
+        failed++;
+      }
+    }
+
+    // Refresh available balances after bulk cancellation
+    if (activeWalletId && activeWallet) {
+      const [sellingAvail, buyingAvail] = await Promise.all([
+        calculateAvailableBalance(activeWallet.publicKey, sellingAsset, sellingIssuer),
+        calculateAvailableBalance(activeWallet.publicKey, buyingAsset, buyingIssuer),
+      ]);
+      setAvailableSellingBalance(sellingAvail);
+      setAvailableBuyingBalance(buyingAvail);
+    }
+
+    if (failed === 0) {
+      setTxResult({ success: true, message: `Cancelled ${cancelled} order${cancelled !== 1 ? 's' : ''}` });
+    } else {
+      setTxResult({ success: false, message: `Cancelled ${cancelled}, failed ${failed}` });
+    }
+    setCancellingAll(false);
+  };
+
   // Smart number formatter to remove excessive decimals
   const formatNumber = (num: string | number): string => {
     const n = typeof num === 'string' ? parseFloat(num) : num;
@@ -998,6 +1052,8 @@ export default function ExchangePage() {
                     orders={myOrders}
                     loading={ordersLoading}
                     onCancelOrder={handleCancelOrder}
+                    onCancelAll={handleCancelAllOrders}
+                    cancellingAll={cancellingAll}
                     buyingAsset={buyingAsset}
                     sellingAsset={sellingAsset}
                   />

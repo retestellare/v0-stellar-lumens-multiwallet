@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { X, ArrowDownRight, ArrowUpRight, TrendingUp, TrendingDown, RotateCw } from 'lucide-react';
+import { X, ArrowDownRight, ArrowUpRight, TrendingUp, TrendingDown, RotateCw, Trash2 } from 'lucide-react';
 
 interface ActiveOrder {
   id: string;
@@ -21,6 +21,8 @@ interface MyOrdersProps {
   orders: ActiveOrder[];
   loading: boolean;
   onCancelOrder: (id: string) => void;
+  onCancelAll: () => void;
+  cancellingAll?: boolean;
   buyingAsset: string;
   sellingAsset: string;
 }
@@ -31,7 +33,7 @@ const truncateIssuer = (issuer: string) => {
   return `${issuer.slice(0, 4)}...${issuer.slice(-4)}`;
 };
 
-export function MyOrders({ orders, loading, onCancelOrder }: MyOrdersProps) {
+export function MyOrders({ orders, loading, onCancelOrder, onCancelAll, cancellingAll }: MyOrdersProps) {
   const [reversedOrderIds, setReversedOrderIds] = useState<Set<string>>(new Set());
 
   const toggleReversed = (orderId: string) => {
@@ -55,13 +57,37 @@ export function MyOrders({ orders, loading, onCancelOrder }: MyOrdersProps) {
               {orders.length} open order{orders.length !== 1 ? 's' : ''}
             </p>
           </div>
-          <div className="flex items-center gap-3 text-xs">
-            <span className="flex items-center gap-1.5 text-primary">
-              <TrendingUp className="w-3.5 h-3.5" /> Buy
-            </span>
-            <span className="flex items-center gap-1.5 text-destructive">
-              <TrendingDown className="w-3.5 h-3.5" /> Sell
-            </span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 text-xs">
+              <span className="flex items-center gap-1.5 text-primary">
+                <TrendingUp className="w-3.5 h-3.5" /> Buy
+              </span>
+              <span className="flex items-center gap-1.5 text-destructive">
+                <TrendingDown className="w-3.5 h-3.5" /> Sell
+              </span>
+            </div>
+            {orders.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onCancelAll}
+                disabled={cancellingAll}
+                className="h-8 px-3 text-xs font-semibold text-destructive border-destructive/40 hover:bg-destructive/10 hover:border-destructive/70 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors"
+                title="Cancel all orders (up to 99)"
+              >
+                {cancellingAll ? (
+                  <span className="flex items-center gap-1.5">
+                    <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                    Cancelling...
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Cancel All
+                  </span>
+                )}
+              </Button>
+            )}
           </div>
         </div>
       </div>
