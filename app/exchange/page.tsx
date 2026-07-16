@@ -4,7 +4,7 @@ import React from 'react';
 import { Header } from '@/components/header';
 import { useWallet } from '@/lib/wallet-context';
 import { Button } from '@/components/ui/button';
-import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations, getAccountTrades, getXLMUSDStats, hasTrustline, addTrustline, calculateAvailableBalance } from '@/lib/stellar-utils';
+import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, cancelAllOffers, getTradeAggregations, getAccountTrades, getXLMUSDStats, hasTrustline, addTrustline, calculateAvailableBalance } from '@/lib/stellar-utils';
 import { OrderBook } from '@/components/order-book';
 import { TradeHistory } from '@/components/trade-history';
 import { MyOrders } from '@/components/my-orders';
@@ -745,50 +745,40 @@ export default function ExchangePage() {
       setTxResult({ success: false, message: 'Wallet is locked. Please restart the app to unlock.' });
       return;
     }
-    const ordersToCancel = myOrders.slice(0, 99);
-    if (ordersToCancel.length === 0) return;
+    if (myOrders.length === 0) return;
 
     setCancellingAll(true);
     setTxResult(null);
-    let cancelled = 0;
-    let failed = 0;
 
-    for (const order of ordersToCancel) {
-      try {
-        const result = await cancelOffer(
-          globalDecryptedSecret,
-          order.id,
-          order.sellingCode,
-          order.sellingIssuer,
-          order.buyingCode,
-          order.buyingIssuer
-        );
-        if (result.success) {
-          cancelled++;
-          setMyOrders(prev => prev.filter(o => o.id !== order.id));
-        } else {
-          failed++;
-        }
-      } catch {
-        failed++;
+    // Cancel all orders in a single Stellar transaction (up to 99 operations per tx)
+    const result = await cancelAllOffers(
+      globalDecryptedSecret,
+      myOrders.slice(0, 99).map(o => ({
+        id: o.id,
+        sellingCode: o.sellingCode,
+        sellingIssuer: o.sellingIssuer,
+        buyingCode: o.buyingCode,
+        buyingIssuer: o.buyingIssuer,
+      }))
+    );
+
+    if (result.success) {
+      setMyOrders([]);
+      setTxResult({ success: true, message: `Cancelled ${result.cancelled} order${result.cancelled !== 1 ? 's' : ''}` });
+      // Refresh balances after bulk cancellation
+      if (activeWalletId && activeWallet) {
+        await updateBalances(activeWalletId);
+        const [sellingAvail, buyingAvail] = await Promise.all([
+          calculateAvailableBalance(activeWallet.publicKey, sellingAsset, sellingIssuer),
+          calculateAvailableBalance(activeWallet.publicKey, buyingAsset, buyingIssuer),
+        ]);
+        setAvailableSellingBalance(sellingAvail);
+        setAvailableBuyingBalance(buyingAvail);
       }
-    }
-
-    // Refresh available balances after bulk cancellation
-    if (activeWalletId && activeWallet) {
-      const [sellingAvail, buyingAvail] = await Promise.all([
-        calculateAvailableBalance(activeWallet.publicKey, sellingAsset, sellingIssuer),
-        calculateAvailableBalance(activeWallet.publicKey, buyingAsset, buyingIssuer),
-      ]);
-      setAvailableSellingBalance(sellingAvail);
-      setAvailableBuyingBalance(buyingAvail);
-    }
-
-    if (failed === 0) {
-      setTxResult({ success: true, message: `Cancelled ${cancelled} order${cancelled !== 1 ? 's' : ''}` });
     } else {
-      setTxResult({ success: false, message: `Cancelled ${cancelled}, failed ${failed}` });
+      setTxResult({ success: false, message: result.error || 'Failed to cancel orders' });
     }
+
     setCancellingAll(false);
   };
 
