@@ -4,7 +4,7 @@ import React from 'react';
 import { Header } from '@/components/header';
 import { useWallet } from '@/lib/wallet-context';
 import { Button } from '@/components/ui/button';
-import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, cancelAllOffers, getTradeAggregations, getAccountTrades, getXLMUSDStats, hasTrustline, addTrustline, calculateAvailableBalance } from '@/lib/stellar-utils';
+import { getOrderBook, submitManageSellOffer, submitManageBuyOffer, fetchTokenMetadataFromToml, getIssuerTokenIcon, getRecentTrades, getAccountOffers, cancelOffer, getTradeAggregations, getAccountTrades, getXLMUSDStats, hasTrustline, addTrustline, calculateAvailableBalance } from '@/lib/stellar-utils';
 import { OrderBook } from '@/components/order-book';
 import { TradeHistory } from '@/components/trade-history';
 import { MyOrders } from '@/components/my-orders';
@@ -56,7 +56,6 @@ export default function ExchangePage() {
   const [txResult, setTxResult] = useState<{ success: boolean; message: string } | null>(null);
   const [pendingOrder, setPendingOrder] = useState<{ type: 'buy' | 'sell'; price: string; amount: string } | null>(null);
   const [pendingCancelOrderId, setPendingCancelOrderId] = useState<string | null>(null);
-  const [cancellingAll, setCancellingAll] = useState(false);
   
   // Token metadata (domain, image, name)
   const [sellingMeta, setSellingMeta] = useState<{ domain?: string; image?: string; name?: string }>({});
@@ -739,48 +738,6 @@ export default function ExchangePage() {
     }
   };
 
-  const handleCancelAllOrders = async () => {
-    if (!globalDecryptedSecret) {
-      setTxResult({ success: false, message: 'Wallet is locked. Please restart the app to unlock.' });
-      return;
-    }
-    if (myOrders.length === 0) return;
-
-    setCancellingAll(true);
-    setTxResult(null);
-
-    // Cancel all orders in a single Stellar transaction (up to 99 operations per tx)
-    const result = await cancelAllOffers(
-      globalDecryptedSecret,
-      myOrders.slice(0, 99).map(o => ({
-        id: o.id,
-        sellingCode: o.sellingCode,
-        sellingIssuer: o.sellingIssuer,
-        buyingCode: o.buyingCode,
-        buyingIssuer: o.buyingIssuer,
-      }))
-    );
-
-    if (result.success) {
-      setMyOrders([]);
-      setTxResult({ success: true, message: `Cancelled ${result.cancelled} order${result.cancelled !== 1 ? 's' : ''}` });
-      // Refresh balances after bulk cancellation
-      if (activeWalletId && activeWallet) {
-        await updateBalances(activeWalletId);
-        const [sellingAvail, buyingAvail] = await Promise.all([
-          calculateAvailableBalance(activeWallet.publicKey, sellingAsset, sellingIssuer),
-          calculateAvailableBalance(activeWallet.publicKey, buyingAsset, buyingIssuer),
-        ]);
-        setAvailableSellingBalance(sellingAvail);
-        setAvailableBuyingBalance(buyingAvail);
-      }
-    } else {
-      setTxResult({ success: false, message: result.error || 'Failed to cancel orders' });
-    }
-
-    setCancellingAll(false);
-  };
-
   // Smart number formatter to remove excessive decimals
   const formatNumber = (num: string | number): string => {
     const n = typeof num === 'string' ? parseFloat(num) : num;
@@ -1041,8 +998,6 @@ export default function ExchangePage() {
                     orders={myOrders}
                     loading={ordersLoading}
                     onCancelOrder={handleCancelOrder}
-                    onCancelAll={handleCancelAllOrders}
-                    cancellingAll={cancellingAll}
                     buyingAsset={buyingAsset}
                     sellingAsset={sellingAsset}
                   />
