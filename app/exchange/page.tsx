@@ -56,6 +56,7 @@ export default function ExchangePage() {
   const [txResult, setTxResult] = useState<{ success: boolean; message: string } | null>(null);
   const [pendingOrder, setPendingOrder] = useState<{ type: 'buy' | 'sell'; price: string; amount: string } | null>(null);
   const [pendingCancelOrderId, setPendingCancelOrderId] = useState<string | null>(null);
+  const [cancellingAll, setCancellingAll] = useState(false);
   
   // Token metadata (domain, image, name)
   const [sellingMeta, setSellingMeta] = useState<{ domain?: string; image?: string; name?: string }>({});
@@ -737,8 +738,6 @@ export default function ExchangePage() {
       setIsSubmitting(false);
     }
   };
-
-  const [cancellingAll, setCancellingAll] = useState(false);
 
   const handleCancelAllOrders = async () => {
     if (!globalDecryptedSecret) {
