@@ -809,16 +809,6 @@ export default function ExchangePage() {
             </div>
           </div>
 
-          {/* Trading Pair Header */}
-          <TradingPairHeader
-            sellingAsset={sellingAsset}
-            sellingIssuer={sellingIssuer}
-            buyingAsset={buyingAsset}
-            buyingIssuer={buyingIssuer}
-            onSwap={handleSwapPair}
-            stats={xlmUsdStats || undefined}
-          />
-
           {/* Token Pair Selector - Integrated Oval Design */}
           <div className="flex flex-col items-center gap-4">
             <div className="glow-border rounded-full px-8 py-6 sm:px-12 sm:py-8 flex items-center justify-center gap-4 sm:gap-8 border-2">
@@ -914,6 +904,15 @@ export default function ExchangePage() {
 
             {/* Right: Quick Stats */}
             <div className="space-y-4">
+              {/* Market Stats - between order book and best bid */}
+              <TradingPairHeader
+                sellingAsset={sellingAsset}
+                sellingIssuer={sellingIssuer}
+                buyingAsset={buyingAsset}
+                buyingIssuer={buyingIssuer}
+                onSwap={handleSwapPair}
+                stats={xlmUsdStats || undefined}
+              />
               <div className="glow-border p-4 rounded-lg text-center">
                 <p className="text-xs text-muted-foreground mb-2">Best Bid</p>
                 <p className="text-2xl font-bold text-primary">
