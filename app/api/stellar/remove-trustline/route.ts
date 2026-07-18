@@ -40,14 +40,14 @@ export async function POST(request: Request) {
 
     // Build the transaction setting the limit to "0" to remove the trustline
     const transaction = new TransactionBuilderFactory(account, {
-      fee: BaseFee,
+      fee: String(BaseFee),
       networkPassphrase: NetworksPassphrase,
     })
       .addOperation(
         // @ts-ignore
         StellarSdk.Operation.changeTrust({
           asset: asset,
-          limit: "0",
+          limit: "0", // Setting limit to 0 removes the trustline
         })
       )
       .setTimeout(180)

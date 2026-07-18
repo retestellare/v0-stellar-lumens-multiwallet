@@ -47,8 +47,9 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
       // @ts-ignore
       const NetworksPassphrase = StellarSdk.Networks?.PUBLIC || 'Public Global Stellar Network ; October 2015';
       
+      // Transaction.fromXDR returns a Transaction object (not TransactionBuilder)
       // @ts-ignore
-      const tx = StellarSdk.TransactionBuilder.fromXDR(data.xdr, NetworksPassphrase);
+      const tx = StellarSdk.Transaction.fromXDR(data.xdr, NetworksPassphrase);
       
       if (!tx || typeof tx.sign !== 'function') {
         throw new Error('Failed to reconstruct transaction from XDR');
