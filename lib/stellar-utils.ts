@@ -1501,9 +1501,10 @@ export const getAccountOffers = async (
 /**
  * Calculate available balance for an asset, accounting for:
  * - Tokens committed in open selling offers
- * - Minimum network reserve for XLM (2 + subentry_count) * 0.5
+ * - Minimum network reserve for XLM (2 + subentry_count) * 0.5 XLM
+ * - Transaction fee (0.00001 XLM = 100 stroops for next operation)
  * 
- * Returns: Total Balance - Committed in Orders - Network Reserve (XLM only)
+ * Returns: Total Balance - Committed in Orders - Network Reserve - Transaction Fee
  */
 export const calculateAvailableBalance = async (
   publicKey: string,
@@ -1556,14 +1557,19 @@ export const calculateAvailableBalance = async (
       networkReserve = (2 + subentryCount) * 0.5;
     }
 
-    // Available Balance = Total - Committed - Reserve
-    const availableBalance = Math.max(0, totalBalance - committedBalance - networkReserve);
+    // Transaction fee reserve: 0.00001 XLM (100 stroops) for next operation
+    // Only deduct from XLM since fees are always paid in XLM
+    const transactionFeeReserve = assetCode === 'XLM' || assetCode === 'native' ? 0.00001 : 0;
+
+    // Available Balance = Total - Committed - Network Reserve - Transaction Fee
+    const availableBalance = Math.max(0, totalBalance - committedBalance - networkReserve - transactionFeeReserve);
 
     console.log('[v0] Available balance calc:', {
       asset: `${assetCode}${assetIssuer ? `_${assetIssuer}` : ''}`,
       totalBalance,
       committedBalance,
       networkReserve,
+      transactionFeeReserve,
       availableBalance,
     });
 
