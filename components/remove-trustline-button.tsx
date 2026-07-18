@@ -67,17 +67,23 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
       console.log('[v0] Submitting signed trustline removal transaction');
       
       // @ts-ignore
-      await server.submitTransaction(tx);
+      const result = await server.submitTransaction(tx);
       
-      console.log('[v0] Trustline removal transaction successful');
-      alert(`Trustline for ${assetCode} removed successfully!`);
+      console.log('[v0] Trustline removal transaction successful:', result);
       
-      if (onSuccess) onSuccess();
-      
-      // Wait a moment before reloading to ensure transaction is processed
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
+      // Only show success if transaction was actually submitted (has hash/id)
+      if (result && (result.hash || result.id)) {
+        alert(`Trustline for ${assetCode} removed successfully!`);
+        
+        if (onSuccess) onSuccess();
+        
+        // Wait a moment before reloading to ensure transaction is processed on-chain
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      } else {
+        throw new Error('Transaction submitted but no confirmation received');
+      }
     } catch (err: any) {
       console.error('[v0] Remove trustline error:', err);
       
