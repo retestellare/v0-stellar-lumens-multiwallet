@@ -1,6 +1,7 @@
-import { Client, Conversation, Message } from '@xmtp/browser-sdk';
+import { Client, Conversation, Message, IdentifierKind } from '@xmtp/browser-sdk';
 import { Keypair } from 'stellar-sdk';
 import { sha256 } from 'js-sha256';
+import { Wallet } from 'ethers';
 
 /**
  * Derive a deterministic secp256k1 private key from a Stellar secret key.
@@ -10,7 +11,9 @@ import { sha256 } from 'js-sha256';
  * 3. Use hash as secp256k1 private key seed (deterministic)
  * 4. Return the resulting Ethereum address
  */
-export const deriveSecp256k1FromStellar = (stellarSecret: string): Uint8Array => {
+export const deriveSecp256k1FromStellar = (
+  stellarSecret: string
+): { privateKey: string; address: string } => {
   try {
     const keypair = Keypair.fromSecret(stellarSecret);
     const fixedMessage = 'Sign this message to initialize XMTP Chat';
@@ -20,9 +23,18 @@ export const deriveSecp256k1FromStellar = (stellarSecret: string): Uint8Array =>
 
     // Hash the signature to get a deterministic seed (SHA-256 produces 32 bytes)
     const hash = sha256.digest(signature);
-    
-    // Convert to Uint8Array for XMTP SDK
-    return new Uint8Array(hash);
+
+    // Convert hash to hex string with 0x prefix
+    const privateKeyHex =
+      '0x' +
+      Array.from(new Uint8Array(hash))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+
+    // Create ethers Wallet from private key to get the address
+    const wallet = new Wallet(privateKeyHex);
+
+    return { privateKey: privateKeyHex, address: wallet.address };
   } catch (error) {
     throw new Error(`Failed to derive secp256k1 key from Stellar secret: ${error}`);
   }
@@ -31,15 +43,34 @@ export const deriveSecp256k1FromStellar = (stellarSecret: string): Uint8Array =>
 /**
  * Create an XMTP client from a Stellar secret key
  * Uses deterministic secp256k1 derivation so same Stellar key = same XMTP identity
+ * Returns an EOA signer compatible with XMTP Browser SDK v3
  */
 export const createXMTPClientFromStellar = async (
   stellarSecret: string
 ): Promise<{ client: Client; userAddress: string }> => {
   try {
-    const privateKeyBytes = deriveSecp256k1FromStellar(stellarSecret);
+    const { privateKey, address } = deriveSecp256k1FromStellar(stellarSecret);
 
-    // Create XMTP client with the derived key bytes
-    const client = await Client.create(privateKeyBytes, {
+    // Create an ethers Wallet from the private key for signing
+    const wallet = new Wallet(privateKey);
+
+    // Create an EOA signer object compatible with XMTP Browser SDK v3
+    const signer = {
+      type: 'EOA' as const,
+      getIdentifier: () => ({
+        identifier: address.toLowerCase(),
+        identifierKind: IdentifierKind.Ethereum,
+      }),
+      signMessage: async (message: string): Promise<Uint8Array> => {
+        // Sign the message with ethers wallet
+        const signature = await wallet.signMessage(message);
+        // Convert hex string signature to Uint8Array
+        return new Uint8Array(Buffer.from(signature.slice(2), 'hex'));
+      },
+    };
+
+    // Create XMTP client with the EOA signer
+    const client = await Client.create(signer, {
       env: 'production', // mainnet
     });
 
