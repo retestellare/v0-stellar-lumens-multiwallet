@@ -1127,6 +1127,50 @@ export const addTrustline = async (
   }
 };
 
+/**
+ * Remove a trustline for a given asset by setting the limit to 0.
+ * The account must have a zero balance for the asset before removing.
+ */
+export const removeTrustline = async (
+  secretKey: string,
+  assetCode: string,
+  assetIssuer: string
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    const server = new Horizon.Server(HORIZON_URL);
+    const keypair = Keypair.fromSecret(secretKey);
+    const sourcePublicKey = keypair.publicKey();
+
+    const account = await server.loadAccount(sourcePublicKey);
+    const asset = new Asset(assetCode, assetIssuer);
+
+    // Setting limit to "0" removes the trustline
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.changeTrust({
+          asset: asset,
+          limit: '0',
+        })
+      )
+      .setTimeout(180)
+      .build();
+
+    transaction.sign(keypair);
+
+    const result = await server.submitTransaction(transaction);
+    return { success: true, hash: result.hash };
+  } catch (error: any) {
+    let errorMessage = error.message || 'Failed to remove trustline';
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+    return { success: false, error: errorMessage };
+  }
+};
 
 /**
  * Fetch trade history for a specific account (filled orders)
