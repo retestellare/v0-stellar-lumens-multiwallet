@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { CheckCircle2, ArrowUpRight, ArrowDownRight, Clock, RotateCw } from 'lucide-react';
+import { CheckCircle2, ArrowUpRight, ArrowDownRight, Clock, RotateCw, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface FilledOrder {
@@ -19,6 +19,8 @@ interface FilledOrder {
 interface FilledOrdersProps {
   orders: FilledOrder[];
   loading: boolean;
+  buyingAsset?: string;
+  sellingAsset?: string;
 }
 
 // Smart number formatting based on magnitude
@@ -36,8 +38,9 @@ function formatSmartNumber(value: number, maxDecimals = 7): string {
 }
 
 
-export function FilledOrders({ orders, loading }: FilledOrdersProps) {
+export function FilledOrders({ orders, loading, buyingAsset, sellingAsset }: FilledOrdersProps) {
   const [reversedOrderIds, setReversedOrderIds] = useState<Set<string>>(new Set());
+  const [filterByCurrentPair, setFilterByCurrentPair] = useState(false);
 
   const toggleReversed = (orderId: string) => {
     const newSet = new Set(reversedOrderIds);
@@ -48,6 +51,17 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
     }
     setReversedOrderIds(newSet);
   };
+
+  // Filter trades to only show those matching the current trading pair
+  const filteredOrders = filterByCurrentPair && buyingAsset && sellingAsset
+    ? orders.filter(order => {
+        // Check if this trade is for the current pair (in either direction)
+        const orderHasCurrentPair = 
+          (order.baseCode === sellingAsset && order.counterCode === buyingAsset) ||
+          (order.baseCode === buyingAsset && order.counterCode === sellingAsset);
+        return orderHasCurrentPair;
+      })
+    : orders;
 
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
@@ -72,7 +86,7 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
     <div className="glow-border rounded-lg overflow-hidden">
       {/* Header */}
       <div className="p-4 border-b border-border bg-background/50">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-green-500/20">
               <CheckCircle2 className="w-4 h-4 text-green-500" />
@@ -82,26 +96,54 @@ export function FilledOrders({ orders, loading }: FilledOrdersProps) {
               <p className="text-xs text-muted-foreground">Completed trades</p>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-xl font-bold text-foreground">{orders.length}</p>
-            <p className="text-xs text-muted-foreground">trades</p>
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            {buyingAsset && sellingAsset && (
+              <Button
+                variant={filterByCurrentPair ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setFilterByCurrentPair(!filterByCurrentPair)}
+                className={`flex items-center gap-1.5 text-xs sm:text-sm ${
+                  filterByCurrentPair
+                    ? 'bg-primary hover:bg-primary/90'
+                    : 'border-border/50 hover:border-border'
+                }`}
+                title={filterByCurrentPair ? `Showing ${sellingAsset}/${buyingAsset} only` : `Filter to ${sellingAsset}/${buyingAsset}`}
+              >
+                <Filter className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="hidden sm:inline">{sellingAsset}/{buyingAsset}</span>
+              </Button>
+            )}
+            <div className="text-right">
+              <p className="text-lg font-bold text-foreground">
+                {filterByCurrentPair ? `${filteredOrders.length}/${orders.length}` : `${orders.length}`}
+              </p>
+              <p className="text-xs text-muted-foreground">trades</p>
+            </div>
           </div>
         </div>
       </div>
 
-      {orders.length === 0 ? (
+      {filteredOrders.length === 0 ? (
         <div className="p-12 text-center">
           <div className="flex justify-center mb-3">
             <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
               <CheckCircle2 className="w-6 h-6 text-muted-foreground" />
             </div>
           </div>
-          <p className="text-sm font-medium text-muted-foreground">No completed trades yet</p>
-          <p className="text-xs text-muted-foreground/60 mt-1">Your filled orders will appear here</p>
+          <p className="text-sm font-medium text-muted-foreground">
+            {filterByCurrentPair && orders.length > 0 
+              ? `No trades for ${sellingAsset}/${buyingAsset}`
+              : 'No completed trades yet'}
+          </p>
+          <p className="text-xs text-muted-foreground/60 mt-1">
+            {filterByCurrentPair && orders.length > 0
+              ? 'Try a different pair or clear the filter'
+              : 'Your filled orders will appear here'}
+          </p>
         </div>
       ) : (
         <div className="space-y-2 p-3 sm:p-4 max-h-[700px] overflow-y-auto">
-          {orders.map((order) => {
+          {filteredOrders.map((order) => {
             const baseAmt = parseFloat(order.baseAmount);
             const counterAmt = parseFloat(order.counterAmount);
 

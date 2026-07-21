@@ -998,6 +998,8 @@ function ExchangePageInner() {
                 : <FilledOrders
                     orders={filledOrders}
                     loading={filledLoading}
+                    buyingAsset={buyingAsset}
+                    sellingAsset={sellingAsset}
                   />
             )}
 
