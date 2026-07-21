@@ -6,6 +6,8 @@ import { fetchTokenPrice, formatPrice, formatChange } from '@/lib/price-service'
 import { getTokenPicks } from '@/lib/token-service';
 import { formatBalanceCompact, balanceToUsd } from '@/lib/math';
 import { InlineLoader } from '@/components/skeleton-loaders';
+import Link from 'next/link';
+import { ArrowRightLeft } from 'lucide-react';
 
 // Known tokens cache for instant metadata lookup
 const KNOWN_TOKEN_METADATA: Record<string, { name: string; domain: string; image: string }> = {
@@ -175,6 +177,18 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
           )}
         </div>
       </div>
+
+      {/* Trade shortcut — navigates to Exchange with this token pre-selected */}
+      {code !== 'XLM' && (
+        <Link
+          href={`/exchange?buying=${encodeURIComponent(code)}&buyingIssuer=${encodeURIComponent(issuer || '')}`}
+          onClick={e => e.stopPropagation()}
+          className="flex-shrink-0 w-7 h-7 rounded-lg bg-primary/10 hover:bg-primary/25 active:bg-primary/40 border border-primary/30 hover:border-primary/60 flex items-center justify-center transition-all duration-150"
+          title={`Trade ${code}/XLM`}
+        >
+          <ArrowRightLeft className="w-3.5 h-3.5 text-primary" />
+        </Link>
+      )}
     </button>
   );
 }
