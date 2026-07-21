@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { X, ArrowDownRight, ArrowUpRight, TrendingUp, TrendingDown, RotateCw } from 'lucide-react';
+import { X, ArrowDownRight, ArrowUpRight, TrendingUp, TrendingDown, RotateCw, Filter } from 'lucide-react';
 
 interface ActiveOrder {
   id: string;
@@ -31,8 +31,9 @@ const truncateIssuer = (issuer: string) => {
   return `${issuer.slice(0, 4)}...${issuer.slice(-4)}`;
 };
 
-export function MyOrders({ orders, loading, onCancelOrder }: MyOrdersProps) {
+export function MyOrders({ orders, loading, onCancelOrder, buyingAsset, sellingAsset }: MyOrdersProps) {
   const [reversedOrderIds, setReversedOrderIds] = useState<Set<string>>(new Set());
+  const [filterByCurrentPair, setFilterByCurrentPair] = useState(false);
 
   const toggleReversed = (orderId: string) => {
     const newSet = new Set(reversedOrderIds);
@@ -44,24 +45,48 @@ export function MyOrders({ orders, loading, onCancelOrder }: MyOrdersProps) {
     setReversedOrderIds(newSet);
   };
 
+  // Filter orders to only show those matching the current trading pair
+  const filteredOrders = filterByCurrentPair
+    ? orders.filter(order => 
+        order.sellingCode === sellingAsset && 
+        order.buyingCode === buyingAsset
+      )
+    : orders;
+
   return (
     <div className="glow-border rounded-lg overflow-hidden">
       {/* Header */}
       <div className="p-4 sm:p-5 border-b border-border bg-background/50">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h3 className="text-lg sm:text-xl font-bold text-foreground">My Active Orders</h3>
             <p className="text-sm text-muted-foreground mt-1">
-              {orders.length} open order{orders.length !== 1 ? 's' : ''}
+              {filterByCurrentPair ? `${filteredOrders.length}/${orders.length}` : `${orders.length}`} open order{(filterByCurrentPair ? filteredOrders.length : orders.length) !== 1 ? 's' : ''}
             </p>
           </div>
-          <div className="flex items-center gap-3 text-xs">
-            <span className="flex items-center gap-1.5 text-primary">
-              <TrendingUp className="w-3.5 h-3.5" /> Buy
-            </span>
-            <span className="flex items-center gap-1.5 text-destructive">
-              <TrendingDown className="w-3.5 h-3.5" /> Sell
-            </span>
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            <Button
+              variant={filterByCurrentPair ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFilterByCurrentPair(!filterByCurrentPair)}
+              className={`flex items-center gap-1.5 text-xs sm:text-sm ${
+                filterByCurrentPair
+                  ? 'bg-primary hover:bg-primary/90'
+                  : 'border-border/50 hover:border-border'
+              }`}
+              title={filterByCurrentPair ? `Showing ${sellingAsset}/${buyingAsset} only` : `Filter to ${sellingAsset}/${buyingAsset}`}
+            >
+              <Filter className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="hidden sm:inline">{sellingAsset}/{buyingAsset}</span>
+            </Button>
+            <div className="flex items-center gap-2 sm:gap-3 text-xs">
+              <span className="flex items-center gap-1.5 text-primary">
+                <TrendingUp className="w-3.5 h-3.5" /> Buy
+              </span>
+              <span className="flex items-center gap-1.5 text-destructive">
+                <TrendingDown className="w-3.5 h-3.5" /> Sell
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -70,15 +95,23 @@ export function MyOrders({ orders, loading, onCancelOrder }: MyOrdersProps) {
         <div className="p-8 text-center">
           <div className="animate-pulse text-muted-foreground">Loading orders...</div>
         </div>
-      ) : orders.length === 0 ? (
+      ) : filteredOrders.length === 0 ? (
         <div className="p-8 text-center text-muted-foreground">
           <TrendingUp className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p className="text-lg">No active orders</p>
-          <p className="text-sm mt-1">Place a buy or sell order to get started</p>
+          <p className="text-lg">
+            {filterByCurrentPair && orders.length > 0 
+              ? `No orders for ${sellingAsset}/${buyingAsset}`
+              : 'No active orders'}
+          </p>
+          <p className="text-sm mt-1">
+            {filterByCurrentPair && orders.length > 0
+              ? 'Try a different pair or clear the filter'
+              : 'Place a buy or sell order to get started'}
+          </p>
         </div>
       ) : (
         <div className="space-y-2 p-3 sm:p-4 max-h-[650px] overflow-y-auto">
-          {orders.map((order: ActiveOrder, idx: number) => {
+          {filteredOrders.map((order: ActiveOrder, idx: number) => {
             const isBuy = order.type === 'buy';
             const price = parseFloat(order.price);
             const amount = parseFloat(order.amount);
