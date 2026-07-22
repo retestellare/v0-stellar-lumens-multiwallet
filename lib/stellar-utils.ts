@@ -1137,11 +1137,18 @@ export const removeTrustline = async (
   assetIssuer: string
 ): Promise<{ success: boolean; hash?: string; error?: string }> => {
   try {
+    console.log('[v0] removeTrustline called for', assetCode, assetIssuer);
+    console.log('[v0] secretKey starts with:', secretKey?.substring(0, 4), 'length:', secretKey?.length);
+
     const server = new Horizon.Server(HORIZON_URL);
     const keypair = Keypair.fromSecret(secretKey);
     const sourcePublicKey = keypair.publicKey();
 
+    console.log('[v0] sourcePublicKey:', sourcePublicKey);
+
     const account = await server.loadAccount(sourcePublicKey);
+    console.log('[v0] account loaded, sequence:', account.sequenceNumber());
+
     const asset = new Asset(assetCode, assetIssuer);
 
     // Setting limit to "0" removes the trustline
@@ -1159,15 +1166,45 @@ export const removeTrustline = async (
       .build();
 
     transaction.sign(keypair);
+    console.log('[v0] transaction signed, submitting...');
 
     const result = await server.submitTransaction(transaction);
+    console.log('[v0] submit result:', JSON.stringify(result));
+
+    // Wait for ledger to process (mirrors addTrustline)
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
     return { success: true, hash: result.hash };
   } catch (error: any) {
+    // SDK v16: errors may come as HorizonApiError with result_codes directly on the object
+    // or on error.response.data.extras (older axios shape)
+    console.log('[v0] removeTrustline error:', JSON.stringify({
+      message: error.message,
+      status: error.status,
+      type: error.type,
+      result_codes: error.result_codes,
+      extras: error.extras,
+      response_data: error.response?.data,
+    }));
+
     let errorMessage = error.message || 'Failed to remove trustline';
+
+    // SDK v16 HorizonApiError shape
+    if (error.result_codes) {
+      const codes = error.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+    // Legacy axios shape
     if (error.response?.data?.extras?.result_codes) {
       const codes = error.response.data.extras.result_codes;
       errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
     }
+    // SDK v16 extras shape
+    if (error.extras?.result_codes) {
+      const codes = error.extras.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+
     return { success: false, error: errorMessage };
   }
 };
