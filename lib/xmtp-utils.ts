@@ -1,5 +1,5 @@
 import { Client, Conversation, Message, IdentifierKind } from '@xmtp/browser-sdk';
-import { Keypair } from 'stellar-sdk';
+import { Keypair } from '@stellar/stellar-sdk';
 import { sha256 } from 'js-sha256';
 import { Wallet } from 'ethers';
 

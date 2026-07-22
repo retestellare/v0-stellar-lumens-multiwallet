@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Server, Asset } from '@stellar/stellar-sdk';
+import { Horizon, Asset } from '@stellar/stellar-sdk';
 
 const HORIZON_URL = 'https://horizon.stellar.org';
 
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
       sendAmount: formattedSendAmount,
     });
 
-    const server = new Server(HORIZON_URL);
+    const server = new Horizon.Server(HORIZON_URL);
 
     // Create proper SDK Asset instances for source
     const sourceAsset = sourceCode === 'XLM' 

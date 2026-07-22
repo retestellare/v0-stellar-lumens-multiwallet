@@ -14,46 +14,23 @@ export async function POST(request: Request) {
       );
     }
 
-    // @ts-ignore
-    const HorizonServer = StellarSdk.Horizon?.Server || StellarSdk.Server;
-    // @ts-ignore
-    const AssetFactory = StellarSdk.Asset;
-    // @ts-ignore
-    const TransactionBuilderFactory = StellarSdk.TransactionBuilder;
-    // @ts-ignore
-    const NetworksPassphrase = StellarSdk.Networks?.PUBLIC || 'Public Global Stellar Network ; October 2015';
-    // @ts-ignore
-    const BaseFee = StellarSdk.BASE_FEE || 100;
-
-    const server = new HorizonServer("https://horizon.stellar.org"); 
-    
-    // Load the actual account from the network to get the correct current sequence number
+    const server = new StellarSdk.Horizon.Server("https://horizon.stellar.org");
     const account = await server.loadAccount(userPublicKey);
-    const asset = new AssetFactory(assetCode, assetIssuer);
-
-    console.log('[v0] Building trustline removal transaction:', {
-      assetCode,
-      assetIssuer,
-      userPublicKey,
-      limit: "0"
-    });
+    const asset = new StellarSdk.Asset(assetCode, assetIssuer);
 
     // Build the transaction setting the limit to "0" to remove the trustline
-    const transaction = new TransactionBuilderFactory(account, {
-      fee: String(BaseFee),
-      networkPassphrase: NetworksPassphrase,
+    const transaction = new StellarSdk.TransactionBuilder(account, {
+      fee: StellarSdk.BASE_FEE,
+      networkPassphrase: StellarSdk.Networks.PUBLIC,
     })
       .addOperation(
-        // @ts-ignore
         StellarSdk.Operation.changeTrust({
           asset: asset,
-          limit: "0", // Setting limit to 0 removes the trustline
+          limit: "0",
         })
       )
       .setTimeout(180)
       .build();
-
-    console.log('[v0] Transaction built successfully');
 
     const xdr = transaction.toXDR();
 
