@@ -144,18 +144,26 @@ export default function ChatPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    console.log('[v0] Avatar upload started:', file.name, file.size, file.type);
     setUploadingAvatar(true);
     try {
       const formData = new FormData();
       formData.append('file', file);
+      console.log('[v0] Sending to /api/chat/avatar...');
       const res = await fetch('/api/chat/avatar', {
         method: 'POST',
         body: formData,
       });
+      console.log('[v0] Response status:', res.status);
       const data = await res.json();
+      console.log('[v0] Response data:', data);
       if (data.url) {
+        console.log('[v0] Avatar URL set:', data.url);
         setUserAvatarUrl(data.url);
         localStorage.setItem('chatUserAvatarUrl', data.url);
+      } else if (data.error) {
+        console.error('[v0] Upload error from API:', data.error);
+        alert('Upload failed: ' + data.error);
       }
     } catch (error) {
       console.error('[v0] Avatar upload error:', error);
