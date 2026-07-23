@@ -13,10 +13,104 @@
  */
 
 const COINGECKO_API = 'https://api.coingecko.com/api/v3';
+const HORIZON_API = 'https://horizon.stellar.org';
 const PRICE_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 // Stale-while-revalidate window: return stale data for up to 10 extra minutes
 // while a background re-fetch runs.
 const PRICE_STALE_WINDOW = 10 * 60 * 1000;
+
+// In-flight XLM price fetch so all Horizon fallbacks share one network request
+let xlmPriceInflight: Promise<number | null> | null = null;
+
+/**
+ * Fetch the live XLM/USD price from CoinGecko (used to convert XLM-denominated
+ * Horizon orderbook prices to USD).
+ */
+async function fetchXlmUsdPrice(): Promise<number | null> {
+  if (xlmPriceInflight) return xlmPriceInflight;
+  xlmPriceInflight = (async () => {
+    try {
+      const mem = memoryCache.get('XLM');
+      if (mem && Date.now() - mem.cachedAt < PRICE_CACHE_DURATION) return mem.usd;
+      const res = await fetch(
+        `${COINGECKO_API}/simple/price?ids=stellar&vs_currencies=usd`,
+        { cache: 'no-store' }
+      );
+      if (!res.ok) return null;
+      const data = await res.json();
+      return (data?.stellar?.usd as number) ?? null;
+    } catch {
+      return null;
+    } finally {
+      xlmPriceInflight = null;
+    }
+  })();
+  return xlmPriceInflight;
+}
+
+/**
+ * Query Horizon order book for ASSET/XLM and return a mid-price in XLM.
+ * The "selling" side is native XLM, "buying" side is the custom token.
+ * We read the best ask so we know how many XLM one unit of the token costs.
+ * Returns null when there are no open orders (zero liquidity).
+ */
+async function fetchHorizonPriceInXlm(
+  code: string,
+  issuer: string
+): Promise<number | null> {
+  try {
+    // Order book: selling XLM, buying CODE — price = XLM per 1 CODE
+    const url =
+      `${HORIZON_API}/order_book` +
+      `?selling_asset_type=native` +
+      `&buying_asset_type=credit_alphanum${code.length <= 4 ? '4' : '12'}` +
+      `&buying_asset_code=${encodeURIComponent(code)}` +
+      `&buying_asset_issuer=${encodeURIComponent(issuer)}` +
+      `&limit=1`;
+
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) return null;
+    const data = await res.json();
+
+    // `bids` are orders to BUY CODE selling XLM.  Best bid price = XLM per CODE.
+    // `asks` are orders to SELL CODE for XLM. Best ask price = XLM per CODE.
+    // Use mid = average of best bid and best ask for a fair price.
+    const bestBid = parseFloat(data?.bids?.[0]?.price ?? '0');
+    const bestAsk = parseFloat(data?.asks?.[0]?.price ?? '0');
+
+    if (bestBid <= 0 && bestAsk <= 0) return null;
+    if (bestBid <= 0) return bestAsk;
+    if (bestAsk <= 0) return bestBid;
+    return (bestBid + bestAsk) / 2;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch a Stellar custom token price via Horizon + XLM conversion.
+ * Returns {usd, usd_24h_change} where change is approximated as 0 (Horizon
+ * does not expose historical OHLC; a full 24h change would need a separate
+ * candle endpoint — acceptable to show 0.00% for unknown tokens).
+ */
+async function fetchHorizonPrice(
+  code: string,
+  issuer: string
+): Promise<TokenPrice | null> {
+  const [xlmPerToken, xlmUsd] = await Promise.all([
+    fetchHorizonPriceInXlm(code, issuer),
+    fetchXlmUsdPrice(),
+  ]);
+
+  if (xlmPerToken === null || xlmUsd === null || xlmPerToken <= 0 || xlmUsd <= 0) {
+    return null;
+  }
+
+  return {
+    usd: xlmPerToken * xlmUsd,
+    usd_24h_change: 0, // Horizon orderbook has no 24 h history
+  };
+}
 
 interface TokenPrice {
   usd: number;
@@ -180,22 +274,23 @@ async function fetchFromNetwork(code: string, coingeckoId: string): Promise<Toke
 }
 
 /**
- * Fetch token price from CoinGecko with a two-tier cache and
- * stale-while-revalidate semantics.
+ * Fetch token price with a two-tier cache and stale-while-revalidate semantics.
  *
- * 1. Check in-memory cache (fastest)
- * 2. Check localStorage (survives page reload)
- * 3. Fetch from network (de-duplicated via `inflight` map)
+ * Strategy (fastest → slowest):
+ *   1. In-memory cache
+ *   2. localStorage cache
+ *   3a. CoinGecko (when the token has a known ID)
+ *   3b. Horizon orderbook → XLM conversion (fallback for any Stellar asset)
  *
- * If cached data is within PRICE_CACHE_DURATION it is returned immediately.
- * If it falls in the stale-while-revalidate window the stale value is returned
- * while a background network request updates both caches.
+ * The optional `issuer` parameter is required for the Horizon fallback path.
  */
-export async function fetchTokenPrice(code: string): Promise<TokenPrice | null> {
+export async function fetchTokenPrice(code: string, issuer?: string): Promise<TokenPrice | null> {
   const now = Date.now();
+  // Use code+issuer as cache key so the same code on different issuers is distinct
+  const cacheKey = issuer ? `${code}_${issuer}` : code;
 
   // 1. In-memory cache — still fresh?
-  const mem = memoryCache.get(code);
+  const mem = memoryCache.get(cacheKey);
   if (mem) {
     const age = now - mem.cachedAt;
     if (age < PRICE_CACHE_DURATION) {
@@ -203,37 +298,53 @@ export async function fetchTokenPrice(code: string): Promise<TokenPrice | null> 
     }
     // Stale but within revalidate window — return stale and refresh in background
     if (age < PRICE_CACHE_DURATION + PRICE_STALE_WINDOW) {
-      scheduleBackgroundRefresh(code);
+      scheduleBackgroundRefresh(code, issuer);
       return mem;
     }
-    memoryCache.delete(code);
+    memoryCache.delete(cacheKey);
   }
 
   // 2. localStorage — still fresh?
-  const local = getLocalCached(code);
+  const local = getLocalCached(cacheKey);
   if (local) {
-    // Populate memory cache from localStorage
-    setMemoryCache(code, local);
+    setMemoryCache(cacheKey, local);
     const age = now - local.cachedAt;
     if (age < PRICE_CACHE_DURATION) {
       return local;
     }
-    // Stale-while-revalidate
-    scheduleBackgroundRefresh(code);
+    scheduleBackgroundRefresh(code, issuer);
     return local;
   }
 
-  const coingeckoId = getCoingeckoId(code);
-  if (!coingeckoId) return null;
-
   // 3. Network fetch — de-duplicate concurrent requests for the same token
-  const existing = inflight.get(code);
+  const existing = inflight.get(cacheKey);
   if (existing) return existing;
 
-  const promise = fetchFromNetwork(code, coingeckoId).finally(() => {
-    inflight.delete(code);
+  const coingeckoId = getCoingeckoId(code);
+
+  const promise: Promise<TokenPrice | null> = (async () => {
+    let result: TokenPrice | null = null;
+
+    if (coingeckoId) {
+      // 3a. Try CoinGecko first (has 24 h change data)
+      result = await fetchFromNetwork(code, coingeckoId);
+    }
+
+    if (!result && issuer) {
+      // 3b. Horizon orderbook fallback for custom Stellar assets
+      result = await fetchHorizonPrice(code, issuer);
+    }
+
+    if (result) {
+      setMemoryCache(cacheKey, result);
+      setLocalCache(cacheKey, result);
+    }
+    return result;
+  })().finally(() => {
+    inflight.delete(cacheKey);
   });
-  inflight.set(code, promise);
+
+  inflight.set(cacheKey, promise);
   return promise;
 }
 
@@ -241,15 +352,11 @@ export async function fetchTokenPrice(code: string): Promise<TokenPrice | null> 
  * Fire a background re-fetch without blocking the caller.
  * Guarded so only one refresh runs at a time per token.
  */
-function scheduleBackgroundRefresh(code: string): void {
-  if (inflight.has(code)) return;
-  const coingeckoId = getCoingeckoId(code);
-  if (!coingeckoId) return;
-
-  const promise = fetchFromNetwork(code, coingeckoId).finally(() => {
-    inflight.delete(code);
-  });
-  inflight.set(code, promise);
+function scheduleBackgroundRefresh(code: string, issuer?: string): void {
+  const cacheKey = issuer ? `${code}_${issuer}` : code;
+  if (inflight.has(cacheKey)) return;
+  // Just delegate to fetchTokenPrice — it handles CoinGecko + Horizon fallback
+  fetchTokenPrice(code, issuer).catch(() => {/* ignore */});
 }
 
 /**

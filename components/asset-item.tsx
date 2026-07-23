@@ -102,9 +102,9 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
         }
       }
 
-      // Fetch price data from CoinGecko
+      // Fetch price — CoinGecko for known tokens, Horizon orderbook for custom assets
       setPriceLoading(true);
-      const priceData = await fetchTokenPrice(code);
+      const priceData = await fetchTokenPrice(code, issuer || undefined);
       if (!cancelled && priceData) {
         setPrice(priceData.usd);
         setPriceChange(priceData.usd_24h_change);
@@ -158,21 +158,23 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
         </p>
         <div className="flex items-center justify-end gap-1.5 mt-0.5">
           {priceLoading && <InlineLoader />}
-          {!priceLoading && usdValue && (
+          {!priceLoading && price !== null && (
             <>
-              <p className="text-xs text-muted-foreground">{usdValue}</p>
+              <p className="text-xs text-muted-foreground">{usdValue ?? '$0.00'}</p>
               {priceChange !== null && (
                 <p className={`text-xs font-semibold tabular-nums ${
-                  priceChange >= 0
+                  priceChange > 0
                     ? 'text-emerald-500'
-                    : 'text-red-500'
+                    : priceChange < 0
+                    ? 'text-red-500'
+                    : 'text-muted-foreground'
                 }`}>
                   {formatChange(priceChange).text}
                 </p>
               )}
             </>
           )}
-          {!priceLoading && !usdValue && (
+          {!priceLoading && price === null && (
             <p className="text-xs text-muted-foreground">{code}</p>
           )}
         </div>
