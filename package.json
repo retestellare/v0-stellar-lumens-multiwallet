@@ -41,6 +41,7 @@
     "@radix-ui/react-tooltip": "1.2.8",
     "@stellar/stellar-sdk": "^16.0.1",
     "@vercel/analytics": "1.6.1",
+    "@vercel/blob": "^2.6.1",
     "@xmtp/browser-sdk": "^7.0.0",
     "@xmtp/xmtp-js": "^13.0.4",
     "autoprefixer": "^10.4.20",

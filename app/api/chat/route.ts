@@ -6,6 +6,7 @@ interface ChatMessage {
   sender: string;
   avatar: string;
   avatarColor: string;
+  avatarUrl?: string; // Optional custom image URL
   message: string;
   timestamp: string; // ISO string — safe to serialize
 }
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
     const client = await pool.connect();
 
     try {
-      let query = 'SELECT id, sender, avatar, avatar_color as "avatarColor", message, timestamp::text FROM public.messages ORDER BY timestamp ASC';
+      let query = 'SELECT id, sender, avatar, avatar_color as "avatarColor", avatar_url as "avatarUrl", message, timestamp::text FROM public.messages ORDER BY timestamp ASC';
       const params: any[] = [];
 
       if (after) {
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { sender, avatar, avatarColor, message } = body;
+    const { sender, avatar, avatarColor, avatarUrl, message } = body;
 
     if (!sender || !message || typeof message !== 'string') {
       return NextResponse.json({ error: 'sender and message are required' }, { status: 400 });
@@ -61,15 +62,16 @@ export async function POST(request: NextRequest) {
 
     try {
       const query = `
-        INSERT INTO public.messages (sender, avatar, avatar_color, message, timestamp)
-        VALUES ($1, $2, $3, $4, now())
-        RETURNING id, sender, avatar, avatar_color as "avatarColor", message, timestamp::text
+        INSERT INTO public.messages (sender, avatar, avatar_color, avatar_url, message, timestamp)
+        VALUES ($1, $2, $3, $4, $5, now())
+        RETURNING id, sender, avatar, avatar_color as "avatarColor", avatar_url as "avatarUrl", message, timestamp::text
       `;
 
       const result = await client.query(query, [
         String(sender).slice(0, 40),
         String(avatar || '?').slice(0, 2),
         String(avatarColor || 'bg-blue-500'),
+        avatarUrl ? String(avatarUrl) : null,
         message.trim(),
       ]);
 

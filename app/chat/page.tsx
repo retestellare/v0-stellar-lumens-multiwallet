@@ -10,6 +10,7 @@ interface ChatMessage {
   sender: string;
   avatar: string;
   avatarColor: string;
+  avatarUrl?: string;
   message: string;
   timestamp: string;
 }
@@ -55,12 +56,15 @@ export default function ChatPage() {
   const [messageInput, setMessageInput] = useState('');
   const [userName, setUserName] = useState('');
   const [nameInput, setNameInput] = useState('');
+  const [userAvatarUrl, setUserAvatarUrl] = useState<string | null>(null);
   const [isSettingName, setIsSettingName] = useState(true);
   const [sending, setSending] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastTimestampRef = useRef<string>('');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const userAvatar = userName ? getInitials(userName) : '?';
   const userColor = userName ? getAvatarColor(userName) : 'bg-gray-500';
@@ -123,14 +127,46 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Restore saved name
+  // Restore saved name and avatar
   useEffect(() => {
-    const saved = localStorage.getItem('chatUserName');
-    if (saved) {
-      setUserName(saved);
+    const savedName = localStorage.getItem('chatUserName');
+    if (savedName) {
+      setUserName(savedName);
       setIsSettingName(false);
     }
+    const savedAvatarUrl = localStorage.getItem('chatUserAvatarUrl');
+    if (savedAvatarUrl) {
+      setUserAvatarUrl(savedAvatarUrl);
+    }
   }, []);
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingAvatar(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/chat/avatar', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.url) {
+        setUserAvatarUrl(data.url);
+        localStorage.setItem('chatUserAvatarUrl', data.url);
+      }
+    } catch (error) {
+      console.error('[v0] Avatar upload error:', error);
+      alert('Failed to upload avatar');
+    } finally {
+      setUploadingAvatar(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
 
   const handleSetName = (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,6 +193,7 @@ export default function ChatPage() {
           sender: userName,
           avatar: userAvatar,
           avatarColor: userColor,
+          avatarUrl: userAvatarUrl,
           message: messageInput.trim(),
         }),
       });
@@ -255,14 +292,42 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Current user avatar — click to change name */}
-        <button
-          onClick={handleChangeName}
-          title="Change name"
-          className={`flex items-center justify-center w-10 h-10 rounded-full text-white text-sm font-bold flex-shrink-0 ${userColor} hover:opacity-80 transition`}
-        >
-          {userAvatar}
-        </button>
+        {/* Current user avatar — click to change name or upload custom avatar */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            title="Upload custom avatar"
+            disabled={uploadingAvatar}
+            className="p-1 rounded-lg hover:bg-muted transition disabled:opacity-50"
+          >
+            {uploadingAvatar ? (
+              <Loader className="w-4 h-4 animate-spin" />
+            ) : (
+              <svg className="w-4 h-4 text-muted-foreground" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+              </svg>
+            )}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleAvatarUpload}
+            className="hidden"
+            disabled={uploadingAvatar}
+          />
+          <button
+            onClick={handleChangeName}
+            title="Change name"
+            className={`flex items-center justify-center w-10 h-10 rounded-full text-white text-sm font-bold flex-shrink-0 ${userColor} hover:opacity-80 transition overflow-hidden`}
+          >
+            {userAvatarUrl ? (
+              <img src={userAvatarUrl} alt={userName} className="w-full h-full object-cover" />
+            ) : (
+              userAvatar
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Messages list */}
@@ -288,9 +353,13 @@ export default function ChatPage() {
               >
                 {/* Avatar */}
                 <div
-                  className={`flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-full text-white text-xs font-bold ${msg.avatarColor || getAvatarColor(msg.sender)}`}
+                  className={`flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-full text-white text-xs font-bold overflow-hidden ${msg.avatarColor || getAvatarColor(msg.sender)}`}
                 >
-                  {msg.avatar || getInitials(msg.sender)}
+                  {msg.avatarUrl ? (
+                    <img src={msg.avatarUrl} alt={msg.sender} className="w-full h-full object-cover" />
+                  ) : (
+                    msg.avatar || getInitials(msg.sender)
+                  )}
                 </div>
 
                 {/* Bubble */}
