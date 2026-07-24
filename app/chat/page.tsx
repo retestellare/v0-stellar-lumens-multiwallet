@@ -129,14 +129,18 @@ export default function ChatPage() {
 
   // Restore saved name and avatar
   useEffect(() => {
-    const savedName = localStorage.getItem('chatUserName');
-    if (savedName) {
-      setUserName(savedName);
-      setIsSettingName(false);
-    }
-    const savedAvatarUrl = localStorage.getItem('chatUserAvatarUrl');
-    if (savedAvatarUrl) {
-      setUserAvatarUrl(savedAvatarUrl);
+    try {
+      const savedName = localStorage.getItem('chatUserName');
+      if (savedName && savedName.length > 0) {
+        setUserName(savedName);
+        setIsSettingName(false);
+      }
+      const savedAvatarUrl = localStorage.getItem('chatUserAvatarUrl');
+      if (savedAvatarUrl && savedAvatarUrl.startsWith('data:image/')) {
+        setUserAvatarUrl(savedAvatarUrl);
+      }
+    } catch {
+      // localStorage access failed, continue without saved data
     }
   }, []);
 
@@ -144,42 +148,80 @@ export default function ChatPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Image must be less than 2MB');
+      return;
+    }
+
     setUploadingAvatar(true);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      if (!dataUrl) {
-        setUploadingAvatar(false);
-        return;
-      }
-      // Resize to 128x128 via canvas before storing to keep localStorage small
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 128;
-        canvas.height = 128;
-        const ctx = canvas.getContext('2d')!;
-        // Crop to square from center
-        const size = Math.min(img.width, img.height);
-        const sx = (img.width - size) / 2;
-        const sy = (img.height - size) / 2;
-        ctx.drawImage(img, sx, sy, size, size, 0, 0, 128, 128);
-        const resized = canvas.toDataURL('image/jpeg', 0.85);
-        setUserAvatarUrl(resized);
-        localStorage.setItem('chatUserAvatarUrl', resized);
+    try {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const dataUrl = event.target?.result as string;
+          if (!dataUrl) {
+            setUploadingAvatar(false);
+            return;
+          }
+          // Resize to 96x96 via canvas before storing to keep localStorage small
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = 96;
+              canvas.height = 96;
+              const ctx = canvas.getContext('2d');
+              if (!ctx) {
+                alert('Failed to resize image');
+                setUploadingAvatar(false);
+                return;
+              }
+              // Crop to square from center
+              const size = Math.min(img.width, img.height);
+              const sx = (img.width - size) / 2;
+              const sy = (img.height - size) / 2;
+              ctx.drawImage(img, sx, sy, size, size, 0, 0, 96, 96);
+              const resized = canvas.toDataURL('image/webp', 0.75);
+              
+              // Verify the data URL isn't too large (> 500KB would be too much)
+              if (resized.length > 500000) {
+                alert('Image too large after compression');
+                setUploadingAvatar(false);
+                return;
+              }
+              
+              setUserAvatarUrl(resized);
+              try {
+                localStorage.setItem('chatUserAvatarUrl', resized);
+              } catch (e) {
+                alert('Storage full or unavailable');
+              }
+              setUploadingAvatar(false);
+            } catch (error) {
+              alert('Failed to process image');
+              setUploadingAvatar(false);
+            }
+          };
+          img.onerror = () => {
+            alert('Failed to load image');
+            setUploadingAvatar(false);
+          };
+          img.src = dataUrl;
+        } catch (error) {
+          alert('Failed to process file');
+          setUploadingAvatar(false);
+        }
+      };
+      reader.onerror = () => {
+        alert('Failed to read file');
         setUploadingAvatar(false);
       };
-      img.onerror = () => {
-        alert('Failed to load image');
-        setUploadingAvatar(false);
-      };
-      img.src = dataUrl;
-    };
-    reader.onerror = () => {
-      alert('Failed to read file');
+      reader.readAsDataURL(file);
+    } catch (error) {
+      alert('Upload error');
       setUploadingAvatar(false);
-    };
-    reader.readAsDataURL(file);
+    }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -338,7 +380,7 @@ export default function ChatPage() {
             title="Change name"
             className={`flex items-center justify-center w-10 h-10 rounded-full text-white text-sm font-bold flex-shrink-0 ${userColor} hover:opacity-80 transition overflow-hidden`}
           >
-            {userAvatarUrl ? (
+            {userAvatarUrl && userAvatarUrl.startsWith('data:image/') ? (
               <img src={userAvatarUrl} alt={userName} className="w-full h-full object-cover" />
             ) : (
               userAvatar
@@ -372,7 +414,7 @@ export default function ChatPage() {
                 <div
                   className={`flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-full text-white text-xs font-bold overflow-hidden ${msg.avatarColor || getAvatarColor(msg.sender)}`}
                 >
-                  {msg.avatarUrl ? (
+                  {msg.avatarUrl && msg.avatarUrl.startsWith('data:image/') ? (
                     <img src={msg.avatarUrl} alt={msg.sender} className="w-full h-full object-cover" />
                   ) : (
                     msg.avatar || getInitials(msg.sender)
