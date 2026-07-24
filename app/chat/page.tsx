@@ -140,32 +140,48 @@ export default function ChatPage() {
     }
   }, []);
 
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setUploadingAvatar(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await fetch('/api/chat/avatar', {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      if (data.url) {
-        setUserAvatarUrl(data.url);
-        localStorage.setItem('chatUserAvatarUrl', data.url);
-      } else if (data.error) {
-        alert('Upload failed: ' + data.error);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (!dataUrl) {
+        setUploadingAvatar(false);
+        return;
       }
-    } catch {
-      alert('Failed to upload avatar');
-    } finally {
+      // Resize to 128x128 via canvas before storing to keep localStorage small
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d')!;
+        // Crop to square from center
+        const size = Math.min(img.width, img.height);
+        const sx = (img.width - size) / 2;
+        const sy = (img.height - size) / 2;
+        ctx.drawImage(img, sx, sy, size, size, 0, 0, 128, 128);
+        const resized = canvas.toDataURL('image/jpeg', 0.85);
+        setUserAvatarUrl(resized);
+        localStorage.setItem('chatUserAvatarUrl', resized);
+        setUploadingAvatar(false);
+      };
+      img.onerror = () => {
+        alert('Failed to load image');
+        setUploadingAvatar(false);
+      };
+      img.src = dataUrl;
+    };
+    reader.onerror = () => {
+      alert('Failed to read file');
       setUploadingAvatar(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+    };
+    reader.readAsDataURL(file);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
