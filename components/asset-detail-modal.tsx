@@ -182,12 +182,11 @@ export function AssetDetailModal({ isOpen, onClose, asset, onSend, onReceive, on
           {activeTab === 'about' && (
             <div className="space-y-1">
               {/* Remove Asset Button */}
-              <RemoveTrustlineButton
-                assetCode={asset.code}
-                assetIssuer={asset.issuer}
-                balance={asset.balance || "0"}
-                onRemoved={onClose}
-              />
+               <RemoveTrustlineButton 
+                 assetCode={asset.code} 
+                  assetIssuer={asset.issuer} 
+                 balance={asset.balance || "0"} 
+                  />
 
 
             
