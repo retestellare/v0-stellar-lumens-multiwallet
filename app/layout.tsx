@@ -7,9 +7,9 @@ import { PersistentBotFrame } from '@/components/persistent-bot-frame'
 import './globals.css'
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://orion-multiwallet.xyz'),
   title: 'Orion - Stellar Lumens Multiwallet',
-  description: 'Non-custodial Stellar multiwallet with DEX and portfolio tracking',
+  description: 'Create or import your first Stellar wallet. Your keys are encrypted locally and never leave your device.',
   generator: 'v0.app',
   icons: {
     icon: [
@@ -30,22 +30,29 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: 'Orion - Stellar Lumens Multiwallet',
-    description: 'Non-custodial Stellar multiwallet with DEX and portfolio tracking',
-    url: '/',
+    description: 'Create or import your first Stellar wallet. Your keys are encrypted locally and never leave your device.',
+    url: 'https://orion-multiwallet.xyz',
+    siteName: 'Orion - Stellar Lumens Multiwallet',
     type: 'website',
     images: [
       {
-        url: '/orion-og-image.png',
-        width: 1200,
-        height: 630,
+        url: '/orion-social-preview.png',
+        width: 1408,
+        height: 768,
         alt: 'Orion Stellar Lumens Wallet',
       },
     ],
   },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Orion - Stellar Lumens Multiwallet',
+    description: 'Create or import your first Stellar wallet. Your keys are encrypted locally and never leave your device.',
+    images: ['/orion-social-preview.png'],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'Stellar Lumens Multiwallet',
+    title: 'Orion - Stellar Lumens Multiwallet',
   },
   formatDetection: {
     telephone: false,
