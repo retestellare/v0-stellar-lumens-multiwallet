@@ -18,6 +18,7 @@ import {
   Droplets,
   Search,
   Bot,
+  Rocket,
   ShoppingBag,
   Copy,
   Check,
@@ -33,7 +34,7 @@ interface AppMenuProps {
 }
 
 // Static arrays defined outside the component to prevent recreation on every render
-const menuItems: { icon: LucideIcon; label: string; href: string }[] = [
+const menuItems: { icon: LucideIcon; label: string; href: string; external?: boolean }[] = [
   { icon: Home, label: 'Home', href: '/' },
   { icon: Search, label: 'Search Tokens', href: '/token-search' },
   { icon: ShoppingBag, label: 'Real-World Spending', href: '/spending' },
@@ -43,6 +44,7 @@ const menuItems: { icon: LucideIcon; label: string; href: string }[] = [
   { icon: TrendingUp, label: 'Portfolio', href: '/portfolio' },
   { icon: History, label: 'History', href: '/history' },
   { icon: Bot, label: 'Trading Bot', href: '/bot' },
+  { icon: Rocket, label: 'pumplaunch', href: 'https://pumplaunch.app', external: true },
   { icon: MessageCircle, label: 'Web3 Chat', href: '/chat' },
   { icon: Wallet, label: 'Wallets', href: '/wallets' },
 ];
@@ -53,7 +55,7 @@ const NavMenuItem = memo(function NavMenuItem({
   isActive,
   onClose,
 }: {
-  item: { icon: LucideIcon; label: string; href: string };
+  item: { icon: LucideIcon; label: string; href: string; external?: boolean };
   isActive: boolean;
   onClose: () => void;
 }) {
@@ -62,6 +64,8 @@ const NavMenuItem = memo(function NavMenuItem({
       <Link
         href={item.href}
         onClick={onClose}
+        target={item.external ? '_blank' : undefined}
+        rel={item.external ? 'noopener noreferrer' : undefined}
         className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ease-in-out mb-1 group ${
           isActive
             ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30 shadow-md shadow-amber-500/10'
