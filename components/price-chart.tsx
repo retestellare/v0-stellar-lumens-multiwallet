@@ -155,27 +155,48 @@ export function PriceChart({
         </div>
       </div>
 
-      {/* Chart Type Toggle */}
-      <div className="flex gap-2">
-        <Button
-          variant={chartType === 'area' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setChartType('area')}
-          className="text-xs h-8 px-4"
-          title="Area chart"
-        >
-          Area
-        </Button>
-        <Button
-          variant={chartType === 'candlestick' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setChartType('candlestick')}
-          className="text-xs h-8 px-4"
-          title="Candlestick chart"
-        >
-          <BarChart3 className="w-4 h-4 mr-1" />
-          Candlestick
-        </Button>
+      {/* Chart Type and Time Range Toggle */}
+      <div className="flex gap-2 items-center flex-wrap">
+        {/* Chart Type Toggle */}
+        <div className="flex gap-2">
+          <Button
+            variant={chartType === 'area' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setChartType('area')}
+            className="text-xs h-8 px-4"
+            title="Area chart"
+          >
+            Area
+          </Button>
+          <Button
+            variant={chartType === 'candlestick' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setChartType('candlestick')}
+            className="text-xs h-8 px-4"
+            title="Candlestick chart"
+          >
+            <BarChart3 className="w-4 h-4 mr-1" />
+            Candlestick
+          </Button>
+        </div>
+
+        {/* Time Range Selection */}
+        {onTimeRangeChange && (
+          <div className="flex gap-1 ml-auto">
+            {(['1h', '4h', '1d', '1w', '1m'] as const).map((range) => (
+              <Button
+                key={range}
+                variant={timeRange === range ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => onTimeRangeChange(range)}
+                className="text-xs h-8 px-3"
+                title={`View ${range} timeframe`}
+              >
+                {range}
+              </Button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Chart */}

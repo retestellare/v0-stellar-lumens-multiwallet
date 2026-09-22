@@ -21,6 +21,7 @@ import {
   ShoppingBag,
   Copy,
   Check,
+  MessageCircle,
   type LucideIcon,
 } from 'lucide-react';
 import { useWallet } from '@/lib/wallet-context';
@@ -42,6 +43,7 @@ const menuItems: { icon: LucideIcon; label: string; href: string }[] = [
   { icon: TrendingUp, label: 'Portfolio', href: '/portfolio' },
   { icon: History, label: 'History', href: '/history' },
   { icon: Bot, label: 'Trading Bot', href: '/bot' },
+  { icon: MessageCircle, label: 'Web3 Chat', href: '/chat' },
   { icon: Wallet, label: 'Wallets', href: '/wallets' },
 ];
 

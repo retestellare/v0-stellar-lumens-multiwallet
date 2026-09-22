@@ -7,7 +7,7 @@ import { PersistentBotFrame } from '@/components/persistent-bot-frame'
 import './globals.css'
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://orio-multiwallet.xyz'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://orion-multiwallet.xyz'),
   title: 'Orion - Stellar Lumens Multiwallet',
   description: 'Create or import your first Stellar wallet. Your keys are encrypted locally and never leave your device.',
   generator: 'v0.app',
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'Orion - Stellar Lumens Multiwallet',
     description: 'Create or import your first Stellar wallet. Your keys are encrypted locally and never leave your device.',
-    url: 'https://orio-multiwallet.xyz',
+    url: 'https://orion-multiwallet.xyz',
     siteName: 'Orion - Stellar Lumens Multiwallet',
     type: 'website',
     images: [

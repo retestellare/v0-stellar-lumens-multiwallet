@@ -14,8 +14,8 @@ import { PriceChart } from '@/components/price-chart';
 import { TokenSelectorModal } from '@/components/token-selector-modal';
 import { CompactOrderForm } from '@/components/compact-order-form';
 import { OrderBookSkeleton, ChartSkeleton } from '@/components/skeleton-loaders';
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, TrendingUp, ArrowRightLeft, X, Loader2, AlertCircle, History, ClipboardList, CheckCircle2, BarChart3 } from 'lucide-react';
 import { WalletSelectorDropdown } from '@/components/wallet-selector-dropdown';
 import Link from 'next/link';
@@ -28,8 +28,9 @@ interface OrderBookData {
 type TabType = 'history' | 'my-orders' | 'charts' | 'filled';
 type TokenModalType = 'selling' | 'buying' | null;
 
-export default function ExchangePage() {
+function ExchangePageInner() {
   const { wallets, activeWalletId, updateBalances, globalDecryptedSecret } = useWallet();
+  const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('history');
   
@@ -122,20 +123,34 @@ export default function ExchangePage() {
   useEffect(() => {
     setMounted(true);
     
-    // Load last selected pair from localStorage
-    try {
-      const lastPair = localStorage.getItem('lastSelectedPair');
-      if (lastPair) {
-        const { selling, sellingIssuer: sIssuer, buying, buyingIssuer: bIssuer } = JSON.parse(lastPair);
-        setSellingAsset(selling || 'XLM');
-        setSellingIssuer(sIssuer || '');
-        setBuyingAsset(buying || 'USDC');
-        setBuyingIssuer(bIssuer || 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN');
+    // URL params take priority — ?buying=CODE&buyingIssuer=ISSUER
+    const urlBuying = searchParams.get('buying');
+    const urlBuyingIssuer = searchParams.get('buyingIssuer');
+    const urlSelling = searchParams.get('selling');
+    const urlSellingIssuer = searchParams.get('sellingIssuer');
+
+    if (urlBuying) {
+      // Pair from URL: selling XLM, buying the specified token
+      setSellingAsset(urlSelling || 'XLM');
+      setSellingIssuer(urlSellingIssuer || '');
+      setBuyingAsset(urlBuying);
+      setBuyingIssuer(urlBuyingIssuer || '');
+    } else {
+      // Fallback: load last selected pair from localStorage
+      try {
+        const lastPair = localStorage.getItem('lastSelectedPair');
+        if (lastPair) {
+          const { selling, sellingIssuer: sIssuer, buying, buyingIssuer: bIssuer } = JSON.parse(lastPair);
+          setSellingAsset(selling || 'XLM');
+          setSellingIssuer(sIssuer || '');
+          setBuyingAsset(buying || 'USDC');
+          setBuyingIssuer(bIssuer || 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN');
+        }
+      } catch (error) {
+        console.error('[v0] Error loading last pair:', error);
       }
-    } catch (error) {
-      console.error('[v0] Error loading last pair:', error);
     }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Save pair to localStorage when it changes
   useEffect(() => {
@@ -809,16 +824,6 @@ export default function ExchangePage() {
             </div>
           </div>
 
-          {/* Trading Pair Header */}
-          <TradingPairHeader
-            sellingAsset={sellingAsset}
-            sellingIssuer={sellingIssuer}
-            buyingAsset={buyingAsset}
-            buyingIssuer={buyingIssuer}
-            onSwap={handleSwapPair}
-            stats={xlmUsdStats || undefined}
-          />
-
           {/* Token Pair Selector - Integrated Oval Design */}
           <div className="flex flex-col items-center gap-4">
             <div className="glow-border rounded-full px-8 py-6 sm:px-12 sm:py-8 flex items-center justify-center gap-4 sm:gap-8 border-2">
@@ -914,6 +919,15 @@ export default function ExchangePage() {
 
             {/* Right: Quick Stats */}
             <div className="space-y-4">
+              {/* Market Stats - between order book and best bid */}
+              <TradingPairHeader
+                sellingAsset={sellingAsset}
+                sellingIssuer={sellingIssuer}
+                buyingAsset={buyingAsset}
+                buyingIssuer={buyingIssuer}
+                onSwap={handleSwapPair}
+                stats={xlmUsdStats || undefined}
+              />
               <div className="glow-border p-4 rounded-lg text-center">
                 <p className="text-xs text-muted-foreground mb-2">Best Bid</p>
                 <p className="text-2xl font-bold text-primary">
@@ -984,6 +998,8 @@ export default function ExchangePage() {
                 : <FilledOrders
                     orders={filledOrders}
                     loading={filledLoading}
+                    buyingAsset={buyingAsset}
+                    sellingAsset={sellingAsset}
                   />
             )}
 
@@ -1090,6 +1106,14 @@ export default function ExchangePage() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function ExchangePage() {
+  return (
+    <Suspense fallback={null}>
+      <ExchangePageInner />
+    </Suspense>
   );
 }
 

@@ -6,6 +6,8 @@ import { fetchTokenPrice, formatPrice, formatChange } from '@/lib/price-service'
 import { getTokenPicks } from '@/lib/token-service';
 import { formatBalanceCompact, balanceToUsd } from '@/lib/math';
 import { InlineLoader } from '@/components/skeleton-loaders';
+import Link from 'next/link';
+import { ArrowRightLeft } from 'lucide-react';
 
 // Known tokens cache for instant metadata lookup
 const KNOWN_TOKEN_METADATA: Record<string, { name: string; domain: string; image: string }> = {
@@ -100,9 +102,9 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
         }
       }
 
-      // Fetch price data from CoinGecko
+      // Fetch price — CoinGecko for known tokens, Horizon orderbook for custom assets
       setPriceLoading(true);
-      const priceData = await fetchTokenPrice(code);
+      const priceData = await fetchTokenPrice(code, issuer || undefined);
       if (!cancelled && priceData) {
         setPrice(priceData.usd);
         setPriceChange(priceData.usd_24h_change);
@@ -156,25 +158,39 @@ export function AssetItem({ code, issuer, balance, onClick }: AssetItemProps) {
         </p>
         <div className="flex items-center justify-end gap-1.5 mt-0.5">
           {priceLoading && <InlineLoader />}
-          {!priceLoading && usdValue && (
+          {!priceLoading && price !== null && (
             <>
-              <p className="text-xs text-muted-foreground">{usdValue}</p>
+              <p className="text-xs text-muted-foreground">{usdValue ?? '$0.00'}</p>
               {priceChange !== null && (
                 <p className={`text-xs font-semibold tabular-nums ${
-                  priceChange >= 0
+                  priceChange > 0
                     ? 'text-emerald-500'
-                    : 'text-red-500'
+                    : priceChange < 0
+                    ? 'text-red-500'
+                    : 'text-muted-foreground'
                 }`}>
                   {formatChange(priceChange).text}
                 </p>
               )}
             </>
           )}
-          {!priceLoading && !usdValue && (
+          {!priceLoading && price === null && (
             <p className="text-xs text-muted-foreground">{code}</p>
           )}
         </div>
       </div>
+
+      {/* Trade shortcut — navigates to Exchange with this token pre-selected */}
+      {code !== 'XLM' && (
+        <Link
+          href={`/exchange?buying=${encodeURIComponent(code)}&buyingIssuer=${encodeURIComponent(issuer || '')}`}
+          onClick={e => e.stopPropagation()}
+          className="flex-shrink-0 w-7 h-7 rounded-lg bg-primary/10 hover:bg-primary/25 active:bg-primary/40 border border-primary/30 hover:border-primary/60 flex items-center justify-center transition-all duration-150"
+          title={`Trade ${code}/XLM`}
+        >
+          <ArrowRightLeft className="w-3.5 h-3.5 text-primary" />
+        </Link>
+      )}
     </button>
   );
 }

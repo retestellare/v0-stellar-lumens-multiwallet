@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState } from 'react';
-import * as StellarSdk from '@stellar/stellar-sdk';
 import { useWallet } from '@/lib/wallet-context';
+import { removeTrustline } from '@/lib/stellar-utils';
 
 interface RemoveTrustlineButtonProps {
   assetCode: string;
@@ -21,81 +21,23 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
 
   const handleRemove = async () => {
     if (!activeWallet || !globalDecryptedSecret) {
-      setError("Wallet not unlocked. Please unlock your wallet first.");
+      setError('Wallet not unlocked. Please unlock your wallet first.');
       return;
     }
 
     setIsLoading(true);
     setError(null);
 
-    try {
-      console.log('[v0] Starting trustline removal for', assetCode, 'from', activeWallet.publicKey);
+    const result = await removeTrustline(globalDecryptedSecret, assetCode, assetIssuer);
 
-      // 1. Request unsigned transaction XDR from backend
-      const response = await fetch('/api/stellar/remove-trustline', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assetCode, assetIssuer, userPublicKey: activeWallet.publicKey }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to build transaction');
-
-      console.log('[v0] Transaction XDR received');
-
-      // 2. Reconstruct transaction from XDR and sign it client-side
-      // @ts-ignore
-      const NetworksPassphrase = StellarSdk.Networks?.PUBLIC || 'Public Global Stellar Network ; October 2015';
-      
-      // @ts-ignore
-      const tx = StellarSdk.TransactionBuilder.fromXDR(data.xdr, NetworksPassphrase);
-      
-      if (!tx || typeof tx.sign !== 'function') {
-        throw new Error('Failed to reconstruct transaction from XDR');
-      }
-      
-      // @ts-ignore
-      const keypair = StellarSdk.Keypair.fromSecret(globalDecryptedSecret);
-      tx.sign(keypair);
-
-      console.log('[v0] Transaction signed');
-
-      // 3. Submit signed transaction to Horizon
-      // @ts-ignore
-      const server = new StellarSdk.Horizon.Server("https://horizon.stellar.org");
-      
-      console.log('[v0] Submitting signed trustline removal transaction');
-      
-      // @ts-ignore
-      await server.submitTransaction(tx);
-      
-      console.log('[v0] Trustline removal transaction successful');
+    if (result.success) {
       alert(`Trustline for ${assetCode} removed successfully!`);
-      
       if (onSuccess) onSuccess();
-      
-      // Wait a moment before reloading to ensure transaction is processed
       setTimeout(() => {
         window.location.reload();
-      }, 1500);
-    } catch (err: any) {
-      console.error('[v0] Remove trustline error:', err);
-      
-      // Extract detailed error information from Horizon
-      let errorDetail = 'Unknown error';
-      if (err.response?.data?.extras?.result_codes) {
-        errorDetail = JSON.stringify(err.response.data.extras.result_codes);
-      } else if (err.response?.data?.extras) {
-        errorDetail = JSON.stringify(err.response.data.extras);
-      } else if (err.response?.data?.title) {
-        errorDetail = err.response.data.title;
-      } else if (err.message) {
-        errorDetail = err.message;
-      }
-      
-      const finalError = `Failed to remove trustline: ${errorDetail}`;
-      setError(finalError);
-    } finally {
+      }, 1000);
+    } else {
+      setError(`Failed to remove trustline: ${result.error}`);
       setIsLoading(false);
     }
   };
@@ -110,13 +52,11 @@ export function RemoveTrustlineButton({ assetCode, assetIssuer, balance, onSucce
       >
         {isLoading ? (
           <>
-            <span className="animate-spin">⟳</span>
+            <span className="animate-spin">&#x21BB;</span>
             Removing Trustline...
           </>
         ) : (
-          <>
-            🗑️ Remove Trustline
-          </>
+          'Remove Trustline'
         )}
       </button>
       {error && <p className="text-red-500 text-xs mt-2 text-center">{error}</p>}

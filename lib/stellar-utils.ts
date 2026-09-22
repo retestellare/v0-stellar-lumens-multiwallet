@@ -1127,6 +1127,87 @@ export const addTrustline = async (
   }
 };
 
+/**
+ * Remove a trustline for a given asset by setting the limit to 0.
+ * The account must have a zero balance for the asset before removing.
+ */
+export const removeTrustline = async (
+  secretKey: string,
+  assetCode: string,
+  assetIssuer: string
+): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  try {
+    console.log('[v0] removeTrustline called for', assetCode, assetIssuer);
+    console.log('[v0] secretKey starts with:', secretKey?.substring(0, 4), 'length:', secretKey?.length);
+
+    const server = new Horizon.Server(HORIZON_URL);
+    const keypair = Keypair.fromSecret(secretKey);
+    const sourcePublicKey = keypair.publicKey();
+
+    console.log('[v0] sourcePublicKey:', sourcePublicKey);
+
+    const account = await server.loadAccount(sourcePublicKey);
+    console.log('[v0] account loaded, sequence:', account.sequenceNumber());
+
+    const asset = new Asset(assetCode, assetIssuer);
+
+    // Setting limit to "0" removes the trustline
+    const transaction = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(
+        Operation.changeTrust({
+          asset: asset,
+          limit: '0',
+        })
+      )
+      .setTimeout(180)
+      .build();
+
+    transaction.sign(keypair);
+    console.log('[v0] transaction signed, submitting...');
+
+    const result = await server.submitTransaction(transaction);
+    console.log('[v0] submit result:', JSON.stringify(result));
+
+    // Wait for ledger to process (mirrors addTrustline)
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    return { success: true, hash: result.hash };
+  } catch (error: any) {
+    // SDK v16: errors may come as HorizonApiError with result_codes directly on the object
+    // or on error.response.data.extras (older axios shape)
+    console.log('[v0] removeTrustline error:', JSON.stringify({
+      message: error.message,
+      status: error.status,
+      type: error.type,
+      result_codes: error.result_codes,
+      extras: error.extras,
+      response_data: error.response?.data,
+    }));
+
+    let errorMessage = error.message || 'Failed to remove trustline';
+
+    // SDK v16 HorizonApiError shape
+    if (error.result_codes) {
+      const codes = error.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+    // Legacy axios shape
+    if (error.response?.data?.extras?.result_codes) {
+      const codes = error.response.data.extras.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+    // SDK v16 extras shape
+    if (error.extras?.result_codes) {
+      const codes = error.extras.result_codes;
+      errorMessage = codes.operations?.[0] || codes.transaction || errorMessage;
+    }
+
+    return { success: false, error: errorMessage };
+  }
+};
 
 /**
  * Fetch trade history for a specific account (filled orders)
@@ -1501,9 +1582,10 @@ export const getAccountOffers = async (
 /**
  * Calculate available balance for an asset, accounting for:
  * - Tokens committed in open selling offers
- * - Minimum network reserve for XLM (2 + subentry_count) * 0.5
+ * - Minimum network reserve for XLM (2 + subentry_count) * 0.5 XLM
+ * - Transaction fee (0.00001 XLM = 100 stroops for next operation)
  * 
- * Returns: Total Balance - Committed in Orders - Network Reserve (XLM only)
+ * Returns: Total Balance - Committed in Orders - Network Reserve - Transaction Fee
  */
 export const calculateAvailableBalance = async (
   publicKey: string,
@@ -1556,14 +1638,19 @@ export const calculateAvailableBalance = async (
       networkReserve = (2 + subentryCount) * 0.5;
     }
 
-    // Available Balance = Total - Committed - Reserve
-    const availableBalance = Math.max(0, totalBalance - committedBalance - networkReserve);
+    // Transaction fee reserve: 0.00001 XLM (100 stroops) for next operation
+    // Only deduct from XLM since fees are always paid in XLM
+    const transactionFeeReserve = assetCode === 'XLM' || assetCode === 'native' ? 0.00001 : 0;
+
+    // Available Balance = Total - Committed - Network Reserve - Transaction Fee
+    const availableBalance = Math.max(0, totalBalance - committedBalance - networkReserve - transactionFeeReserve);
 
     console.log('[v0] Available balance calc:', {
       asset: `${assetCode}${assetIssuer ? `_${assetIssuer}` : ''}`,
       totalBalance,
       committedBalance,
       networkReserve,
+      transactionFeeReserve,
       availableBalance,
     });
 
