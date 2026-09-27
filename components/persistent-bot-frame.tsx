@@ -39,7 +39,7 @@ export function PersistentBotFrame() {
       }}
     >
       <iframe
-        src="https://lumenspread-bot-ok.base44.app"
+        src="https://orionbot.base44.app"
         title="Trading Console"
         style={{
           width: '100%',
